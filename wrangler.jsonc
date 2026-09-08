@@ -10,6 +10,9 @@
     "APP_TIMEZONE": "America/Mexico_City",
     "DEFAULT_CURRENCY": "MXN"
   },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "d1_databases": [
     {
       "binding": "PERSONAL_ASSISTANT_DB",

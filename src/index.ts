@@ -1,6 +1,7 @@
 import { ensureUser } from "./db/users";
 import { claimUpdate } from "./db/repository";
 import { createReminder } from "./modules/reminders/repository";
+import { processDueReminders } from "./modules/reminders/scheduler";
 import { createTask } from "./modules/tasks/repository";
 import { parseIntent } from "./router/parser";
 import { getZonedDateTime } from "./shared/dates";
@@ -15,6 +16,9 @@ const MAX_UPDATE_BYTES = 64 * 1024;
 const worker: ExportedHandler<Env> = {
   fetch(request, env, ctx) {
     return handleRequest(request, env);
+  },
+  async scheduled(controller, env) {
+    await processDueReminders(env.PERSONAL_ASSISTANT_DB, env, new Date(controller.scheduledTime));
   },
 };
 
