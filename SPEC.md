@@ -87,4 +87,4 @@ El executor no confía en texto libre: valida el `Intent`, acepta solo acciones 
 
 ## Estado actual
 
-El repositorio contiene un prototipo inicial en Python creado antes de fijar esta arquitectura. Se conserva como referencia temporal; la implementación objetivo de este documento será TypeScript + Workers + D1. La migración será el primer paso de implementación posterior a la revisión del plan.
+El repositorio contiene el prototipo inicial en Python y una base ejecutable en TypeScript. La implementación TypeScript ya cubre el Worker, `/health`, webhook autenticado, allowlist, deduplicación, migración D1 y pruebas. El parser y los módulos de producto siguen pendientes; el prototipo Python se conserva como referencia temporal durante la migración.

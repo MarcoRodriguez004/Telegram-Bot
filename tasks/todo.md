@@ -1,9 +1,9 @@
 # Trabajo pendiente
 
-- [ ] Inicializar Worker TypeScript, Wrangler, Vitest y CI.
-- [ ] Añadir esquema D1 y repositorios.
-- [ ] Implementar webhook seguro de Telegram.
-- [ ] Añadir deduplicación de `update_id`.
+- [x] Inicializar Worker TypeScript, Wrangler, Vitest y CI.
+- [x] Añadir esquema D1 y repositorios mínimos.
+- [x] Implementar webhook seguro de Telegram.
+- [x] Añadir deduplicación de `update_id`.
 - [ ] Implementar parser e `Intent`.
 - [ ] Implementar módulo de tareas.
 - [ ] Implementar módulo de recordatorios y Cron Trigger.

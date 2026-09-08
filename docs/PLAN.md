@@ -161,14 +161,17 @@ No prometeremos `exactly once`: Telegram es una API externa y un fallo entre env
 
 ### Local
 
-```text
+```powershell
 npm install
+npm run db:migrate:local
 npm run dev
-npm test
+npm run lint
 npm run typecheck
+npm test
+npm run build
 ```
 
-Wrangler ejecutará D1 local para probar el Worker sin tocar producción.
+`wrangler dev` ejecutará D1 local para probar el Worker sin tocar producción. El archivo `.dev.vars` contiene secretos locales y no se versiona; `.dev.vars.example` documenta sus nombres.
 
 ### Producción
 
@@ -211,6 +214,7 @@ Calendario, compras, Gmail u otras capacidades, cada una como módulo con permis
 - Reiniciar o desplegar no elimina datos ni recordatorios.
 - Una actualización repetida no duplica una acción.
 - CI bloquea merge si falla typecheck, tests o build.
+- CI bloquea merge si falla lint, typecheck, tests, auditoría de dependencias o build.
 - No hay secretos en el repositorio.
 
 ## Coste y límites actuales
@@ -229,4 +233,4 @@ La infraestructura puede mantenerse dentro del plan gratuito para un bot persona
 
 ## Próximo paso
 
-Revisar este documento y, si la dirección es correcta, hacer la migración del prototipo Python a TypeScript sin agregar aún LLM ni integraciones externas. El primer objetivo verificable será: `/health`, D1 local, webhook autenticado y `/start`.
+La base de la Fase 1 ya está implementada y verificada localmente: `/health`, D1 local, webhook autenticado, allowlist, deduplicación, `/start`, `/help`, pruebas, lint, typecheck y build. El siguiente incremento será implementar el contrato `Intent`, el parser determinista y el módulo de tareas; después vendrán recordatorios con Cron Trigger, gastos, notas y `/resumen`.

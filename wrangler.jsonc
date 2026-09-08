@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "personal-assistant-bot",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-07",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "APP_TIMEZONE": "America/Mexico_City",
+    "DEFAULT_CURRENCY": "MXN"
+  },
+  "d1_databases": [
+    {
+      "binding": "PERSONAL_ASSISTANT_DB",
+      "database_name": "personal-assistant-bot",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "db/migrations"
+    }
+  ]
+}
