@@ -4,9 +4,11 @@ import { createReminder } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { createExpense } from "./modules/expenses/repository";
 import { createNote } from "./modules/notes/repository";
+import { getSummary } from "./modules/summary/repository";
+import type { SummaryResult } from "./modules/summary/repository";
 import { createTask } from "./modules/tasks/repository";
 import { parseIntent } from "./router/parser";
-import { getZonedDateTime } from "./shared/dates";
+import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
 import { sendMessage } from "./telegram/client";
 import { parseTelegramUpdate } from "./telegram/types";
@@ -98,6 +100,7 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
 
   const intent = parseIntent(text, { timezone: env.APP_TIMEZONE, currency: env.DEFAULT_CURRENCY });
   if (
+    intent.action === "summary" ||
     intent.action === "create_task" ||
     intent.action === "create_reminder" ||
     intent.action === "create_expense" ||
@@ -115,6 +118,12 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
     });
+    if (intent.action === "summary") {
+      const dateRange = getSummaryDateRange(intent.range, new Date(), env.APP_TIMEZONE);
+      const summary = await getSummary(env.PERSONAL_ASSISTANT_DB, { userId, ...dateRange });
+      return formatSummary(summary, intent.range, env.APP_TIMEZONE, env.DEFAULT_CURRENCY);
+    }
+
     if (intent.action === "create_task") {
       await createTask(env.PERSONAL_ASSISTANT_DB, { userId, title: intent.title });
       return `✅ Tarea creada\n\n${intent.title}`;
@@ -181,6 +190,10 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
     return "Solo guardo URLs http o https; no descargo ni ejecuto el contenido.";
   }
 
+  if (intent.action === "unknown" && intent.reason === "invalid_summary_range") {
+    return "El resumen acepta: hoy, semana o mes. Ejemplo: /resumen semana";
+  }
+
   return "Todavía estoy construyendo mis módulos. Por ahora prueba /start, /help o /tarea comprar medicina.";
 }
 
@@ -194,6 +207,33 @@ function formatExpenseAmount(amountCents: number, currency: string): string {
   const major = Math.floor(amountCents / 100).toLocaleString("es-MX");
   const minor = String(amountCents % 100).padStart(2, "0");
   return minor === "00" ? `$${major} ${currency}` : `$${major}.${minor} ${currency}`;
+}
+
+function formatSummary(summary: SummaryResult, range: "today" | "week" | "month", timezone: string, currency: string): string {
+  const rangeLabel = range === "today" ? "Hoy" : range === "week" ? "Esta semana" : "Este mes";
+  const lines = [
+    `📋 Resumen · ${rangeLabel}`,
+    "",
+    `✅ Tareas pendientes: ${summary.pendingTaskCount}`,
+    `💰 Gastos: ${formatExpenseAmount(summary.totalExpenseCents, currency)}`,
+    "",
+    "⏰ Recordatorios",
+  ];
+
+  if (summary.upcomingReminders.length === 0) {
+    lines.push("Ninguno");
+  } else {
+    lines.push(...summary.upcomingReminders.map((reminder) => `• ${formatReminderAt(reminder.remindAt, timezone)} · ${reminder.title}`));
+  }
+
+  lines.push("", "🔖 Notas recientes");
+  if (summary.recentNotes.length === 0) {
+    lines.push("Ninguna");
+  } else {
+    lines.push(...summary.recentNotes.map((note) => `• ${note.content}`));
+  }
+
+  return lines.join("\n");
 }
 
 function getCommandReply(text: string): string | null {
