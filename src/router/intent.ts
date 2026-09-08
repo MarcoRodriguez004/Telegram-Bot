@@ -4,4 +4,5 @@ export type Intent =
   | { action: "create_expense"; amountCents: number; currency: string; category: string; description?: string }
   | { action: "save_note"; content: string; url?: string }
   | { action: "summary"; range: "today" | "week" | "month" }
+  | { action: "delete_data"; confirmation: true }
   | { action: "unknown"; reason: string };

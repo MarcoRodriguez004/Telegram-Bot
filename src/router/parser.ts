@@ -16,6 +16,8 @@ const NATURAL_EXPENSE = /^(?:gast[eé]|apunta(?:me)?|anota)\s+(.+)$/iu;
 const NOTE_COMMAND = /^(?:\/)?(?:nota|apunte)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const DELETE_DATA_COMMAND = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?\s+CONFIRMAR$/u;
+const DELETE_DATA_PREFIX = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?(?:\s+.*)?$/iu;
 const URL_PATTERN = /https?:\/\/[^\s<>]+/iu;
 const ANY_SCHEME_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>]+/iu;
 
@@ -30,6 +32,14 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
 
   if (!normalized || normalized.length > MAX_MESSAGE_LENGTH) {
     return { action: "unknown", reason: "unsupported_message" };
+  }
+
+  if (DELETE_DATA_COMMAND.test(normalized)) {
+    return { action: "delete_data", confirmation: true };
+  }
+
+  if (DELETE_DATA_PREFIX.test(normalized)) {
+    return { action: "unknown", reason: "delete_confirmation_required" };
   }
 
   const summaryMatch = SUMMARY_COMMAND.exec(normalized);

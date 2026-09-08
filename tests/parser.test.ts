@@ -36,4 +36,19 @@ describe("parseIntent", () => {
       reason: "unsupported_message",
     });
   });
+
+  it("requires the exact uppercase confirmation for data deletion", () => {
+    expect(parseIntent("/borrar_datos CONFIRMAR")).toEqual({
+      action: "delete_data",
+      confirmation: true,
+    });
+    expect(parseIntent("/borrar_datos confirmar")).toEqual({
+      action: "unknown",
+      reason: "delete_confirmation_required",
+    });
+    expect(parseIntent("/borrar_datos NO")).toEqual({
+      action: "unknown",
+      reason: "delete_confirmation_required",
+    });
+  });
 });
