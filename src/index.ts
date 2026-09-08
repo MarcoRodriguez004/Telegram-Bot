@@ -2,6 +2,7 @@ import { ensureUser } from "./db/users";
 import { claimUpdate } from "./db/repository";
 import { createReminder } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
+import { createExpense } from "./modules/expenses/repository";
 import { createTask } from "./modules/tasks/repository";
 import { parseIntent } from "./router/parser";
 import { getZonedDateTime } from "./shared/dates";
@@ -94,8 +95,8 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
     return commandReply;
   }
 
-  const intent = parseIntent(text, { timezone: env.APP_TIMEZONE });
-  if (intent.action === "create_task" || intent.action === "create_reminder") {
+  const intent = parseIntent(text, { timezone: env.APP_TIMEZONE, currency: env.DEFAULT_CURRENCY });
+  if (intent.action === "create_task" || intent.action === "create_reminder" || intent.action === "create_expense") {
     const message = update.message;
     const telegramUserId = message?.from?.id;
     if (!message || telegramUserId === undefined) {
@@ -111,6 +112,17 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
     if (intent.action === "create_task") {
       await createTask(env.PERSONAL_ASSISTANT_DB, { userId, title: intent.title });
       return `✅ Tarea creada\n\n${intent.title}`;
+    }
+
+    if (intent.action === "create_expense") {
+      await createExpense(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        amountCents: intent.amountCents,
+        currency: intent.currency,
+        category: intent.category,
+        description: intent.description,
+      });
+      return `💰 Gasto registrado\n\n${formatExpenseAmount(intent.amountCents, intent.currency)}\nCategoría: ${intent.category}`;
     }
 
     await createReminder(env.PERSONAL_ASSISTANT_DB, {
@@ -133,6 +145,14 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
     return "Esa hora ya pasó. Usa una hora futura o escribe ‘mañana’.";
   }
 
+  if (intent.action === "unknown" && intent.reason === "invalid_expense_amount") {
+    return "No pude leer el monto. Ejemplo: /gasto 450 gasolina";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "missing_expense_category") {
+    return "Indica qué fue el gasto. Ejemplo: /gasto 450 gasolina";
+  }
+
   return "Todavía estoy construyendo mis módulos. Por ahora prueba /start, /help o /tarea comprar medicina.";
 }
 
@@ -140,6 +160,12 @@ function formatReminderAt(remindAt: string, timezone: string): string {
   const local = getZonedDateTime(new Date(remindAt), timezone);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${local.year}-${pad(local.month)}-${pad(local.day)} ${pad(local.hour)}:${pad(local.minute)}`;
+}
+
+function formatExpenseAmount(amountCents: number, currency: string): string {
+  const major = Math.floor(amountCents / 100).toLocaleString("es-MX");
+  const minor = String(amountCents % 100).padStart(2, "0");
+  return minor === "00" ? `$${major} ${currency}` : `$${major}.${minor} ${currency}`;
 }
 
 function getCommandReply(text: string): string | null {
