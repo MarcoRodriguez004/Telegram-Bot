@@ -45,6 +45,30 @@ describe("reminder parser", () => {
     });
   });
 
+  it("understands a natural reminder request with a 12-hour clock", () => {
+    expect(parseIntent("Quiero que me recuerdes a las 2pm tomarme mi medicamento", options)).toEqual({
+      action: "create_reminder",
+      title: "tomarme mi medicamento",
+      remindAt: "2026-09-07T20:00:00.000Z",
+    });
+  });
+
+  it("schedules the next occurrence when an undated clock already passed", () => {
+    expect(parseIntent("recuérdame tomarme mi medicamento a las 10am", options)).toEqual({
+      action: "create_reminder",
+      title: "tomarme mi medicamento",
+      remindAt: "2026-09-08T16:00:00.000Z",
+    });
+  });
+
+  it("finds the explicit clock after another number in the title", () => {
+    expect(parseIntent("recuérdame tomar 2 pastillas a las 2pm", options)).toEqual({
+      action: "create_reminder",
+      title: "tomar 2 pastillas",
+      remindAt: "2026-09-07T20:00:00.000Z",
+    });
+  });
+
   it("does not guess a reminder time", () => {
     expect(parseIntent("/recordar pagar internet")).toEqual({
       action: "unknown",
