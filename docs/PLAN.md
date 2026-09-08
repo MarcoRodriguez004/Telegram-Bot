@@ -233,4 +233,4 @@ La infraestructura puede mantenerse dentro del plan gratuito para un bot persona
 
 ## Próximo paso
 
-La Fase 2 ya cubre tareas y recordatorios: parser determinista, persistencia UTC, Cron Trigger cada minuto, lease de procesamiento, reintento cuando Telegram falla y pruebas locales. El siguiente incremento será gastos; después notas, `/resumen` y borrado de datos.
+La Fase 2 ya cubre tareas y recordatorios: parser determinista, persistencia UTC, Cron Trigger cada minuto, lease de procesamiento, reintento cuando Telegram falla y pruebas locales. La Fase 3 ya registra gastos como centavos enteros; el siguiente incremento será guardar enlaces/notas y construir `/resumen`, seguido por borrado de datos.

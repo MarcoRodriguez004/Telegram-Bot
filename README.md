@@ -10,9 +10,9 @@ Las decisiones arquitectónicas están registradas en [ADR-001](docs/decisions/0
 
 ## Estado
 
-Ya existen dos capacidades funcionales en TypeScript: el Worker recibe `tarea comprar medicina` y `/recordar pagar internet mañana`, guarda la acción en D1 y confirma la creación. Un Cron Trigger revisa cada minuto los recordatorios vencidos y los envía a Telegram. También incluye `/health`, webhook autenticado, allowlist, deduplicación de `update_id`, migración D1 inicial, pruebas Vitest y quality gate local/CI. El prototipo Python se conserva como referencia durante la migración.
+Ya existen tres capacidades funcionales en TypeScript: el Worker recibe tareas, recordatorios y gastos, guarda la acción en D1 y confirma la creación. Un Cron Trigger revisa cada minuto los recordatorios vencidos y los envía a Telegram. También incluye `/health`, webhook autenticado, allowlist, deduplicación de `update_id`, migración D1 inicial, pruebas Vitest y quality gate local/CI. El prototipo Python se conserva como referencia durante la migración.
 
-Gastos, notas, resumen y lenguaje natural todavía no están implementados; el parser actual es deliberadamente determinista y conservador.
+Notas, resumen y lenguaje natural todavía no están implementados; el parser actual es deliberadamente determinista y conservador.
 
 ## Probarlo localmente
 
@@ -31,7 +31,7 @@ En otra terminal, verifica el Worker:
 Invoke-WebRequest http://127.0.0.1:8787/health
 ```
 
-Debe responder `200` con `{"ok":true,"service":"personal-assistant-bot"}`. Las pruebas de tareas y recordatorios se ejecutan con `npm test`; el Cron local se puede invocar manualmente con:
+Debe responder `200` con `{"ok":true,"service":"personal-assistant-bot"}`. Las pruebas de tareas, recordatorios y gastos se ejecutan con `npm test`; el Cron local se puede invocar manualmente con:
 
 ```powershell
 Invoke-WebRequest 'http://127.0.0.1:8787/cdn-cgi/local/scheduled?format=json'
