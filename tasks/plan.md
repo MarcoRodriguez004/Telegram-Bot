@@ -1,0 +1,89 @@
+# Plan de implementación: Personal Assistant Bot
+
+## Dirección
+
+Migrar el prototipo actual a un Worker TypeScript modular con D1, webhook de Telegram y despliegue automático desde GitHub. Se construirá una capacidad vertical a la vez y se mantendrá el producto usable en cada checkpoint.
+
+## Orden de trabajo
+
+### Fase 0 — Base ejecutable
+
+- [ ] Crear `package.json`, `wrangler.jsonc`, `tsconfig.json`, Vitest y configuración de CI.
+- [ ] Definir `Env`, tipos compartidos, router HTTP y endpoint `/health`.
+- [ ] Crear D1 local, migración inicial y repositorios parametrizados.
+
+Checkpoint: Worker local arranca, `/health` responde y la migración se ejecuta en D1 local.
+
+### Fase 1 — Telegram seguro
+
+- [ ] Implementar `/telegram/webhook` con verificación del secret token.
+- [ ] Validar chat privado y `TELEGRAM_ALLOWED_USER_ID`.
+- [ ] Persistir `update_id` y hacer procesamiento idempotente.
+- [ ] Añadir cliente Telegram mínimo para `sendMessage` y comandos `/start`, `/help`.
+
+Checkpoint: una actualización autorizada recibe respuesta; una no autorizada no cambia D1.
+
+### Fase 2 — Núcleo de productividad
+
+- [ ] Implementar parser por reglas y el contrato `Intent`.
+- [ ] Añadir módulo de tareas: crear, listar pendientes, completar.
+- [ ] Añadir módulo de recordatorios: crear y listar próximos.
+- [ ] Añadir Cron Trigger cada minuto para entregar recordatorios.
+
+Checkpoint: `tarea comprar detergente` y `recuérdame pagar internet mañana` funcionan de punta a punta.
+
+### Fase 3 — Memoria personal
+
+- [ ] Añadir gastos con importe en centavos, moneda, categoría y descripción.
+- [ ] Añadir enlaces/notas sin descargarlos.
+- [ ] Añadir `/resumen` para hoy, semana y mes.
+- [ ] Añadir `/borrar_datos CONFIRMAR`.
+
+Checkpoint: el usuario puede registrar y consultar lo esencial desde Telegram.
+
+### Fase 4 — Lenguaje natural ampliado
+
+- [ ] Ampliar el parser para fechas, cantidades y variantes en español.
+- [ ] Añadir adaptador LLM opcional detrás de `IntentRouter`.
+- [ ] Validar toda salida del modelo y usar reglas como fallback.
+- [ ] Medir errores de interpretación antes de activar el modelo por defecto.
+
+Checkpoint: se entiende lenguaje natural adicional sin romper comandos ni aumentar el radio de permisos.
+
+### Fase 5 — Operación y extensiones
+
+- [ ] Configurar webhook de producción y Workers Builds.
+- [ ] Añadir logs estructurados sin texto sensible, métricas básicas y alertas de errores.
+- [ ] Preparar módulos independientes para compras, calendario e integraciones futuras.
+
+## Grafo de dependencias
+
+```text
+Wrangler + Env + D1
+        │
+        ├── Telegram webhook + auth + idempotency
+        │             │
+        │             └── Intent router
+        │                    │
+        │                    ├── tasks
+        │                    ├── reminders + cron
+        │                    ├── expenses
+        │                    └── notes/links
+        │
+        └── CI/CD + migrations + observability
+```
+
+## Riesgos y mitigaciones
+
+| Riesgo | Mitigación |
+|---|---|
+| Telegram reenvía un webhook | `update_id` único en D1 y executor idempotente |
+| Cron y webhook compiten | Estados `pending/processing/sent` y reclamación atómica |
+| El modelo interpreta mal | Reglas primero, esquema cerrado, confirmación y fallback |
+| Recordatorio duplicado | Marcar después de envío exitoso; documentar el límite at-least-once |
+| Se filtra un token | Wrangler secrets, `.dev.vars` ignorado, escaneo en CI |
+| El Worker crece sin orden | Módulos por capacidad y ADRs para decisiones grandes |
+
+## Resultado esperado de la primera entrega
+
+Un bot desplegado en `*.workers.dev`, accesible solo para una cuenta, capaz de crear tareas, recordatorios y gastos desde texto natural acotado, guardar enlaces, responder `/resumen` y entregar recordatorios sin un servidor permanente.

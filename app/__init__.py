@@ -1,0 +1,2 @@
+"""Personal Telegram bot package."""
+
