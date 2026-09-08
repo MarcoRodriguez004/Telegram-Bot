@@ -110,11 +110,11 @@ El importe se guardará como entero en centavos, nunca como `float`.
 
 ### Recordatorios
 
-`/recordar pagar internet el viernes a las 18:00` crea un recordatorio.
+`/recordar pagar internet mañana a las 18:00` crea un recordatorio.
 
-`recuérdame llamar al dentista mañana` será una variante natural posterior.
+También se aceptan `mañana`, `hoy`, `en 30 minutos` y `en 2 horas`. Las fechas más ambiguas como “el viernes” siguen pendientes.
 
-Si falta una hora, se usará la hora predeterminada configurada. Si faltan datos esenciales, el bot preguntará en lugar de adivinar.
+Si falta una hora, se usa 09:00 en la zona horaria configurada. El valor se guarda en UTC. Si faltan datos esenciales o la hora ya pasó, el bot pregunta o rechaza la entrada en lugar de adivinar.
 
 ### Enlaces y notas
 
@@ -233,4 +233,4 @@ La infraestructura puede mantenerse dentro del plan gratuito para un bot persona
 
 ## Próximo paso
 
-La base de la Fase 1 ya está implementada y verificada localmente: `/health`, D1 local, webhook autenticado, allowlist, deduplicación, `/start`, `/help`, parser determinista de tareas y creación idempotente de tareas. El siguiente incremento será recordatorios con Cron Trigger; después vendrán gastos, notas y `/resumen`.
+La Fase 2 ya cubre tareas y recordatorios: parser determinista, persistencia UTC, Cron Trigger cada minuto, lease de procesamiento, reintento cuando Telegram falla y pruebas locales. El siguiente incremento será gastos; después notas, `/resumen` y borrado de datos.

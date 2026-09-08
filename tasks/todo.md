@@ -6,7 +6,7 @@
 - [x] Añadir deduplicación de `update_id`.
 - [x] Implementar parser e `Intent` inicial.
 - [x] Implementar módulo de tareas.
-- [ ] Implementar módulo de recordatorios y Cron Trigger.
+- [x] Implementar módulo de recordatorios y Cron Trigger.
 - [ ] Implementar gastos, enlaces/notas y `/resumen`.
 - [ ] Implementar borrado de datos.
 - [ ] Configurar Workers Builds y webhook de producción.
