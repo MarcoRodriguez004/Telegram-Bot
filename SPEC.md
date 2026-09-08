@@ -87,4 +87,4 @@ El executor no confía en texto libre: valida el `Intent`, acepta solo acciones 
 
 ## Estado actual
 
-El repositorio contiene el prototipo inicial en Python y una base ejecutable en TypeScript. La implementación TypeScript ya cubre el Worker, `/health`, webhook autenticado, allowlist, deduplicación, migración D1 y pruebas. El parser y los módulos de producto siguen pendientes; el prototipo Python se conserva como referencia temporal durante la migración.
+El repositorio contiene el prototipo inicial en Python y una implementación ejecutable en TypeScript. TypeScript ya cubre el Worker, `/health`, webhook autenticado, allowlist, deduplicación, migración D1, parser determinista de tareas y creación idempotente de tareas. Recordatorios, gastos, notas, resumen y lenguaje natural siguen pendientes; el prototipo Python se conserva como referencia temporal.

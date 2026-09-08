@@ -233,4 +233,4 @@ La infraestructura puede mantenerse dentro del plan gratuito para un bot persona
 
 ## Próximo paso
 
-La base de la Fase 1 ya está implementada y verificada localmente: `/health`, D1 local, webhook autenticado, allowlist, deduplicación, `/start`, `/help`, pruebas, lint, typecheck y build. El siguiente incremento será implementar el contrato `Intent`, el parser determinista y el módulo de tareas; después vendrán recordatorios con Cron Trigger, gastos, notas y `/resumen`.
+La base de la Fase 1 ya está implementada y verificada localmente: `/health`, D1 local, webhook autenticado, allowlist, deduplicación, `/start`, `/help`, parser determinista de tareas y creación idempotente de tareas. El siguiente incremento será recordatorios con Cron Trigger; después vendrán gastos, notas y `/resumen`.

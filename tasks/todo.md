@@ -4,8 +4,8 @@
 - [x] Añadir esquema D1 y repositorios mínimos.
 - [x] Implementar webhook seguro de Telegram.
 - [x] Añadir deduplicación de `update_id`.
-- [ ] Implementar parser e `Intent`.
-- [ ] Implementar módulo de tareas.
+- [x] Implementar parser e `Intent` inicial.
+- [x] Implementar módulo de tareas.
 - [ ] Implementar módulo de recordatorios y Cron Trigger.
 - [ ] Implementar gastos, enlaces/notas y `/resumen`.
 - [ ] Implementar borrado de datos.
