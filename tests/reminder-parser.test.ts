@@ -29,6 +29,22 @@ describe("reminder parser", () => {
     });
   });
 
+  it("supports a relative time before the reminder title", () => {
+    expect(parseIntent("recuérdame en 1 minuto apagar la pc", options)).toEqual({
+      action: "create_reminder",
+      title: "apagar la pc",
+      remindAt: "2026-09-07T19:31:00.000Z",
+    });
+  });
+
+  it("supports written singular relative durations before the title", () => {
+    expect(parseIntent("recuérdame en un minuto apagar la pc", options)).toEqual({
+      action: "create_reminder",
+      title: "apagar la pc",
+      remindAt: "2026-09-07T19:31:00.000Z",
+    });
+  });
+
   it("does not guess a reminder time", () => {
     expect(parseIntent("/recordar pagar internet")).toEqual({
       action: "unknown",

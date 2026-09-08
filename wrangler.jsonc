@@ -1,24 +1,26 @@
 {
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "personal-assistant-bot",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-09-07",
-  "observability": {
-    "enabled": true
-  },
-  "vars": {
-    "APP_TIMEZONE": "America/Mexico_City",
-    "DEFAULT_CURRENCY": "MXN"
-  },
-  "triggers": {
-    "crons": ["* * * * *"]
-  },
-  "d1_databases": [
-    {
-      "binding": "PERSONAL_ASSISTANT_DB",
-      "database_name": "personal-assistant-bot",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
-      "migrations_dir": "db/migrations"
-    }
-  ]
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "personal-assistant-bot",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-07",
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"APP_TIMEZONE": "America/Mexico_City",
+		"DEFAULT_CURRENCY": "MXN"
+	},
+	"triggers": {
+		"crons": [
+			"* * * * *"
+		]
+	},
+	"d1_databases": [
+		{
+			"binding": "PERSONAL_ASSISTANT_DB",
+			"database_name": "personal-assistant-bot",
+			"database_id": "c82c45bf-1b87-4a0c-909a-02c444d1cd4a",
+			"migrations_dir": "db/migrations"
+		}
+	]
 }
