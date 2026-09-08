@@ -1,16 +1,22 @@
 import type { Intent } from "./intent";
 import { getZonedDateTime, localDateTimeToUtc } from "../shared/dates";
 import { MAX_EXPENSE_CENTS, parseAmountCents } from "../shared/money";
+import { normalizeHttpUrl } from "../shared/urls";
 
 const MAX_MESSAGE_LENGTH = 4_000;
 const MAX_TASK_TITLE_LENGTH = 500;
 const MAX_REMINDER_TITLE_LENGTH = 500;
 const MAX_EXPENSE_CATEGORY_LENGTH = 200;
+const MAX_NOTE_CONTENT_LENGTH = 1_000;
 const TASK_COMMAND = /^(?:\/)?(?:tarea|pendiente)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const REMINDER_COMMAND = /^(?:\/)?(?:recordar|recordatorio)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const NATURAL_REMINDER = /^recu[eé]rdame(?:\s+que)?\s+(.+)$/iu;
 const EXPENSE_COMMAND = /^(?:\/)?gasto(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const NATURAL_EXPENSE = /^(?:gast[eé]|apunta(?:me)?|anota)\s+(.+)$/iu;
+const NOTE_COMMAND = /^(?:\/)?(?:nota|apunte)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const URL_PATTERN = /https?:\/\/[^\s<>]+/iu;
+const ANY_SCHEME_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>]+/iu;
 
 export interface ParseOptions {
   now?: Date;
@@ -35,6 +41,16 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
     return parseExpense(expenseMatch[1] ?? "", options);
   }
 
+  const linkMatch = LINK_COMMAND.exec(normalized);
+  if (linkMatch) {
+    return parseNote(linkMatch[1] ?? "", true);
+  }
+
+  const noteMatch = NOTE_COMMAND.exec(normalized);
+  if (noteMatch) {
+    return parseNote(noteMatch[1] ?? "", false);
+  }
+
   const taskMatch = TASK_COMMAND.exec(normalized);
   if (!taskMatch) {
     return { action: "unknown", reason: "unsupported_message" };
@@ -50,6 +66,42 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   }
 
   return { action: "create_task", title };
+}
+
+function parseNote(payload: string, requiresUrl: boolean): Intent {
+  const value = payload.trim();
+  if (!value) {
+    return { action: "unknown", reason: requiresUrl ? "missing_note_url" : "missing_note_content" };
+  }
+
+  const urlMatch = URL_PATTERN.exec(value);
+  if (!urlMatch) {
+    if (requiresUrl && ANY_SCHEME_PATTERN.test(value)) {
+      return { action: "unknown", reason: "invalid_note_url" };
+    }
+    if (requiresUrl) {
+      return { action: "unknown", reason: "missing_note_url" };
+    }
+    return value.length <= MAX_NOTE_CONTENT_LENGTH
+      ? { action: "save_note", content: value }
+      : { action: "unknown", reason: "note_content_too_long" };
+  }
+
+  const rawUrl = urlMatch[0].replace(/[.,;:!?)}\]]+$/g, "");
+  const url = normalizeHttpUrl(rawUrl);
+  if (!url) {
+    return { action: "unknown", reason: "invalid_note_url" };
+  }
+
+  const before = value.slice(0, urlMatch.index).replace(/^(?:este\s+link|este\s+enlace)\s*/iu, "");
+  const after = value.slice(urlMatch.index + urlMatch[0].length);
+  const context = `${before} ${after}`.replace(/[\s:,-]+$/g, "").trim();
+  const content = context || url;
+  if (content.length > MAX_NOTE_CONTENT_LENGTH) {
+    return { action: "unknown", reason: "note_content_too_long" };
+  }
+
+  return { action: "save_note", content, url };
 }
 
 function parseExpense(payload: string, options: ParseOptions): Intent {
