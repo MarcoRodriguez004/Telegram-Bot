@@ -1,7 +1,9 @@
 import { ensureUser } from "./db/users";
 import { claimUpdate } from "./db/repository";
+import { createReminder } from "./modules/reminders/repository";
 import { createTask } from "./modules/tasks/repository";
 import { parseIntent } from "./router/parser";
+import { getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
 import { sendMessage } from "./telegram/client";
 import { parseTelegramUpdate } from "./telegram/types";
@@ -88,8 +90,8 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
     return commandReply;
   }
 
-  const intent = parseIntent(text);
-  if (intent.action === "create_task") {
+  const intent = parseIntent(text, { timezone: env.APP_TIMEZONE });
+  if (intent.action === "create_task" || intent.action === "create_reminder") {
     const message = update.message;
     const telegramUserId = message?.from?.id;
     if (!message || telegramUserId === undefined) {
@@ -102,15 +104,38 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
     });
-    await createTask(env.PERSONAL_ASSISTANT_DB, { userId, title: intent.title });
-    return `✅ Tarea creada\n\n${intent.title}`;
+    if (intent.action === "create_task") {
+      await createTask(env.PERSONAL_ASSISTANT_DB, { userId, title: intent.title });
+      return `✅ Tarea creada\n\n${intent.title}`;
+    }
+
+    await createReminder(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      title: intent.title,
+      remindAt: intent.remindAt,
+    });
+    return `⏰ Recordatorio creado\n\n${intent.title}\n${formatReminderAt(intent.remindAt, env.APP_TIMEZONE)}`;
   }
 
   if (intent.action === "unknown" && intent.reason === "missing_task_title") {
     return "Me falta el título de la tarea. Ejemplo: /tarea comprar medicina";
   }
 
+  if (intent.action === "unknown" && intent.reason === "missing_reminder_time") {
+    return "Indica cuándo recordarlo. Ejemplo: /recordar pagar internet mañana a las 18:00";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "reminder_time_in_past") {
+    return "Esa hora ya pasó. Usa una hora futura o escribe ‘mañana’.";
+  }
+
   return "Todavía estoy construyendo mis módulos. Por ahora prueba /start, /help o /tarea comprar medicina.";
+}
+
+function formatReminderAt(remindAt: string, timezone: string): string {
+  const local = getZonedDateTime(new Date(remindAt), timezone);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${local.year}-${pad(local.month)}-${pad(local.day)} ${pad(local.hour)}:${pad(local.minute)}`;
 }
 
 function getCommandReply(text: string): string | null {
