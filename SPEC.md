@@ -54,6 +54,7 @@ type Intent =
   | { action: "create_expense"; amountCents: number; currency: string; category: string; description?: string }
   | { action: "save_note"; content: string; url?: string }
   | { action: "summary"; range: "today" | "week" | "month" }
+  | { action: "delete_data"; confirmation: true }
   | { action: "unknown"; reason: string };
 ```
 
@@ -68,7 +69,7 @@ El executor no confía en texto libre: valida el `Intent`, acepta solo acciones 
 - La salida de un futuro LLM se valida con un esquema antes de ejecutarse.
 - Las URLs se guardan; V1 no las descarga ni genera previews, evitando SSRF.
 - `update_id` se registra para que Telegram pueda reintentar sin duplicar acciones.
-- Existirá `/borrar_datos CONFIRMAR` para eliminar los datos del usuario.
+- `/borrar_datos CONFIRMAR` elimina tareas, recordatorios, gastos, notas y el perfil del usuario. Requiere la palabra exacta en mayúsculas y conserva `processed_updates` para evitar replay.
 
 ## Pruebas
 
@@ -87,4 +88,4 @@ El executor no confía en texto libre: valida el `Intent`, acepta solo acciones 
 
 ## Estado actual
 
-El repositorio contiene el prototipo inicial en Python y una implementación ejecutable en TypeScript. TypeScript ya cubre el Worker, `/health`, webhook autenticado, allowlist, deduplicación, migración D1, parser determinista de tareas, recordatorios, gastos, notas y resumen, creación idempotente de acciones, Cron Trigger y reintentos de entrega. El lenguaje natural amplio sigue pendiente; el prototipo Python se conserva como referencia temporal.
+El repositorio contiene el prototipo inicial en Python y una implementación ejecutable en TypeScript. TypeScript ya cubre el Worker, `/health`, webhook autenticado, allowlist, deduplicación, migración D1, parser determinista de tareas, recordatorios, gastos, notas, resumen y borrado explícito, creación idempotente de acciones, Cron Trigger y reintentos de entrega. El lenguaje natural amplio sigue pendiente; el prototipo Python se conserva como referencia temporal.

@@ -52,7 +52,8 @@ src/
 │   ├── tasks/
 │   ├── reminders/
 │   ├── expenses/
-│   └── notes/
+│   ├── notes/
+│   └── privacy/
 ├── db/                      # repositorios y queries D1
 └── shared/                  # tipos, fechas, errores
 db/migrations/
@@ -124,6 +125,10 @@ Si falta una hora, se usa 09:00 en la zona horaria configurada. El valor se guar
 
 `/resumen` mostrará tareas pendientes, próximos recordatorios y totales de gastos del período.
 
+### Privacidad y borrado
+
+`/borrar_datos CONFIRMAR` elimina las tareas, recordatorios, gastos, notas y el perfil del usuario en una operación transaccional de D1. La confirmación es sensible a mayúsculas y no se acepta una variante ambigua. `processed_updates` se conserva para que un update antiguo de Telegram no pueda ejecutarse de nuevo y recrear datos.
+
 ## Modelo de datos inicial
 
 Todas las tablas tendrán `user_id`, aunque inicialmente exista una sola persona. Eso evita rediseñar todo si el bot se comparte después.
@@ -156,6 +161,7 @@ No prometeremos `exactly once`: Telegram es una API externa y un fallo entre env
 - Errores externos resumidos en Telegram y detalles solo en logs controlados.
 - Logs sin texto completo de mensajes, URLs privadas ni tokens.
 - Borrado explícito de los datos del usuario.
+- El borrado no recrea al usuario y no elimina el registro anti-replay de `processed_updates`.
 
 ## Despliegue
 
@@ -227,10 +233,11 @@ La infraestructura puede mantenerse dentro del plan gratuito para un bot persona
 - [Cloudflare D1: inicio y bindings](https://developers.cloudflare.com/d1/get-started/)
 - [Cloudflare D1: límites](https://developers.cloudflare.com/d1/platform/limits/)
 - [Cloudflare D1: precios y cuotas](https://developers.cloudflare.com/d1/platform/pricing/)
+- [Cloudflare D1: API de base de datos y `batch()` transaccional](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 - [Cloudflare Workers: Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
 - [Cloudflare Workers: CI/CD](https://developers.cloudflare.com/workers/ci-cd/)
 - [Telegram Bot API: webhooks y `secret_token`](https://core.telegram.org/bots/api#setwebhook)
 
 ## Próximo paso
 
-La Fase 2 ya cubre tareas y recordatorios: parser determinista, persistencia UTC, Cron Trigger cada minuto, lease de procesamiento, reintento cuando Telegram falla y pruebas locales. La Fase 3 ya registra gastos, guarda enlaces/notas y genera `/resumen` para hoy, semana o mes. El siguiente incremento será borrado explícito de datos y después el despliegue real con Workers Builds y webhook de producción.
+La Fase 2 ya cubre tareas y recordatorios: parser determinista, persistencia UTC, Cron Trigger cada minuto, lease de procesamiento, reintento cuando Telegram falla y pruebas locales. La Fase 3 ya registra gastos, guarda enlaces/notas, genera `/resumen` para hoy, semana o mes y permite borrar los datos explícitamente. El siguiente incremento es el despliegue real con Workers Builds y webhook de producción.

@@ -10,7 +10,7 @@ Las decisiones arquitectónicas están registradas en [ADR-001](docs/decisions/0
 
 ## Estado
 
-Ya existen capacidades funcionales en TypeScript para tareas, recordatorios, gastos, notas/enlaces y `/resumen`. El Worker guarda la acción en D1 y confirma la creación; un Cron Trigger revisa cada minuto los recordatorios vencidos y los envía a Telegram. También incluye `/health`, webhook autenticado, allowlist, deduplicación de `update_id`, migración D1 inicial, pruebas Vitest y quality gate local/CI. El prototipo Python se conserva como referencia durante la migración.
+Ya existen capacidades funcionales en TypeScript para tareas, recordatorios, gastos, notas/enlaces, `/resumen` y `/borrar_datos CONFIRMAR`. El Worker guarda la acción en D1 y confirma la creación; un Cron Trigger revisa cada minuto los recordatorios vencidos y los envía a Telegram. También incluye `/health`, webhook autenticado, allowlist, deduplicación de `update_id`, migración D1 inicial, pruebas Vitest y quality gate local/CI. El prototipo Python se conserva como referencia durante la migración.
 
 El lenguaje natural amplio todavía no está implementado; el parser actual es deliberadamente determinista y conservador.
 
@@ -36,6 +36,8 @@ Debe responder `200` con `{"ok":true,"service":"personal-assistant-bot"}`. Las p
 ```powershell
 Invoke-WebRequest 'http://127.0.0.1:8787/cdn-cgi/local/scheduled?format=json'
 ```
+
+El borrado de datos requiere escribir exactamente `/borrar_datos CONFIRMAR`. Elimina tareas, recordatorios, gastos, notas y el perfil del usuario; conserva `processed_updates`, que es el registro técnico anti-replay.
 
 Para probarlo desde Telegram necesitaremos desplegar el Worker y registrar el webhook. Completa `.dev.vars` con el token del bot, el secret del webhook y tu `TELEGRAM_ALLOWED_USER_ID` cuando lleguemos a esa fase.
 

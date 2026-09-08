@@ -9,6 +9,6 @@
 - [x] Implementar módulo de recordatorios y Cron Trigger.
 - [x] Implementar gastos.
 - [x] Implementar enlaces/notas y `/resumen`.
-- [ ] Implementar borrado de datos.
+- [x] Implementar borrado de datos.
 - [ ] Configurar Workers Builds y webhook de producción.
 - [ ] Añadir parser ampliado y LLM opcional.
