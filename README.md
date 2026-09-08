@@ -14,7 +14,17 @@ Las decisiones arquitectónicas están registradas en [ADR-001](docs/decisions/0
 
 Ya existen capacidades funcionales en TypeScript para tareas, recordatorios, gastos, notas/enlaces, `/resumen` y `/borrar_datos CONFIRMAR`. El Worker guarda la acción en D1 y confirma la creación; un Cron Trigger revisa cada minuto los recordatorios vencidos y los envía a Telegram. También incluye `/health`, webhook autenticado, allowlist, deduplicación de `update_id`, migración D1 inicial, pruebas Vitest y quality gate local/CI. El prototipo Python se conserva como referencia durante la migración.
 
-El lenguaje natural amplio todavía no está implementado; el parser actual es deliberadamente determinista y conservador.
+El parser actual es deliberadamente determinista y conservador, pero ya acepta frases naturales acotadas para recordatorios con hora, gastos con categoría/descripción e historial de gastos. No inventa un monto cuando falta.
+
+Ejemplos desde Telegram:
+
+```text
+Quiero que me recuerdes a las 2pm tomarme mi medicamento
+Gasté 450 en carro por compra de radiador
+Muéstrame el historial de gastos de carro
+```
+
+Los gastos requieren un monto para conservar totales correctos. La conversación de dos pasos para pedir el monto y completarlo queda como una mejora posterior.
 
 ## Probarlo localmente
 
