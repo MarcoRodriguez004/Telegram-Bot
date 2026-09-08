@@ -20,6 +20,7 @@ const DELETE_DATA_COMMAND = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?\s+CONFIRMAR$/u
 const DELETE_DATA_PREFIX = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?(?:\s+.*)?$/iu;
 const URL_PATTERN = /https?:\/\/[^\s<>]+/iu;
 const ANY_SCHEME_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>]+/iu;
+const RELATIVE_REMINDER = /(?:^|\s+)en\s+(\d+|un(?:a)?)\s+(minutos?|horas?)\b/iu;
 
 export interface ParseOptions {
   now?: Date;
@@ -182,7 +183,7 @@ function extractReminderTime(payload: string, options: ParseOptions): { title: s
   const now = options.now ?? new Date();
   const timezone = options.timezone ?? "America/Mexico_City";
   const localMatch = /\s+(hoy|ma[ñn]ana)(?:\s+a\s+las?\s+(\d{1,2})(?::(\d{2}))?)?$/iu.exec(payload);
-  const relativeMatch = /\s+en\s+(\d+)\s+(minutos?|horas?)$/iu.exec(payload);
+  const relativeMatch = RELATIVE_REMINDER.exec(payload);
 
   try {
     if (localMatch) {
@@ -216,14 +217,17 @@ function extractReminderTime(payload: string, options: ParseOptions): { title: s
     }
 
     if (relativeMatch) {
-      const count = Number(relativeMatch[1]);
+      const countToken = relativeMatch[1].toLowerCase();
+      const count = countToken === "un" || countToken === "una" ? 1 : Number(countToken);
       const unit = relativeMatch[2].toLowerCase();
       const milliseconds = unit.startsWith("min") ? count * 60_000 : count * 3_600_000;
       if (!Number.isSafeInteger(count) || count < 1 || !Number.isFinite(milliseconds)) {
         return { title: payload.slice(0, relativeMatch.index), reason: "invalid_reminder_time" };
       }
       const remindAt = new Date(now.getTime() + milliseconds);
-      return { title: payload.slice(0, relativeMatch.index), remindAt: remindAt.toISOString() };
+      const before = payload.slice(0, relativeMatch.index).trim();
+      const after = payload.slice(relativeMatch.index + relativeMatch[0].length).replace(/^que\s+/iu, "").trim();
+      return { title: [before, after].filter(Boolean).join(" "), remindAt: remindAt.toISOString() };
     }
   } catch {
     return { title: payload, reason: "invalid_reminder_timezone" };

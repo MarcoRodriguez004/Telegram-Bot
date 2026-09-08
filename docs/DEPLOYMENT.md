@@ -97,20 +97,28 @@ Debe mostrar la URL del Worker. Si `last_error_message` aparece, corrige el prob
 
 No pruebes `/borrar_datos CONFIRMAR` en producción salvo que quieras borrar la cuenta real; la cobertura automatizada ya está en `tests/privacy-webhook.test.ts`.
 
-## 6. Workers Builds
+## 6. Despliegue automático con GitHub Actions
 
-En Cloudflare: Workers & Pages → selecciona el Worker → Settings → Builds → Connect. Configura:
+Este repositorio ya incluye un job de GitHub Actions que despliega automáticamente solo cuando un push a `main` pasa todos los controles de calidad. La rama `Dev` ejecuta CI, pero no publica producción.
 
-| Campo | Valor |
+En GitHub, abre `Settings → Environments`, crea el entorno `production` y añade estos secretos al entorno:
+
+| Secreto | Valor |
 |---|---|
-| Repositorio | este repositorio GitHub |
-| Rama de producción | `main` |
-| Root directory | `/` |
-| Build command | `npm run build` |
-| Deploy command | `npm run deploy` |
-| Rama no productiva | `npx wrangler versions upload` |
+| `CLOUDFLARE_API_TOKEN` | Token API de Cloudflare con la plantilla `Edit Cloudflare Workers`, limitado a esta cuenta |
+| `CLOUDFLARE_ACCOUNT_ID` | ID de la cuenta de Cloudflare |
 
-El nombre del Worker debe coincidir con `name` en `wrangler.jsonc`. Mantén CI como puerta de calidad; Workers Builds publicará solo después de que el commit llegue a la rama conectada.
+No copies aquí `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` ni `TELEGRAM_ALLOWED_USER_ID`: esos secretos ya viven en Cloudflare y no son necesarios para construir el Worker.
+
+El workflow usa esta secuencia:
+
+1. En cada pull request y push a `main` o `Dev`: `npm ci`, lint, typecheck, tests, `npm audit --audit-level=high` y `npm run build`.
+2. Solo en un push a `main` que supera `quality`: `cloudflare/wrangler-action@v4` ejecuta `wrangler deploy`.
+3. Después del despliegue: comprueba `GET /health` en `https://personal-assistant-bot.personal-assistant-bot-marco.workers.dev`.
+
+El nombre del Worker debe coincidir con `name` en `wrangler.jsonc`. Se recomienda proteger `main` para que los cambios entren mediante pull request con el check `CI / quality` aprobado.
+
+Cloudflare también ofrece Workers Builds como alternativa nativa para GitHub, pero no debe activarse simultáneamente con este workflow porque produciría dos sistemas de despliegue para el mismo Worker.
 
 ## Rollback
 
@@ -122,5 +130,7 @@ Las migraciones actuales son acumulativas. Antes de añadir una migración destr
 
 - [Cloudflare D1: crear una base y vincularla al Worker](https://developers.cloudflare.com/d1/get-started/)
 - [Cloudflare Workers: secretos](https://developers.cloudflare.com/workers/configuration/secrets/)
+- [Cloudflare Workers con GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)
+- [Wrangler Action oficial](https://github.com/cloudflare/wrangler-action)
 - [Cloudflare Workers Builds: configuración](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
 - [Telegram Bot API: `setWebhook`](https://core.telegram.org/bots/api#setwebhook)

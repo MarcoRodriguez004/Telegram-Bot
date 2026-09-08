@@ -42,3 +42,45 @@ jobs:
 
       - name: Build Worker
         run: npm run build
+
+  deploy:
+    name: Deploy production
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://personal-assistant-bot.personal-assistant-bot-marco.workers.dev
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          packageManager: npm
+
+      - name: Verify production health
+        env:
+          WORKER_URL: https://personal-assistant-bot.personal-assistant-bot-marco.workers.dev
+        run: |
+          response="$(curl --fail --silent --show-error "$WORKER_URL/health")"
+          test "$response" = '{"ok":true,"service":"personal-assistant-bot"}'
