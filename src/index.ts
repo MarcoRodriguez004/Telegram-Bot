@@ -1,7 +1,11 @@
+import { ensureUser } from "./db/users";
 import { claimUpdate } from "./db/repository";
+import { createTask } from "./modules/tasks/repository";
+import { parseIntent } from "./router/parser";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
 import { sendMessage } from "./telegram/client";
 import { parseTelegramUpdate } from "./telegram/types";
+import type { TelegramUpdate } from "./telegram/types";
 import type { Env } from "./types";
 
 const MAX_UPDATE_BYTES = 64 * 1024;
@@ -69,7 +73,7 @@ export async function handleRequest(
       return new Response(null, { status: 200 });
     }
 
-    const reply = getCommandReply(text);
+    const reply = await getReply(text, update, env);
     await sendMessage(env, update.message.chat.id, reply, telegramFetch);
     return new Response(null, { status: 200 });
   } catch (error) {
@@ -78,7 +82,38 @@ export async function handleRequest(
   }
 }
 
-function getCommandReply(text: string): string {
+async function getReply(text: string, update: TelegramUpdate, env: Env): Promise<string> {
+  const commandReply = getCommandReply(text);
+  if (commandReply) {
+    return commandReply;
+  }
+
+  const intent = parseIntent(text);
+  if (intent.action === "create_task") {
+    const message = update.message;
+    const telegramUserId = message?.from?.id;
+    if (!message || telegramUserId === undefined) {
+      return "No pude identificar al usuario de Telegram.";
+    }
+
+    const userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
+      telegramUserId,
+      telegramChatId: message.chat.id,
+      timezone: env.APP_TIMEZONE,
+      currency: env.DEFAULT_CURRENCY,
+    });
+    await createTask(env.PERSONAL_ASSISTANT_DB, { userId, title: intent.title });
+    return `✅ Tarea creada\n\n${intent.title}`;
+  }
+
+  if (intent.action === "unknown" && intent.reason === "missing_task_title") {
+    return "Me falta el título de la tarea. Ejemplo: /tarea comprar medicina";
+  }
+
+  return "Todavía estoy construyendo mis módulos. Por ahora prueba /start, /help o /tarea comprar medicina.";
+}
+
+function getCommandReply(text: string): string | null {
   const command = text.split(/\s+/, 1)[0].toLowerCase().split("@")[0];
 
   if (command === "/start") {
@@ -89,7 +124,7 @@ function getCommandReply(text: string): string {
     return "Puedo ayudarte con tareas, recordatorios, gastos y enlaces.\n\nEjemplos:\n• tarea comprar medicina\n• recuérdame pagar internet mañana\n• gasto 450 gasolina\n• guardar https://ejemplo.com";
   }
 
-  return "Todavía estoy construyendo mis módulos. Por ahora prueba /start o /help.";
+  return null;
 }
 
 function json(value: unknown): Response {
