@@ -6,6 +6,13 @@ export interface LocalDateTime {
   minute: number;
 }
 
+export type SummaryRange = "today" | "week" | "month";
+
+export interface DateRange {
+  startAt: string;
+  endAt: string;
+}
+
 export function getZonedDateTime(date: Date, timeZone: string): LocalDateTime {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -48,4 +55,43 @@ export function localDateTimeToUtc(local: LocalDateTime, timeZone: string): Date
   }
 
   return result;
+}
+
+export function getSummaryDateRange(range: SummaryRange, now: Date, timeZone: string): DateRange {
+  const current = getZonedDateTime(now, timeZone);
+  const start = new Date(Date.UTC(current.year, current.month - 1, current.day));
+
+  if (range === "week") {
+    const daysSinceMonday = (start.getUTCDay() + 6) % 7;
+    start.setUTCDate(start.getUTCDate() - daysSinceMonday);
+  } else if (range === "month") {
+    start.setUTCDate(1);
+  }
+
+  const end = new Date(start);
+  if (range === "today") {
+    end.setUTCDate(end.getUTCDate() + 1);
+  } else if (range === "week") {
+    end.setUTCDate(end.getUTCDate() + 7);
+  } else {
+    end.setUTCMonth(end.getUTCMonth() + 1);
+  }
+
+  return {
+    startAt: localMidnightToUtc(start, timeZone).toISOString(),
+    endAt: localMidnightToUtc(end, timeZone).toISOString(),
+  };
+}
+
+function localMidnightToUtc(date: Date, timeZone: string): Date {
+  return localDateTimeToUtc(
+    {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: 0,
+      minute: 0,
+    },
+    timeZone,
+  );
 }
