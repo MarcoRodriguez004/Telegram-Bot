@@ -6,6 +6,8 @@ Asistente personal modular para Telegram: tareas, recordatorios, gastos y enlace
 
 Lee [docs/PLAN.md](docs/PLAN.md) para entender qué se construirá, cómo funcionará, las fases, el modelo de datos, la seguridad y el despliegue.
 
+Para publicar el bot en una cuenta real, sigue [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 Las decisiones arquitectónicas están registradas en [ADR-001](docs/decisions/001-cloudflare-workers-d1.md).
 
 ## Estado

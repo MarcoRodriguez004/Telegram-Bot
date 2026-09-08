@@ -188,6 +188,8 @@ npm run build
 5. Ejecutar `setWebhook` apuntando a `https://<worker>.workers.dev/telegram/webhook` con el secret.
 6. Usar `main` como rama de producción; PRs pasan CI antes de merge.
 
+El procedimiento ejecutable, incluyendo smoke test y rollback, está en [docs/DEPLOYMENT.md](DEPLOYMENT.md). El despliegue real no se puede completar desde el repositorio sin acceso a la cuenta de Cloudflare, el `database_id` remoto y el token del bot.
+
 Workers Builds es preferible a guardar un API token de Cloudflare en GitHub para este proyecto personal. Si luego necesitamos un pipeline especializado, podemos migrar el deploy a GitHub Actions.
 
 ## Fases de entrega
@@ -236,6 +238,8 @@ La infraestructura puede mantenerse dentro del plan gratuito para un bot persona
 - [Cloudflare D1: API de base de datos y `batch()` transaccional](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 - [Cloudflare Workers: Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
 - [Cloudflare Workers: CI/CD](https://developers.cloudflare.com/workers/ci-cd/)
+- [Cloudflare Workers Builds: configuración](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
+- [Cloudflare Workers: secretos](https://developers.cloudflare.com/workers/configuration/secrets/)
 - [Telegram Bot API: webhooks y `secret_token`](https://core.telegram.org/bots/api#setwebhook)
 
 ## Próximo paso
