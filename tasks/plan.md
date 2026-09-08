@@ -1,73 +1,89 @@
-# Implementation Plan: Bot personal de Telegram
+# Plan de implementación: Personal Assistant Bot
 
-## Overview
+## Dirección
 
-MVP local, privado y orientado a un solo usuario. Telegram recibe el mensaje, un clasificador produce una intención estructurada, el servicio valida y persiste la acción en SQLite, y JobQueue entrega los recordatorios pendientes.
+Migrar el prototipo actual a un Worker TypeScript modular con D1, webhook de Telegram y despliegue automático desde GitHub. Se construirá una capacidad vertical a la vez y se mantendrá el producto usable en cada checkpoint.
 
-## Architecture Decisions
+## Orden de trabajo
 
-- Python + `python-telegram-bot`: reduce la infraestructura para un bot personal y permite long polling y JobQueue.
-- SQLite: suficiente para un usuario, persistente y sin servidor adicional.
-- OpenAI opcional: mejora la comprensión del lenguaje natural, pero el parser local mantiene un camino funcional sin API key.
-- Contrato `Intent` cerrado: el modelo solo selecciona una acción y datos; el backend conserva toda la autoridad.
-- Long polling para el MVP: no exige dominio ni certificado. Webhook queda como evolución de despliegue.
+### Fase 0 — Base ejecutable
 
-## Task List
+- [ ] Crear `package.json`, `wrangler.jsonc`, `tsconfig.json`, Vitest y configuración de CI.
+- [ ] Definir `Env`, tipos compartidos, router HTTP y endpoint `/health`.
+- [ ] Crear D1 local, migración inicial y repositorios parametrizados.
 
-### Phase 1: Foundation
+Checkpoint: Worker local arranca, `/health` responde y la migración se ejecuta en D1 local.
 
-- [ ] Task 1: Definir configuración, contrato de intención y parser local.
-- [ ] Task 2: Persistir gastos, recordatorios, enlaces y tareas en SQLite.
+### Fase 1 — Telegram seguro
 
-### Checkpoint: Foundation
+- [ ] Implementar `/telegram/webhook` con verificación del secret token.
+- [ ] Validar chat privado y `TELEGRAM_ALLOWED_USER_ID`.
+- [ ] Persistir `update_id` y hacer procesamiento idempotente.
+- [ ] Añadir cliente Telegram mínimo para `sendMessage` y comandos `/start`, `/help`.
 
-- [ ] Las pruebas unitarias y de SQLite pasan.
-- [ ] Los cuatro mensajes de ejemplo se convierten en intenciones válidas.
+Checkpoint: una actualización autorizada recibe respuesta; una no autorizada no cambia D1.
 
-### Phase 2: Core Features
+### Fase 2 — Núcleo de productividad
 
-- [ ] Task 3: Ejecutar intenciones y formatear respuestas.
-- [ ] Task 4: Conectar Telegram, autorización de usuario y recordatorios programados.
+- [ ] Implementar parser por reglas y el contrato `Intent`.
+- [ ] Añadir módulo de tareas: crear, listar pendientes, completar.
+- [ ] Añadir módulo de recordatorios: crear y listar próximos.
+- [ ] Añadir Cron Trigger cada minuto para entregar recordatorios.
 
-### Checkpoint: Core Features
+Checkpoint: `tarea comprar detergente` y `recuérdame pagar internet mañana` funcionan de punta a punta.
 
-- [ ] La aplicación arranca sin OpenAI.
-- [ ] Un mensaje autorizado crea un registro y un mensaje no autorizado no cambia la base.
-- [ ] Los recordatorios pendientes se reprograman al reiniciar.
+### Fase 3 — Memoria personal
 
-### Phase 3: AI and Polish
+- [ ] Añadir gastos con importe en centavos, moneda, categoría y descripción.
+- [ ] Añadir enlaces/notas sin descargarlos.
+- [ ] Añadir `/resumen` para hoy, semana y mes.
+- [ ] Añadir `/borrar_datos CONFIRMAR`.
 
-- [ ] Task 5: Añadir clasificador OpenAI estructurado con fallback local.
-- [ ] Task 6: Añadir documentación de instalación, `.env.example`, borrado de datos y endurecimiento final.
+Checkpoint: el usuario puede registrar y consultar lo esencial desde Telegram.
 
-### Checkpoint: Complete
+### Fase 4 — Lenguaje natural ampliado
 
-- [ ] Suite completa pasa sin red.
-- [ ] No hay secretos en el repositorio.
-- [ ] README permite configurar y ejecutar el bot.
+- [ ] Ampliar el parser para fechas, cantidades y variantes en español.
+- [ ] Añadir adaptador LLM opcional detrás de `IntentRouter`.
+- [ ] Validar toda salida del modelo y usar reglas como fallback.
+- [ ] Medir errores de interpretación antes de activar el modelo por defecto.
 
-## Dependency Graph
+Checkpoint: se entiende lenguaje natural adicional sin romper comandos ni aumentar el radio de permisos.
+
+### Fase 5 — Operación y extensiones
+
+- [ ] Configurar webhook de producción y Workers Builds.
+- [ ] Añadir logs estructurados sin texto sensible, métricas básicas y alertas de errores.
+- [ ] Preparar módulos independientes para compras, calendario e integraciones futuras.
+
+## Grafo de dependencias
 
 ```text
-config + Intent + parser local
-          │
-          ├── SQLite repository
-          │        │
-          │        └── action service
-          │                 │
-          └── OpenAI classifier ── Telegram handlers + JobQueue
+Wrangler + Env + D1
+        │
+        ├── Telegram webhook + auth + idempotency
+        │             │
+        │             └── Intent router
+        │                    │
+        │                    ├── tasks
+        │                    ├── reminders + cron
+        │                    ├── expenses
+        │                    └── notes/links
+        │
+        └── CI/CD + migrations + observability
 ```
 
-## Risks and Mitigations
+## Riesgos y mitigaciones
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| El modelo devuelve datos inválidos | Alto | Structured Outputs + Pydantic + fallback local |
-| Mensajes duplicados de Telegram | Medio | Persistir `update_id` procesado antes de ejecutar |
-| Recordatorio perdido tras reinicio | Alto | Persistir `due_at` y reprogramar pendientes al arrancar |
-| Usuario ajeno accede al bot | Alto | Comparar `from_user.id` contra variable obligatoria |
-| URL maliciosa | Medio | Guardar texto/URL; no hacer fetch en el MVP |
+| Riesgo | Mitigación |
+|---|---|
+| Telegram reenvía un webhook | `update_id` único en D1 y executor idempotente |
+| Cron y webhook compiten | Estados `pending/processing/sent` y reclamación atómica |
+| El modelo interpreta mal | Reglas primero, esquema cerrado, confirmación y fallback |
+| Recordatorio duplicado | Marcar después de envío exitoso; documentar el límite at-least-once |
+| Se filtra un token | Wrangler secrets, `.dev.vars` ignorado, escaneo en CI |
+| El Worker crece sin orden | Módulos por capacidad y ADRs para decisiones grandes |
 
-## Open Questions
+## Resultado esperado de la primera entrega
 
-- Configurar el modelo OpenAI, la moneda y zona horaria mediante `.env` permite cambiar estas decisiones sin alterar el código.
+Un bot desplegado en `*.workers.dev`, accesible solo para una cuenta, capaz de crear tareas, recordatorios y gastos desde texto natural acotado, guardar enlaces, responder `/resumen` y entregar recordatorios sin un servidor permanente.
