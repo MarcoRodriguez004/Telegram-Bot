@@ -1,16 +1,21 @@
 import type { Intent } from "./intent";
 import { getZonedDateTime, localDateTimeToUtc } from "../shared/dates";
+import { MAX_EXPENSE_CENTS, parseAmountCents } from "../shared/money";
 
 const MAX_MESSAGE_LENGTH = 4_000;
 const MAX_TASK_TITLE_LENGTH = 500;
 const MAX_REMINDER_TITLE_LENGTH = 500;
+const MAX_EXPENSE_CATEGORY_LENGTH = 200;
 const TASK_COMMAND = /^(?:\/)?(?:tarea|pendiente)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const REMINDER_COMMAND = /^(?:\/)?(?:recordar|recordatorio)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const NATURAL_REMINDER = /^recu[eé]rdame(?:\s+que)?\s+(.+)$/iu;
+const EXPENSE_COMMAND = /^(?:\/)?gasto(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const NATURAL_EXPENSE = /^(?:gast[eé]|apunta(?:me)?|anota)\s+(.+)$/iu;
 
 export interface ParseOptions {
   now?: Date;
   timezone?: string;
+  currency?: string;
 }
 
 export function parseIntent(text: string, options: ParseOptions = {}): Intent {
@@ -23,6 +28,11 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   const reminderMatch = REMINDER_COMMAND.exec(normalized) ?? NATURAL_REMINDER.exec(normalized);
   if (reminderMatch) {
     return parseReminder(reminderMatch[1] ?? "", options);
+  }
+
+  const expenseMatch = EXPENSE_COMMAND.exec(normalized) ?? NATURAL_EXPENSE.exec(normalized);
+  if (expenseMatch) {
+    return parseExpense(expenseMatch[1] ?? "", options);
   }
 
   const taskMatch = TASK_COMMAND.exec(normalized);
@@ -40,6 +50,33 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   }
 
   return { action: "create_task", title };
+}
+
+function parseExpense(payload: string, options: ParseOptions): Intent {
+  const amountMatch = /^(?:(?:\$\s*)|(?:mxn|pesos?)\s*)?(\d[\d.,]*)(?:\s*(?:mxn|pesos?))?(?:\s+(.+))?$/iu.exec(payload);
+  if (!amountMatch) {
+    return { action: "unknown", reason: "invalid_expense_amount" };
+  }
+
+  const amountCents = parseAmountCents(amountMatch[1]);
+  if (amountCents === null || amountCents > MAX_EXPENSE_CENTS) {
+    return { action: "unknown", reason: "invalid_expense_amount" };
+  }
+
+  const category = (amountMatch[2] ?? "").replace(/^(?:en|de|por)\s+/iu, "").trim();
+  if (!category) {
+    return { action: "unknown", reason: "missing_expense_category" };
+  }
+  if (category.length > MAX_EXPENSE_CATEGORY_LENGTH) {
+    return { action: "unknown", reason: "expense_category_too_long" };
+  }
+
+  const currency = (options.currency ?? "MXN").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    return { action: "unknown", reason: "invalid_currency" };
+  }
+
+  return { action: "create_expense", amountCents, currency, category };
 }
 
 function parseReminder(payload: string, options: ParseOptions): Intent {
