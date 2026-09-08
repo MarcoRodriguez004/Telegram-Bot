@@ -3,7 +3,8 @@ import { claimUpdate } from "./db/repository";
 import { deleteUserData } from "./modules/privacy/repository";
 import { createReminder } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
-import { createExpense } from "./modules/expenses/repository";
+import { createExpense, getExpenseHistory } from "./modules/expenses/repository";
+import type { ExpenseHistoryResult } from "./modules/expenses/repository";
 import { createNote } from "./modules/notes/repository";
 import { getSummary } from "./modules/summary/repository";
 import type { SummaryResult } from "./modules/summary/repository";
@@ -112,6 +113,7 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
 
   if (
     intent.action === "summary" ||
+    intent.action === "list_expenses" ||
     intent.action === "create_task" ||
     intent.action === "create_reminder" ||
     intent.action === "create_expense" ||
@@ -135,6 +137,11 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
       return formatSummary(summary, intent.range, env.APP_TIMEZONE, env.DEFAULT_CURRENCY);
     }
 
+    if (intent.action === "list_expenses") {
+      const history = await getExpenseHistory(env.PERSONAL_ASSISTANT_DB, { userId, category: intent.category });
+      return formatExpenseHistory(history, intent.category, env.APP_TIMEZONE);
+    }
+
     if (intent.action === "create_task") {
       await createTask(env.PERSONAL_ASSISTANT_DB, { userId, title: intent.title });
       return `✅ Tarea creada\n\n${intent.title}`;
@@ -148,7 +155,8 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
         category: intent.category,
         description: intent.description,
       });
-      return `💰 Gasto registrado\n\n${formatExpenseAmount(intent.amountCents, intent.currency)}\nCategoría: ${intent.category}`;
+      const description = intent.description ? `\nDescripción: ${intent.description}` : "";
+      return `💰 Gasto registrado\n\n${formatExpenseAmount(intent.amountCents, intent.currency)}\nCategoría: ${intent.category}${description}`;
     }
 
     if (intent.action === "save_note") {
@@ -187,6 +195,18 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
 
   if (intent.action === "unknown" && intent.reason === "missing_expense_category") {
     return "Indica qué fue el gasto. Ejemplo: /gasto 450 gasolina";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "missing_expense_amount") {
+    return "Para registrarlo necesito el monto. Ejemplo: gasté 450 en carro por compra de radiador";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "expense_description_too_long") {
+    return "La descripción del gasto es demasiado larga.";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "missing_expense_history_category") {
+    return "Dime la categoría. Ejemplo: historial de gastos de carro";
   }
 
   if (intent.action === "unknown" && intent.reason === "missing_note_content") {
@@ -251,6 +271,29 @@ function formatSummary(summary: SummaryResult, range: "today" | "week" | "month"
   return lines.join("\n");
 }
 
+function formatExpenseHistory(history: ExpenseHistoryResult, category: string | undefined, timezone: string): string {
+  const title = category ? `📊 Historial de gastos · ${category}` : "📊 Historial de gastos";
+  const lines = [title, ""];
+
+  if (history.expenses.length === 0) {
+    lines.push(category ? `No encontré gastos en “${category}”.` : "No encontré gastos registrados.");
+    return lines.join("\n");
+  }
+
+  lines.push("Totales:");
+  lines.push(...history.totals.map((total) => `• ${formatExpenseAmount(total.totalCents, total.currency)}`));
+  lines.push("", "Últimos gastos:");
+  lines.push(
+    ...history.expenses.map((expense) => {
+      const local = getZonedDateTime(new Date(expense.occurredAt), timezone);
+      const date = `${local.year}-${String(local.month).padStart(2, "0")}-${String(local.day).padStart(2, "0")}`;
+      const detail = expense.description ? ` · ${expense.description}` : "";
+      return `• ${date} · ${formatExpenseAmount(expense.amountCents, expense.currency)}${detail}`;
+    }),
+  );
+  return lines.join("\n");
+}
+
 function getCommandReply(text: string): string | null {
   const command = text.split(/\s+/, 1)[0].toLowerCase().split("@")[0];
 
@@ -259,7 +302,7 @@ function getCommandReply(text: string): string | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos y enlaces.\n\nEjemplos:\n• tarea comprar medicina\n• recuérdame pagar internet mañana\n• gasto 450 gasolina\n• guardar https://ejemplo.com";
+    return "Puedo ayudarte con tareas, recordatorios, gastos y enlaces.\n\nEjemplos:\n• tarea comprar medicina\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• guardar https://ejemplo.com";
   }
 
   return null;

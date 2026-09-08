@@ -74,6 +74,60 @@ function createEnv(db: D1Database) {
   return { env, sentMessages, telegramFetch };
 }
 
+function createExpenseHistoryDb() {
+  const processedUpdates = new Set<number>();
+  const users = new Map<number, number>();
+  let nextUserId = 1;
+
+  const db = {
+    prepare(query: string) {
+      return {
+        bind(...values: unknown[]) {
+          return {
+            async run() {
+              if (query.startsWith("INSERT OR IGNORE INTO processed_updates")) {
+                const updateId = Number(values[0]);
+                const inserted = !processedUpdates.has(updateId);
+                if (inserted) processedUpdates.add(updateId);
+                return { success: true, meta: { changes: inserted ? 1 : 0, last_row_id: 0 } };
+              }
+              if (query.startsWith("INSERT OR IGNORE INTO users")) {
+                const telegramUserId = Number(values[0]);
+                if (!users.has(telegramUserId)) users.set(telegramUserId, nextUserId++);
+              }
+              return { success: true, meta: { changes: 1, last_row_id: 0 } };
+            },
+            async first<T>() {
+              if (query.startsWith("SELECT id FROM users")) {
+                return { id: users.get(Number(values[0])) } as T;
+              }
+              return null;
+            },
+            async all<T>() {
+              if (query.startsWith("SELECT currency")) {
+                return { results: [{ currency: "MXN", totalCents: 90_000 }] } as D1Result<T>;
+              }
+              return {
+                results: [
+                  {
+                    amountCents: 45_000,
+                    currency: "MXN",
+                    category: "carro",
+                    description: "compra de radiador",
+                    occurredAt: "2026-09-07T20:00:00.000Z",
+                  },
+                ],
+              } as D1Result<T>;
+            },
+          };
+        },
+      };
+    },
+  };
+
+  return db as unknown as D1Database;
+}
+
 describe("expense webhook flow", () => {
   it("persists an authorized expense and confirms the amount", async () => {
     const { db, expenses } = createExpenseDb();
@@ -100,5 +154,80 @@ describe("expense webhook flow", () => {
     expect(sentMessages[0]).toMatchObject({ chat_id: 42 });
     expect(sentMessages[0].text).toContain("450");
     expect(sentMessages[0].text).toContain("gasolina");
+  });
+
+  it("confirms the description of a natural expense", async () => {
+    const { db } = createExpenseDb();
+    const { env, sentMessages, telegramFetch } = createEnv(db);
+    const request = new Request("https://bot.test/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
+      body: JSON.stringify({
+        update_id: 33,
+        message: {
+          message_id: 1,
+          date: 1_757_000_000,
+          chat: { id: 42, type: "private" },
+          from: { id: 42, is_bot: false, first_name: "Marco" },
+          text: "Gasté 450 en carro por compra de radiador",
+        },
+      }),
+    });
+
+    const response = await handleRequest(request, env, telegramFetch);
+
+    expect(response.status).toBe(200);
+    expect(sentMessages[0].text).toContain("Descripción: compra de radiador");
+  });
+
+  it("returns a natural expense history for the requested category", async () => {
+    const db = createExpenseHistoryDb();
+    const { env, sentMessages, telegramFetch } = createEnv(db);
+    const request = new Request("https://bot.test/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
+      body: JSON.stringify({
+        update_id: 31,
+        message: {
+          message_id: 1,
+          date: 1_757_000_000,
+          chat: { id: 42, type: "private" },
+          from: { id: 42, is_bot: false, first_name: "Marco" },
+          text: "Muéstrame el historial de gastos de carro",
+        },
+      }),
+    });
+
+    const response = await handleRequest(request, env, telegramFetch);
+
+    expect(response.status).toBe(200);
+    expect(sentMessages[0].text).toContain("Historial de gastos");
+    expect(sentMessages[0].text).toContain("$900 MXN");
+    expect(sentMessages[0].text).toContain("compra de radiador");
+  });
+
+  it("does not persist a natural expense when the amount is missing", async () => {
+    const { db, expenses } = createExpenseDb();
+    const { env, sentMessages, telegramFetch } = createEnv(db);
+    const request = new Request("https://bot.test/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
+      body: JSON.stringify({
+        update_id: 32,
+        message: {
+          message_id: 1,
+          date: 1_757_000_000,
+          chat: { id: 42, type: "private" },
+          from: { id: 42, is_bot: false, first_name: "Marco" },
+          text: "Agrega a Gastos de carro compra de radiador",
+        },
+      }),
+    });
+
+    const response = await handleRequest(request, env, telegramFetch);
+
+    expect(response.status).toBe(200);
+    expect(expenses).toHaveLength(0);
+    expect(sentMessages[0].text).toContain("necesito el monto");
   });
 });

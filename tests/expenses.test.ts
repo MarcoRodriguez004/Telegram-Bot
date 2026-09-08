@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createExpense } from "../src/modules/expenses/repository";
+import { createExpense, getExpenseHistory } from "../src/modules/expenses/repository";
 
 function createDb() {
   const calls: Array<{ query: string; values: unknown[] }> = [];
@@ -54,5 +54,53 @@ describe("expense repository", () => {
       "Expense category is required",
     );
     expect(calls).toHaveLength(0);
+  });
+
+  it("returns category totals and the newest expenses for one user", async () => {
+    const queries: Array<{ query: string; values: unknown[] }> = [];
+    const db = {
+      prepare(query: string) {
+        return {
+          bind(...values: unknown[]) {
+            queries.push({ query, values });
+            return {
+              async all<T>() {
+                if (query.startsWith("SELECT currency")) {
+                  return { results: [{ currency: "MXN", totalCents: 90_000 }] } as D1Result<T>;
+                }
+                return {
+                  results: [
+                    {
+                      amountCents: 45_000,
+                      currency: "MXN",
+                      category: "carro",
+                      description: "compra de radiador",
+                      occurredAt: "2026-09-07T20:00:00.000Z",
+                    },
+                  ],
+                } as D1Result<T>;
+              },
+            };
+          },
+        };
+      },
+    };
+
+    const result = await getExpenseHistory(db as unknown as D1Database, { userId: 3, category: "carro" });
+
+    expect(result).toEqual({
+      totals: [{ currency: "MXN", totalCents: 90_000 }],
+      expenses: [
+        {
+          amountCents: 45_000,
+          currency: "MXN",
+          category: "carro",
+          description: "compra de radiador",
+          occurredAt: "2026-09-07T20:00:00.000Z",
+        },
+      ],
+    });
+    expect(queries[0].values).toEqual([3, "carro"]);
+    expect(queries[1].values).toEqual([3, "carro", 20]);
   });
 });

@@ -7,12 +7,16 @@ const MAX_MESSAGE_LENGTH = 4_000;
 const MAX_TASK_TITLE_LENGTH = 500;
 const MAX_REMINDER_TITLE_LENGTH = 500;
 const MAX_EXPENSE_CATEGORY_LENGTH = 200;
+const MAX_EXPENSE_DESCRIPTION_LENGTH = 1_000;
 const MAX_NOTE_CONTENT_LENGTH = 1_000;
 const TASK_COMMAND = /^(?:\/)?(?:tarea|pendiente)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const REMINDER_COMMAND = /^(?:\/)?(?:recordar|recordatorio)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
-const NATURAL_REMINDER = /^recu[eé]rdame(?:\s+que)?\s+(.+)$/iu;
+const NATURAL_REMINDER = /^(?:recu[eé]rdame|quiero\s+que\s+me\s+recuerdes?|me\s+(?:puedes|podrías)\s+recordar|av[ií]same)(?:\s+que)?\s+(.+)$/iu;
 const EXPENSE_COMMAND = /^(?:\/)?gasto(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const NATURAL_EXPENSE = /^(?:gast[eé]|apunta(?:me)?|anota)\s+(.+)$/iu;
+const ADD_EXPENSE = /^agrega(?:r)?\s+(?:a\s+)?(?:los?\s+)?gastos?(?:\s+de)?\s+(.+)$/iu;
+const EXPENSE_HISTORY = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:el\s+)?historial\s+de\s+gastos?(?:\s+de\s+(.+))?$/iu;
+const NATURAL_EXPENSE_HISTORY = /^(?:mis\s+gastos?|gastos?)\s+(?:de|en)\s+(.+)$/iu;
 const NOTE_COMMAND = /^(?:\/)?(?:nota|apunte)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
@@ -21,6 +25,9 @@ const DELETE_DATA_PREFIX = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?(?:\s+.*)?$/iu;
 const URL_PATTERN = /https?:\/\/[^\s<>]+/iu;
 const ANY_SCHEME_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>]+/iu;
 const RELATIVE_REMINDER = /(?:^|\s+)en\s+(\d+|un(?:a)?)\s+(minutos?|horas?)\b/iu;
+const REMINDER_DATE_PATTERN = /\b(hoy|ma[ñn]ana)\b/iu;
+const REMINDER_TIME_PATTERN = /(?:(?:a\s+las?\s*)?(\d{1,2})(?::(\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?|de\s+la\s+(?:ma[ñn]ana|tarde|noche))?)/iu;
+const EXPENSE_AMOUNT_PATTERN = /(?<![\w$.,])(?:\$\s*|(?:mxn|pesos?)\s*)?\d[\d.,]*(?:\s*(?:mxn|pesos?))?(?![\w.,])/iu;
 
 export interface ParseOptions {
   now?: Date;
@@ -53,9 +60,25 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
     return parseReminder(reminderMatch[1] ?? "", options);
   }
 
-  const expenseMatch = EXPENSE_COMMAND.exec(normalized) ?? NATURAL_EXPENSE.exec(normalized);
-  if (expenseMatch) {
-    return parseExpense(expenseMatch[1] ?? "", options);
+  const expenseHistoryMatch = EXPENSE_HISTORY.exec(normalized) ?? NATURAL_EXPENSE_HISTORY.exec(normalized);
+  if (expenseHistoryMatch) {
+    const category = expenseHistoryMatch[1]?.trim();
+    return category ? { action: "list_expenses", category, range: "all" } : { action: "unknown", reason: "missing_expense_history_category" };
+  }
+
+  const expenseCommandMatch = EXPENSE_COMMAND.exec(normalized);
+  if (expenseCommandMatch) {
+    return parseExpense(expenseCommandMatch[1] ?? "", options);
+  }
+
+  const naturalExpenseMatch = NATURAL_EXPENSE.exec(normalized);
+  if (naturalExpenseMatch) {
+    return parseNaturalExpense(naturalExpenseMatch[1] ?? "", options);
+  }
+
+  const addExpenseMatch = ADD_EXPENSE.exec(normalized);
+  if (addExpenseMatch) {
+    return parseNaturalExpense(addExpenseMatch[1] ?? "", options);
   }
 
   const linkMatch = LINK_COMMAND.exec(normalized);
@@ -162,6 +185,95 @@ function parseExpense(payload: string, options: ParseOptions): Intent {
   return { action: "create_expense", amountCents, currency, category };
 }
 
+function parseNaturalExpense(payload: string, options: ParseOptions): Intent {
+  const amountCandidate = findNaturalExpenseAmount(payload);
+  const amountMatch = amountCandidate.match;
+  if (!amountMatch || amountMatch.index === undefined) {
+    return { action: "unknown", reason: amountCandidate.found ? "invalid_expense_amount" : "missing_expense_amount" };
+  }
+
+  const amountValue = amountMatch[0].replace(/\s*(?:mxn|pesos?)\s*$/iu, "").trim();
+  const amountCents = parseAmountCents(amountValue);
+  if (amountCents === null || amountCents > MAX_EXPENSE_CENTS) {
+    return { action: "unknown", reason: "invalid_expense_amount" };
+  }
+
+  const details = parseNaturalExpenseDetails(
+    `${payload.slice(0, amountMatch.index)} ${payload.slice(amountMatch.index + amountMatch[0].length)}`,
+  );
+  if (!details.category) {
+    return { action: "unknown", reason: "missing_expense_category" };
+  }
+  if (details.category.length > MAX_EXPENSE_CATEGORY_LENGTH) {
+    return { action: "unknown", reason: "expense_category_too_long" };
+  }
+  if (details.description && details.description.length > MAX_EXPENSE_DESCRIPTION_LENGTH) {
+    return { action: "unknown", reason: "expense_description_too_long" };
+  }
+
+  const currency = (options.currency ?? "MXN").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    return { action: "unknown", reason: "invalid_currency" };
+  }
+
+  return { action: "create_expense", amountCents, currency, ...details };
+}
+
+function parseNaturalExpenseDetails(payload: string): { category: string; description?: string } {
+  const value = payload
+    .trim()
+    .replace(/^(?:en|de|por)\s+/iu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!value) {
+    return { category: "" };
+  }
+
+  const separator = /\s+(?:por|para)\s+|\s*[:,;-]\s*/iu.exec(value);
+  if (separator && separator.index !== undefined) {
+    return {
+      category: value.slice(0, separator.index).trim(),
+      description: value.slice(separator.index + separator[0].length).trim() || undefined,
+    };
+  }
+
+  const words = value.split(" ");
+  if (words.length > 1) {
+    return { category: words[0], description: words.slice(1).join(" ") };
+  }
+  return { category: value };
+}
+
+function findNaturalExpenseAmount(value: string): { match: RegExpExecArray | null; found: boolean } {
+  const pattern = new RegExp(EXPENSE_AMOUNT_PATTERN.source, "giu");
+  const candidates: RegExpExecArray[] = [];
+  let candidate: RegExpExecArray | null;
+  while ((candidate = pattern.exec(value)) !== null) {
+    candidates.push(candidate);
+    if (candidate[0].length === 0) {
+      pattern.lastIndex += 1;
+    }
+  }
+
+  if (candidates.length === 0) {
+    return { match: null, found: false };
+  }
+
+  const currencyCandidates = candidates.filter((item) => /\$|mxn|pesos?/iu.test(item[0]));
+  if (currencyCandidates.length === 1) {
+    return { match: currencyCandidates[0], found: true };
+  }
+  if (currencyCandidates.length > 1 || candidates.length !== 1) {
+    return { match: null, found: true };
+  }
+
+  const onlyCandidate = candidates[0];
+  const before = value.slice(0, onlyCandidate.index).trim();
+  const after = value.slice(onlyCandidate.index + onlyCandidate[0].length).trim();
+  const isAmountPosition = !before || /\bpor\s*$/iu.test(before) || /^(?:en|por|para)\b/iu.test(after);
+  return { match: isAmountPosition ? onlyCandidate : null, found: true };
+}
+
 function parseReminder(payload: string, options: ParseOptions): Intent {
   const titleAndTime = extractReminderTime(payload, options);
   if (titleAndTime.reason) {
@@ -182,40 +294,9 @@ function parseReminder(payload: string, options: ParseOptions): Intent {
 function extractReminderTime(payload: string, options: ParseOptions): { title: string; remindAt?: string; reason?: string } {
   const now = options.now ?? new Date();
   const timezone = options.timezone ?? "America/Mexico_City";
-  const localMatch = /\s+(hoy|ma[ñn]ana)(?:\s+a\s+las?\s+(\d{1,2})(?::(\d{2}))?)?$/iu.exec(payload);
   const relativeMatch = RELATIVE_REMINDER.exec(payload);
 
   try {
-    if (localMatch) {
-      const title = payload.slice(0, localMatch.index);
-      const currentLocal = getZonedDateTime(now, timezone);
-      const hour = localMatch[2] === undefined ? 9 : Number(localMatch[2]);
-      const minute = localMatch[3] === undefined ? 0 : Number(localMatch[3]);
-      if (hour > 23 || minute > 59) {
-        return { title, reason: "invalid_reminder_time" };
-      }
-
-      const localDay = new Date(Date.UTC(
-        currentLocal.year,
-        currentLocal.month - 1,
-        currentLocal.day + (localMatch[1].toLowerCase().includes("mañ") || localMatch[1].toLowerCase().includes("man") ? 1 : 0),
-      ));
-      const remindAt = localDateTimeToUtc(
-        {
-          year: localDay.getUTCFullYear(),
-          month: localDay.getUTCMonth() + 1,
-          day: localDay.getUTCDate(),
-          hour,
-          minute,
-        },
-        timezone,
-      );
-      if (remindAt.getTime() <= now.getTime()) {
-        return { title, reason: "reminder_time_in_past" };
-      }
-      return { title, remindAt: remindAt.toISOString() };
-    }
-
     if (relativeMatch) {
       const countToken = relativeMatch[1].toLowerCase();
       const count = countToken === "un" || countToken === "una" ? 1 : Number(countToken);
@@ -229,9 +310,109 @@ function extractReminderTime(payload: string, options: ParseOptions): { title: s
       const after = payload.slice(relativeMatch.index + relativeMatch[0].length).replace(/^que\s+/iu, "").trim();
       return { title: [before, after].filter(Boolean).join(" "), remindAt: remindAt.toISOString() };
     }
+
+    const dateMatch = REMINDER_DATE_PATTERN.exec(payload);
+    const timeMatch = findExplicitReminderTime(payload);
+    if (!dateMatch && !timeMatch) {
+      return { title: payload, reason: "missing_reminder_time" };
+    }
+
+    const currentLocal = getZonedDateTime(now, timezone);
+    const parsedTime = timeMatch ? parseReminderClock(timeMatch) : { hour: 9, minute: 0 };
+    if (!parsedTime) {
+      return { title: payload, reason: "invalid_reminder_time" };
+    }
+
+    const titleParts = [dateMatch, timeMatch]
+      .filter((match): match is RegExpExecArray => match !== null)
+      .sort((left, right) => (right.index ?? 0) - (left.index ?? 0));
+    let title = payload;
+    for (const match of titleParts) {
+      title = `${title.slice(0, match.index)} ${title.slice((match.index ?? 0) + match[0].length)}`;
+    }
+    title = title.replace(/^\s*(?:que|para)\s+/iu, "").replace(/\s+/g, " ").trim();
+
+    const dateLabel = dateMatch?.[1].toLowerCase() ?? "";
+    const explicitTomorrow = dateLabel.includes("mañ") || dateLabel.includes("man");
+    const localDay = new Date(Date.UTC(
+      currentLocal.year,
+      currentLocal.month - 1,
+      currentLocal.day + (explicitTomorrow ? 1 : 0),
+    ));
+    let remindAt = localDateTimeToUtc(
+      {
+        year: localDay.getUTCFullYear(),
+        month: localDay.getUTCMonth() + 1,
+        day: localDay.getUTCDate(),
+        ...parsedTime,
+      },
+      timezone,
+    );
+
+    if (!dateMatch && timeMatch && remindAt.getTime() <= now.getTime()) {
+      localDay.setUTCDate(localDay.getUTCDate() + 1);
+      remindAt = localDateTimeToUtc(
+        {
+          year: localDay.getUTCFullYear(),
+          month: localDay.getUTCMonth() + 1,
+          day: localDay.getUTCDate(),
+          ...parsedTime,
+        },
+        timezone,
+      );
+    }
+
+    if (remindAt.getTime() <= now.getTime()) {
+      return { title, reason: "reminder_time_in_past" };
+    }
+    return { title, remindAt: remindAt.toISOString() };
   } catch {
     return { title: payload, reason: "invalid_reminder_timezone" };
   }
 
-  return { title: payload, reason: "missing_reminder_time" };
+}
+
+function hasExplicitReminderTime(value: string): boolean {
+  return /a\s+las|:|a\.?\s*m\.?|p\.?\s*m\.?|de\s+la/iu.test(value);
+}
+
+function findExplicitReminderTime(value: string): RegExpExecArray | null {
+  const pattern = new RegExp(REMINDER_TIME_PATTERN.source, "giu");
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value)) !== null) {
+    if (hasExplicitReminderTime(match[0])) {
+      return match;
+    }
+    if (match[0].length === 0) {
+      pattern.lastIndex += 1;
+    }
+  }
+  return null;
+}
+
+function parseReminderClock(match: RegExpExecArray): { hour: number; minute: number } | null {
+  const hour = Number(match[1]);
+  const minute = match[2] === undefined ? 0 : Number(match[2]);
+  const marker = (match[3] ?? "").toLowerCase().replace(/\./g, "");
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || minute > 59) {
+    return null;
+  }
+
+  if (!marker) {
+    return hour <= 23 ? { hour, minute } : null;
+  }
+  if (hour < 1 || hour > 12) {
+    return null;
+  }
+
+  const isAfternoon = marker.startsWith("p") || marker.includes("tarde") || marker.includes("noche");
+  const isMorning = marker.startsWith("a") || marker.includes("mañana") || marker.includes("manana");
+  if (!isAfternoon && !isMorning) {
+    return null;
+  }
+
+  return {
+    hour: isAfternoon ? (hour === 12 ? 12 : hour + 12) : hour === 12 ? 0 : hour,
+    minute,
+  };
 }

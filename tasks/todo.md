@@ -10,5 +10,7 @@
 - [x] Implementar gastos.
 - [x] Implementar enlaces/notas y `/resumen`.
 - [x] Implementar borrado de datos.
-- [ ] Configurar Workers Builds y webhook de producción.
+- [x] Configurar deploy automático por GitHub Actions y webhook de producción.
 - [ ] Añadir parser ampliado y LLM opcional.
+- [x] Recordatorios naturales con hora (`2pm`, `2:30 pm`, `14:00`).
+- [x] Gastos naturales con categoría, descripción e historial por categoría.

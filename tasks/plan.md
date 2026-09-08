@@ -87,3 +87,27 @@ Wrangler + Env + D1
 ## Resultado esperado de la primera entrega
 
 Un bot desplegado en `*.workers.dev`, accesible solo para una cuenta, capaz de crear tareas, recordatorios y gastos desde texto natural acotado, guardar enlaces, responder `/resumen` y entregar recordatorios sin un servidor permanente.
+
+## Incremento actual: lenguaje natural para recordatorios y gastos
+
+### Objetivo
+
+Permitir frases naturales acotadas para crear recordatorios con hora, registrar gastos con monto, categoría y descripción, y consultar el historial de una categoría sin depender de un LLM.
+
+### Tareas
+
+- [ ] Ampliar el parser de recordatorios para horas de 12/24 horas y próxima ocurrencia.
+- [ ] Ampliar el parser de gastos para reconocer verbos naturales, monto en distintas posiciones, categoría y descripción.
+- [ ] Añadir una intención y consulta parametrizada para historial de gastos por categoría.
+- [ ] Añadir pruebas unitarias y de webhook para los tres flujos.
+
+### Criterios de aceptación
+
+- [ ] `Quiero que me recuerdes a las 2pm tomarme mi medicamento` crea un recordatorio futuro en la zona horaria configurada.
+- [ ] `Gasté 450 en carro por compra de radiador` persiste monto, categoría y descripción.
+- [ ] `Muéstrame el historial de gastos de carro` devuelve total y detalle únicamente del usuario autorizado y de la categoría solicitada.
+- [ ] Un gasto sin monto pide el monto y no inserta un registro incompleto.
+
+### Decisión de seguridad
+
+No se persisten gastos sin monto ni se adivina un valor. El seguimiento conversacional para responder el monto en un mensaje posterior queda como una siguiente migración de D1, porque requiere estado persistente y expiración del borrador.

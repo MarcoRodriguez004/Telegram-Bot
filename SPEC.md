@@ -6,6 +6,9 @@ Crear un asistente personal modular en Telegram. El usuario escribe en un único
 
 - `gasto 450 gasolina`
 - `recuérdame pagar internet mañana`
+- `quiero que me recuerdes a las 2pm tomarme mi medicamento`
+- `gasté 450 en carro por compra de radiador`
+- `muéstrame el historial de gastos de carro`
 - `guardar este link https://ejemplo.com/articulo`
 - `tarea comprar medicina`
 
@@ -52,6 +55,7 @@ type Intent =
   | { action: "create_task"; title: string; dueAt?: string }
   | { action: "create_reminder"; title: string; remindAt: string }
   | { action: "create_expense"; amountCents: number; currency: string; category: string; description?: string }
+  | { action: "list_expenses"; category?: string; range: "all" }
   | { action: "save_note"; content: string; url?: string }
   | { action: "summary"; range: "today" | "week" | "month" }
   | { action: "delete_data"; confirmation: true }
