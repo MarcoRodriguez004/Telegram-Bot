@@ -3,6 +3,7 @@ import { claimUpdate } from "./db/repository";
 import { createReminder } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { createExpense } from "./modules/expenses/repository";
+import { createNote } from "./modules/notes/repository";
 import { createTask } from "./modules/tasks/repository";
 import { parseIntent } from "./router/parser";
 import { getZonedDateTime } from "./shared/dates";
@@ -96,7 +97,12 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
   }
 
   const intent = parseIntent(text, { timezone: env.APP_TIMEZONE, currency: env.DEFAULT_CURRENCY });
-  if (intent.action === "create_task" || intent.action === "create_reminder" || intent.action === "create_expense") {
+  if (
+    intent.action === "create_task" ||
+    intent.action === "create_reminder" ||
+    intent.action === "create_expense" ||
+    intent.action === "save_note"
+  ) {
     const message = update.message;
     const telegramUserId = message?.from?.id;
     if (!message || telegramUserId === undefined) {
@@ -125,6 +131,16 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
       return `💰 Gasto registrado\n\n${formatExpenseAmount(intent.amountCents, intent.currency)}\nCategoría: ${intent.category}`;
     }
 
+    if (intent.action === "save_note") {
+      await createNote(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        content: intent.content,
+        url: intent.url,
+      });
+      const savedContent = intent.url && intent.content !== intent.url ? `${intent.content}\n${intent.url}` : intent.content;
+      return `🔖 Nota guardada\n\n${savedContent}`;
+    }
+
     await createReminder(env.PERSONAL_ASSISTANT_DB, {
       userId,
       title: intent.title,
@@ -151,6 +167,18 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
 
   if (intent.action === "unknown" && intent.reason === "missing_expense_category") {
     return "Indica qué fue el gasto. Ejemplo: /gasto 450 gasolina";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "missing_note_content") {
+    return "Escribe el contenido de la nota. Ejemplo: /nota recordar renovar seguro";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "missing_note_url") {
+    return "No encontré el link. Usa una URL http o https, por ejemplo: guardar https://ejemplo.com";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "invalid_note_url") {
+    return "Solo guardo URLs http o https; no descargo ni ejecuto el contenido.";
   }
 
   return "Todavía estoy construyendo mis módulos. Por ahora prueba /start, /help o /tarea comprar medicina.";
