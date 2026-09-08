@@ -15,6 +15,7 @@ const EXPENSE_COMMAND = /^(?:\/)?gasto(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const NATURAL_EXPENSE = /^(?:gast[eé]|apunta(?:me)?|anota)\s+(.+)$/iu;
 const NOTE_COMMAND = /^(?:\/)?(?:nota|apunte)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const URL_PATTERN = /https?:\/\/[^\s<>]+/iu;
 const ANY_SCHEME_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>]+/iu;
 
@@ -29,6 +30,11 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
 
   if (!normalized || normalized.length > MAX_MESSAGE_LENGTH) {
     return { action: "unknown", reason: "unsupported_message" };
+  }
+
+  const summaryMatch = SUMMARY_COMMAND.exec(normalized);
+  if (summaryMatch) {
+    return parseSummary(summaryMatch[1] ?? "");
   }
 
   const reminderMatch = REMINDER_COMMAND.exec(normalized) ?? NATURAL_REMINDER.exec(normalized);
@@ -66,6 +72,20 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   }
 
   return { action: "create_task", title };
+}
+
+function parseSummary(payload: string): Intent {
+  const range = payload.trim().toLowerCase();
+  if (!range || range === "hoy" || range === "día" || range === "dia") {
+    return { action: "summary", range: "today" };
+  }
+  if (range === "semana") {
+    return { action: "summary", range: "week" };
+  }
+  if (range === "mes") {
+    return { action: "summary", range: "month" };
+  }
+  return { action: "unknown", reason: "invalid_summary_range" };
 }
 
 function parseNote(payload: string, requiresUrl: boolean): Intent {
