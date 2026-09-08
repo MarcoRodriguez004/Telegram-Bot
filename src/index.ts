@@ -1,5 +1,6 @@
 import { ensureUser } from "./db/users";
 import { claimUpdate } from "./db/repository";
+import { deleteUserData } from "./modules/privacy/repository";
 import { createReminder } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { createExpense } from "./modules/expenses/repository";
@@ -99,6 +100,16 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
   }
 
   const intent = parseIntent(text, { timezone: env.APP_TIMEZONE, currency: env.DEFAULT_CURRENCY });
+  if (intent.action === "delete_data") {
+    const telegramUserId = update.message?.from?.id;
+    if (telegramUserId === undefined) {
+      return "No pude identificar al usuario de Telegram.";
+    }
+
+    await deleteUserData(env.PERSONAL_ASSISTANT_DB, telegramUserId);
+    return "🗑️ Tus datos personales fueron eliminados.";
+  }
+
   if (
     intent.action === "summary" ||
     intent.action === "create_task" ||
@@ -192,6 +203,10 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
 
   if (intent.action === "unknown" && intent.reason === "invalid_summary_range") {
     return "El resumen acepta: hoy, semana o mes. Ejemplo: /resumen semana";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "delete_confirmation_required") {
+    return "Para borrar tus datos escribe exactamente: /borrar_datos CONFIRMAR";
   }
 
   return "Todavía estoy construyendo mis módulos. Por ahora prueba /start, /help o /tarea comprar medicina.";
