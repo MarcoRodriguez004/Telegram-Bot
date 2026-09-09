@@ -1,6 +1,8 @@
 export type Intent =
   | { action: "create_task"; title: string }
+  | { action: "list_tasks"; filter?: "pending" | "completed" | "cancelled" | "all" }
   | { action: "create_reminder"; title: string; remindAt: string }
+  | { action: "list_reminders"; filter?: "pending" | "completed" | "cancelled" | "all" }
   | { action: "create_expense"; amountCents: number; currency: string; category: string; description?: string }
   | { action: "list_expenses"; category?: string; range: "all" }
   | { action: "save_note"; content: string; url?: string }

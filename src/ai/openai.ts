@@ -21,7 +21,9 @@ const AI_INTENT_SCHEMA = {
       type: "string",
       enum: [
         "create_task",
+        "list_tasks",
         "create_reminder",
+        "list_reminders",
         "create_expense",
         "save_note",
         "list_expenses",
@@ -43,6 +45,7 @@ const AI_INTENT_SCHEMA = {
     beforeId: { type: ["integer", "null"] },
     noteId: { type: ["integer", "null"] },
     range: { type: ["string", "null"], enum: ["today", "week", "month", null] },
+    filter: { type: ["string", "null"], enum: ["pending", "completed", "cancelled", "all", null] },
     message: { type: ["string", "null"] },
     question: { type: ["string", "null"] },
     missing: { type: "array", items: { type: "string" } },
@@ -60,6 +63,7 @@ const AI_INTENT_SCHEMA = {
     "beforeId",
     "noteId",
     "range",
+    "filter",
     "message",
     "question",
     "missing",
@@ -77,6 +81,7 @@ Reglas:
 - Para recordatorios, devuelve when en lenguaje breve que el parser acepta: «hoy», «mañana», «mañana a las 09:00», «a las 18:30» o «en 20 minutos».
 - Para gastos, amount debe conservar el número que escribió el usuario como texto; no conviertas moneda ni adivines un monto.
 - Usa reply para conversación, saludos y ayuda. Esa respuesta debe ser breve y describir solo capacidades reales del bot; no afirmes que guardaste o creaste algo.
+- Para consultar tareas o recordatorios, usa list_tasks o list_reminders. Si el usuario no indica estado, deja filter en null para que el Worker muestre botones de selección.
 - Usa clarify cuando falte información o la petición sea ambigua. Pon la pregunta para el usuario en question e incluye en missing los campos que faltan.
 `;
 
@@ -164,12 +169,16 @@ function normalizeCandidate(value: unknown, options: ParseOptions): Intent | nul
       const title = getString(value, "title") ?? "";
       return parseIntent(`tarea ${title}`, options);
     }
+    case "list_tasks":
+      return normalizeListIntent("list_tasks", value);
     case "create_reminder": {
       const title = getString(value, "title") ?? "";
       const when = getString(value, "when");
       if (!when) return { action: "unknown", reason: "missing_reminder_time" };
       return parseIntent(`recordar ${when} ${title}`, options);
     }
+    case "list_reminders":
+      return normalizeListIntent("list_reminders", value);
     case "create_expense":
       return normalizeExpense(value, options);
     case "save_note":
@@ -210,6 +219,15 @@ function normalizeCandidate(value: unknown, options: ParseOptions): Intent | nul
     default:
       return null;
   }
+}
+
+function normalizeListIntent(action: "list_tasks" | "list_reminders", value: Record<string, unknown>): Intent {
+  const rawFilter = value.filter;
+  if (rawFilter === null || rawFilter === undefined) return { action };
+  if (rawFilter === "pending" || rawFilter === "completed" || rawFilter === "cancelled" || rawFilter === "all") {
+    return { action, filter: rawFilter };
+  }
+  return { action: "unknown", reason: action === "list_tasks" ? "invalid_task_filter" : "invalid_reminder_filter" };
 }
 
 function normalizeExpense(value: Record<string, unknown>, options: ParseOptions): Intent {

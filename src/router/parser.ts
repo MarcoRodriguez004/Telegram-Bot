@@ -12,6 +12,8 @@ const MAX_NOTE_CONTENT_LENGTH = 1_000;
 const TASK_COMMAND = /^(?:\/)?(?:tarea|pendiente)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const REMINDER_COMMAND = /^(?:\/)?(?:recordar|recordatorio)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const NATURAL_REMINDER = /^(?:recu[eé]rdame|quiero\s+que\s+me\s+recuerdes?|me\s+(?:puedes|podrías)\s+recordar|av[ií]same)(?:\s+que)?\s+(.+)$/iu;
+const TASK_LIST = /^(?:\/?(?:mis\s+)?tareas?)(?:\s+(pendientes?|complet(?:a(?:s)?|ad[ao]s?)|cancelad(?:a|as|o|os)|todas?))?$/iu;
+const REMINDER_LIST = /^(?:\/?(?:mis\s+)?recordatorios?)(?:\s+(pendientes?|complet(?:a(?:s)?|ad[ao]s?)|cancelad(?:a|as|o|os)|todas?))?$/iu;
 const EXPENSE_COMMAND = /^(?:\/)?gasto(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const NATURAL_EXPENSE = /^gast[eé]\s+(.+)$/iu;
 const NATURAL_EXPENSE_NOTE = /^(?:apunta(?:me)?|anota)\s+(.+)$/iu;
@@ -73,6 +75,16 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   const summaryMatch = SUMMARY_COMMAND.exec(normalized);
   if (summaryMatch) {
     return parseSummary(summaryMatch[1] ?? "");
+  }
+
+  const taskListMatch = TASK_LIST.exec(normalized);
+  if (taskListMatch) {
+    return parseListIntent("list_tasks", taskListMatch[1]);
+  }
+
+  const reminderListMatch = REMINDER_LIST.exec(normalized);
+  if (reminderListMatch) {
+    return parseListIntent("list_reminders", reminderListMatch[1]);
   }
 
   const reminderMatch = REMINDER_COMMAND.exec(normalized) ?? NATURAL_REMINDER.exec(normalized);
@@ -148,6 +160,16 @@ function parseSummary(payload: string): Intent {
     return { action: "summary", range: "month" };
   }
   return { action: "unknown", reason: "invalid_summary_range" };
+}
+
+function parseListIntent(action: "list_tasks" | "list_reminders", payload?: string): Intent {
+  const value = payload?.trim().toLowerCase();
+  if (!value) return { action };
+  if (/^pendientes?$/iu.test(value)) return { action, filter: "pending" };
+  if (/^complet(?:a(?:s)?|ad[ao]s?)$/iu.test(value)) return { action, filter: "completed" };
+  if (/^cancelad(?:a|as|o|os)$/iu.test(value)) return { action, filter: "cancelled" };
+  if (/^todas?$/iu.test(value)) return { action, filter: "all" };
+  return { action: "unknown", reason: action === "list_tasks" ? "invalid_task_filter" : "invalid_reminder_filter" };
 }
 
 function parseNote(payload: string, requiresUrl: boolean): Intent {
