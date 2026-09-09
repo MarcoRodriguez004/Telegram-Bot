@@ -16,3 +16,18 @@
 - [x] Gastos naturales con categoría, descripción e historial por categoría.
 - [x] Guardar fotos y documentos con `Guarda` en la descripción.
 - [x] Consultar `mis guardados` con paginación y recuperar archivos, notas y enlaces.
+
+## Consultas y acciones con botones
+
+- [ ] Añadir migración y repositorios para estados, cancelación, paginación y edición temporal de tareas/recordatorios.
+- [ ] Validar `callback_query` y añadir teclados inline seguros e idempotentes.
+- [ ] Extender `Intent`/OpenAI con `list_tasks` y `list_reminders`, incluyendo filtros faltantes.
+- [ ] Implementar listas: 10 iniciales, páginas de 20, fechas locales y `Consultar más`.
+- [ ] Implementar menú por registro: completar, editar, cancelar y volver.
+- [ ] Añadir pruebas de unidad, callbacks, autorización, paginación y webhook.
+
+Checkpoint:
+
+- [ ] `tareas` y `recordatorios` preguntan el estado con botones.
+- [ ] Las listas no muestran IDs y los callbacks solo modifican registros del usuario autorizado.
+- [ ] `npm test`, lint, typecheck, build y audit pasan antes del PR.

@@ -1,6 +1,6 @@
 # Especificación: consultas y acciones de tareas y recordatorios
 
-**Estado:** borrador para revisión
+**Estado:** aprobado para implementación
 **Rama:** `feature/task-reminder-queries`
 
 ## Objetivo
@@ -37,11 +37,12 @@ La memoria conversacional de varios turnos queda fuera de este incremento.
 - Consultas de lectura no requieren confirmación; cambios de estado sí se ejecutan únicamente desde un callback validado.
 - Nunca mostrar el ID de D1 al usuario.
 
-## Open Questions
+## Decisiones aprobadas
 
-1. Al pulsar una tarea/recordatorio, ¿el menú debe ofrecer `Completar`, `Editar`, `Cancelar` y `Volver`, o se necesita otra acción?
-2. ¿Editar tarea permite cambiar solo el nombre, o también fecha límite? ¿Editar recordatorio permite cambiar nombre y fecha/hora?
-3. ¿La cancelación debe conservar el registro como `cancelled` (recomendado) o eliminarlo?
+- Al pulsar una tarea o recordatorio, el menú ofrece `Completar`, `Editar`, `Cancelar` y `Volver`.
+- Editar tarea cambia su nombre. Editar recordatorio permite enviar el nuevo nombre y horario en un mensaje; el estado temporal expira y no se convierte en memoria conversacional general.
+- La cancelación conserva el registro con estado `cancelled`; nunca borra silenciosamente el historial.
+- Para recordatorios, la etiqueta `Completados` representa recordatorios ya enviados por el scheduler (`sent` en el almacenamiento actual).
 
 ## Criterios de aceptación
 

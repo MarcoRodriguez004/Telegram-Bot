@@ -132,3 +132,25 @@ La especificación detallada está en [`docs/SPEC-AI-CONVERSATION.md`](../docs/S
 - `OPENAI_MODEL` debe poder configurarse sin recompilar el Worker.
 - La API de OpenAI se usa como intérprete; D1 y los repositorios siguen siendo la fuente de verdad.
 - La memoria de varios turnos queda fuera de esta rama y, si se aprueba, tendrá su propia rama y migración.
+
+## Incremento actual: consultas y acciones de tareas/recordatorios con botones
+
+La especificación aprobada está en [`docs/SPEC-TASK-REMINDER-QUERIES.md`](../docs/SPEC-TASK-REMINDER-QUERIES.md). Este incremento se desarrolla en la rama `feature/task-reminder-queries` desde `origin/main`.
+
+### Orden de implementación
+
+1. **Persistencia y consultas:** añadir estados derivados de cancelación, sesiones temporales de edición, consultas por estado y paginación por cursor.
+2. **Contrato y UI de Telegram:** validar `callback_query`, enviar teclados inline, responder callbacks y conservar la autorización/idempotencia existente.
+3. **Router conversacional:** añadir intenciones de listar tareas/recordatorios y convertir filtros faltantes en selectores inline; mantener los callbacks fuera del LLM.
+4. **Acciones y edición:** completar/cancelar desde botones; editar nombre de tarea o nombre+horario de recordatorio con sesión temporal expirable.
+5. **Verificación:** pruebas de repositorios, parser, callbacks, autorización, paginación, expiración y webhook; después quality gates y smoke test en producción.
+
+### Riesgos y mitigaciones
+
+| Riesgo | Mitigación |
+|---|---|
+| Callback manipulado o de otra cuenta | Validar `from.id`, chat privado, forma del callback y pertenencia del registro antes de mutar D1 |
+| Paginación que omite o duplica registros | Cursor por ID/fecha estable y límites distintos explícitos: 10 iniciales, 20 posteriores |
+| Edición abandonada | Sesión temporal por usuario con expiración y botón de cancelación |
+| Cambio de estado durante el scheduler | Actualizaciones condicionadas por estado y exclusión de cancelados en el reclamo |
+| Migración incompatible con CHECK existente | Añadir columnas derivadas (`cancelled_at`) sin reescribir tablas; conservar estados actuales del scheduler |
