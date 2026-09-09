@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { parseIntent } from "../src/router/parser";
 
 describe("saved item commands", () => {
+  it.each(["muestrame las imagenes guardadas", "muéstrame las fotos guardadas", "imágenes guardadas", "Muestrame mis fotos", "Mis imágenes"])("lists %s as photos", (text) => {
+    expect(parseIntent(text)).toEqual({ action: "list_notes", kind: "photos" });
+  });
+
   it.each(["Mis guardados", "muéstrame mis guardados", "/guardados", "/guardados@my_bot"])("lists with %s", (text) => {
     expect(parseIntent(text)).toEqual({ action: "list_notes" });
   });

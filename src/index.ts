@@ -236,14 +236,19 @@ async function getReply(
       return formatReminderListReply(result.reminders, result.nextBeforeId, intent.filter, env.APP_TIMEZONE);
     }
     if (intent.action === "list_notes") {
-      const { notes, nextBeforeId } = await listNotes(env.PERSONAL_ASSISTANT_DB, userId, intent.beforeId);
-      if (!notes.length) return intent.beforeId ? "No hay más guardados. Volver: /guardados" : "No tienes guardados. Envía una foto o documento con la descripción «Guarda».";
+      const kind = intent.kind ?? "all";
+      const { notes, nextBeforeId } = await listNotes(env.PERSONAL_ASSISTANT_DB, userId, intent.beforeId, kind);
+      if (!notes.length) {
+        if (intent.beforeId) return kind === "photos" ? "No hay más imágenes guardadas." : kind === "documents" ? "No hay más documentos guardados." : "No hay más guardados. Volver: /guardados";
+        return kind === "photos" ? "No tienes imágenes guardadas. Envía una foto con la descripción «Guarda»." : kind === "documents" ? "No tienes documentos guardados. Envía un documento con la descripción «Guarda»." : "No tienes guardados. Envía una foto o documento con la descripción «Guarda».";
+      }
       const lines = notes.map((note) => {
         const kind = note.file_kind === "photo" ? "Foto" : note.file_kind === "document" ? "Documento" : note.url ? "Enlace" : "Nota";
         const preview = note.content.replace(/\s+/g, " ");
         return `/guardado_${note.id} · ${kind} · ${preview.length > 160 ? preview.slice(0, 159) + "…" : preview}`;
       });
-      return ["📎 Mis guardados · más recientes primero", "", ...lines, "", "Toca un comando para ver el guardado.",
+      const title = kind === "photos" ? "📷 Imágenes guardadas · más recientes primero" : kind === "documents" ? "📄 Documentos guardados · más recientes primero" : "📎 Mis guardados · más recientes primero";
+      return [title, "", ...lines, "", "Toca un comando para ver el guardado.",
         ...(nextBeforeId ? [`Más: /guardados_${nextBeforeId}`] : []),
       ].join("\n");
     }

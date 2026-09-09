@@ -20,10 +20,13 @@ La IA no tendrá acceso directo a D1, Telegram ni a herramientas arbitrarias. So
 | Guardar nota/enlace | Texto o URL con intención de guardar | Guarda el contenido | Sí |
 | Consultar | “¿Qué tengo pendiente?”, “mis guardados”, “resumen de esta semana” | Ejecuta la consulta existente | Sí |
 | Conversación de ayuda | “¿Qué puedes hacer?” | Respuesta breve con capacidades reales | Sí |
+| Consultar imágenes guardadas | “Mis fotos”, “muéstrame las imágenes guardadas” | Lista solo fotos almacenadas | Sí |
 | Memoria de varios turnos | “mañana” después de una pregunta previa | Mantener borradores/contexto en D1 | No; rama posterior |
 | Acciones destructivas | Borrar datos | Solo flujo determinista con confirmación exacta | No se delega a la IA |
 
 La primera versión no permitirá que el modelo invente consultas, ejecute SQL, descargue enlaces, envíe mensajes a terceros ni realice acciones fuera de este catálogo.
+
+Las frases que dependan de pronombres o contexto previo, como «muéstramelas» después de «mis fotos», siguen fuera de alcance hasta la rama de memoria conversacional; las solicitudes explícitas funcionan de forma determinista.
 
 ## Flujo de decisión
 

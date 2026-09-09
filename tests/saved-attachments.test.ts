@@ -75,6 +75,16 @@ describe("saved attachments", () => {
     expect(sent.at(-1)).toMatchObject({ method: "sendPhoto", body: { photo: "photo_large", caption: "recibo CFE" } });
   });
 
+  it("lists saved images from a natural-language request without mixing documents", async () => {
+    const { send, sent } = setup();
+    await send({ photo, caption: "Guarda logo" });
+    await send({ document, caption: "Guarda recibo" });
+    await send({ text: "Muestrame las imagenes guardadas" });
+    expect(sent.at(-1)?.body.text).toContain("📷 Imágenes guardadas");
+    expect(sent.at(-1)?.body.text).toContain("logo");
+    expect(sent.at(-1)?.body.text).not.toContain("recibo");
+  });
+
   it("explains how to save media without treating another caption as a command", async () => {
     const { send, sent, sqlite } = setup();
     await send({ photo });
