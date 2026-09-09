@@ -70,12 +70,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Deploy Worker
+      - name: Migrate D1 and deploy Worker
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+          command: |
+            d1 migrations apply PERSONAL_ASSISTANT_DB --remote
+            deploy
           packageManager: npm
 
       - name: Verify production health
