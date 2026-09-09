@@ -11,11 +11,14 @@
 - [x] Implementar enlaces/notas y `/resumen`.
 - [x] Implementar borrado de datos.
 - [x] Configurar deploy automático por GitHub Actions y webhook de producción.
-- [x] Añadir parser ampliado y LLM opcional en `feature/ai-conversation` (sin memoria persistente; ver `docs/SPEC-AI-CONVERSATION.md`).
+- [x] Añadir parser ampliado y LLM opcional en `feature/ai-conversation` (ver `docs/SPEC-AI-CONVERSATION.md`).
 - [x] Recordatorios naturales con hora (`2pm`, `2:30 pm`, `14:00`).
 - [x] Gastos naturales con categoría, descripción e historial por categoría.
 - [x] Guardar fotos y documentos con `Guarda` en la descripción.
 - [x] Consultar `mis guardados` con paginación y recuperar archivos, notas y enlaces.
+- [x] Consultar imágenes guardadas con lenguaje natural.
+- [x] Resolver seguimientos como `Muestramelas` y `muestra más` con contexto temporal por chat.
+- [x] Desplegar migración de contexto y actualizar Vitest a una versión sin vulnerabilidades auditadas.
 
 ## Consultas y acciones con botones
 
@@ -30,4 +33,16 @@ Checkpoint:
 
 - [x] `tareas` y `recordatorios` preguntan el estado con botones.
 - [x] Las listas no muestran IDs y los callbacks solo modifican registros del usuario autorizado.
-- [x] `npm test`, lint, typecheck, build y audit pasan antes del PR (audit reporta 2 moderadas de Vitest dev-only).
+- [x] `npm test`, lint, typecheck, build y audit pasan antes del despliegue (143 pruebas; audit sin vulnerabilidades).
+
+## Próxima idea: carpetas y datos personales
+
+Propuesta futura, todavía sin implementar:
+
+- [ ] Permitir frases como `guarda este INE en datos personales` al guardar una foto o documento.
+- [ ] Separar los guardados por colecciones/categorías, por ejemplo `Datos personales`, `Trabajo`, `Recibos` y `Sin clasificar`.
+- [ ] Mostrar `Mis imágenes` y `Mis archivos` como una navegación con botones de carpeta antes de listar elementos.
+- [ ] Mantener los archivos sensibles fuera de la lista general salvo que el usuario elija explícitamente la categoría.
+- [ ] Diseñar la categoría como una entidad controlada en D1, no como texto libre sin validación, y conservar el borrado completo mediante `/borrar_datos CONFIRMAR`.
+
+La categoría solo organizaría la referencia al archivo guardado; antes de implementarla hay que definir retención, nombres de categorías, renombrado y el comportamiento de documentos sensibles como el INE.
