@@ -111,3 +111,24 @@ Permitir frases naturales acotadas para crear recordatorios con hora, registrar 
 ### Decisión de seguridad
 
 No se persisten gastos sin monto ni se adivina un valor. El seguimiento conversacional para responder el monto en un mensaje posterior queda como una siguiente migración de D1, porque requiere estado persistente y expiración del borrador.
+
+## Incremento actual: interpretación conversacional asistida por IA
+
+La especificación detallada está en [`docs/SPEC-AI-CONVERSATION.md`](../docs/SPEC-AI-CONVERSATION.md). Este incremento se desarrolla en la rama `feature/ai-conversation`, creada desde `origin/main` después del último deploy estable.
+
+### Orden de trabajo
+
+- [ ] Implementar el adaptador de OpenAI Responses API con Structured Outputs y timeout.
+- [ ] Definir y validar el contrato cerrado `AiIntent`.
+- [ ] Integrar el fallback de IA después del parser determinista.
+- [ ] Ejecutar únicamente acciones existentes y mantener el borrado fuera del alcance del modelo.
+- [ ] Añadir configuración/secrets documentados y fallback cuando la IA esté deshabilitada.
+- [ ] Añadir pruebas unitarias, pruebas de integración del webhook y mocks de API sin exponer secretos.
+- [ ] Ejecutar typecheck, lint, build, tests y auditoría antes del PR.
+
+### Dependencias explícitas
+
+- La clave `OPENAI_API_KEY` debe existir solo en el entorno de despliegue.
+- `OPENAI_MODEL` debe poder configurarse sin recompilar el Worker.
+- La API de OpenAI se usa como intérprete; D1 y los repositorios siguen siendo la fuente de verdad.
+- La memoria de varios turnos queda fuera de esta rama y, si se aprueba, tendrá su propia rama y migración.
