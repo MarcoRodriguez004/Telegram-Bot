@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ensureUser } from "../src/db/users";
+import { deleteUserData } from "../src/modules/privacy/repository";
 import {
   getSavedNotesContext,
   saveSavedNotesContext,
@@ -60,5 +61,15 @@ describe("conversation context", () => {
       chatId: 42,
       now: new Date("2026-09-09T00:16:00.000Z"),
     })).resolves.toBeNull();
+  });
+
+  it("removes the context with the rest of the user's data", async () => {
+    const { db, userId, sqlite } = await setup();
+    await saveSavedNotesContext(db, { userId, chatId: 42, kind: "photos" });
+
+    await deleteUserData(db, 42);
+
+    expect(sqlite.prepare("SELECT * FROM conversation_context").all()).toHaveLength(0);
+    await expect(getSavedNotesContext(db, { userId, chatId: 42 })).resolves.toBeNull();
   });
 });

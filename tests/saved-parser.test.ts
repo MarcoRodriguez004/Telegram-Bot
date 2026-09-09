@@ -12,6 +12,16 @@ describe("saved item commands", () => {
   it.each(["/guardados_30", "mis guardados antes 30"])("continues with %s", (text) => {
     expect(parseIntent(text)).toEqual({ action: "list_notes", beforeId: 30 });
   });
+  it("resolves saved-media pronouns only when a matching context exists", () => {
+    expect(parseIntent("Muestramelas", { savedNotesContext: { kind: "photos" } })).toEqual({
+      action: "list_notes",
+      kind: "photos",
+    });
+    expect(parseIntent("muestra más", {
+      savedNotesContext: { kind: "photos", nextBeforeId: 17 },
+    })).toEqual({ action: "list_notes", kind: "photos", beforeId: 17 });
+    expect(parseIntent("Muestramelas")).toEqual({ action: "unknown", reason: "unsupported_message" });
+  });
   it.each(["/guardado_123", "/guardado 123", "ver guardado 123", "/guardado_123@my_bot"])("retrieves with %s", (text) => {
     expect(parseIntent(text)).toEqual({ action: "get_note", noteId: 123 });
   });
