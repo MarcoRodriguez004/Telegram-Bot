@@ -128,7 +128,7 @@ export async function interpretMessage(text: string, options: InterpretMessageOp
     const payload = await readJson(response);
     const status = getString(payload, "status");
     if (status && status !== "completed") return null;
-    const outputText = getString(payload, "output_text");
+    const outputText = getOutputText(payload);
     if (!outputText || outputText.length > MAX_AI_OUTPUT_LENGTH) return null;
 
     let candidate: unknown;
@@ -265,6 +265,23 @@ function getString(value: unknown, key: string): string | null {
   if (!isRecord(value) || typeof value[key] !== "string") return null;
   const result = String(value[key]).trim();
   return result || null;
+}
+
+function getOutputText(value: unknown): string | null {
+  const directText = getString(value, "output_text");
+  if (directText) return directText;
+  if (!isRecord(value) || !Array.isArray(value.output)) return null;
+
+  for (const outputItem of value.output) {
+    if (!isRecord(outputItem) || !Array.isArray(outputItem.content)) continue;
+    for (const contentItem of outputItem.content) {
+      if (!isRecord(contentItem) || contentItem.type !== "output_text") continue;
+      const text = getString(contentItem, "text");
+      if (text) return text;
+    }
+  }
+
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
