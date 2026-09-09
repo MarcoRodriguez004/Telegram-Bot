@@ -14,11 +14,12 @@ La memoria conversacional de varios turnos queda fuera de este incremento.
 1. Un mensaje ambiguo como «mis tareas» pregunta el estado mediante botones: `Completadas`, `Pendientes`, `Canceladas` y `Todas`.
 2. Un mensaje ambiguo como «mis recordatorios» pregunta el estado mediante botones: `Pendientes`, `Completados`, `Cancelados` y `Todos`.
 3. La primera página muestra las 10 más recientes y la fecha local.
-4. Un botón `Consultar más` muestra las siguientes 20; debe poder repetirse mientras existan resultados.
-5. Las listas no muestran IDs internos.
-6. Para completar una tarea, el usuario pulsa un botón cuyo texto contiene el nombre de la tarea.
-7. Las tareas/recordatorios se muestran como botones para seleccionar el registro que se desea editar.
-8. La selección debe producir acciones posteriores sin exigir que el usuario vuelva a escribir el título completo.
+4. Cada registro usa un indicador visual de estado: 🟢 completado, 🟡 pendiente y 🔴 cancelado.
+5. Un botón `Consultar más` muestra las siguientes 20; debe poder repetirse mientras existan resultados.
+6. Las listas no muestran IDs internos.
+7. Para completar una tarea, el usuario pulsa un botón cuyo texto contiene el nombre de la tarea.
+8. Las tareas/recordatorios se muestran como botones para seleccionar el registro que se desea editar.
+9. La selección debe producir acciones posteriores sin exigir que el usuario vuelva a escribir el título completo.
 
 ## Alcance técnico
 
