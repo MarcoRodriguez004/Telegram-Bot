@@ -2,7 +2,15 @@ import { ensureUser } from "./db/users";
 import { interpretMessage } from "./ai/openai";
 import { claimUpdate } from "./db/repository";
 import { deleteUserData } from "./modules/privacy/repository";
-import { createReminder } from "./modules/reminders/repository";
+import {
+  cancelReminder,
+  completeReminder,
+  createReminder,
+  getReminder,
+  listReminders,
+  updateReminder,
+} from "./modules/reminders/repository";
+import type { ReminderListItem } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { createExpense, getExpenseHistory } from "./modules/expenses/repository";
 import type { ExpenseHistoryResult } from "./modules/expenses/repository";
@@ -10,16 +18,41 @@ import { createNote, getNote, listNotes } from "./modules/notes/repository";
 import { saveMedia } from "./modules/notes/media";
 import { getSummary } from "./modules/summary/repository";
 import type { SummaryResult } from "./modules/summary/repository";
-import { createTask } from "./modules/tasks/repository";
+import {
+  cancelTask,
+  completeTask,
+  createTask,
+  getTask,
+  listTasks,
+  updateTaskTitle,
+} from "./modules/tasks/repository";
+import type { TaskListItem } from "./modules/tasks/repository";
+import { clearEditSession, getActiveEditSession, startEditSession } from "./modules/edit-sessions/repository";
 import { parseIntent } from "./router/parser";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
-import { sendAttachment, sendMessage } from "./telegram/client";
+import { answerCallbackQuery, sendAttachment, sendMessage } from "./telegram/client";
+import type { InlineKeyboardMarkup } from "./telegram/client";
+import {
+  buildEditCancelKeyboard,
+  buildFilterKeyboard,
+  buildItemKeyboard,
+  buildListKeyboard,
+  parseCallbackData,
+} from "./telegram/keyboards";
+import type { QueryFilter, QueryResource } from "./telegram/keyboards";
 import { parseTelegramUpdate } from "./telegram/types";
-import type { TelegramUpdate } from "./telegram/types";
+import type { TelegramCallbackQuery, TelegramUpdate } from "./telegram/types";
 import type { Env } from "./types";
 
 const MAX_UPDATE_BYTES = 64 * 1024;
+
+type BotReply = {
+  text: string;
+  replyMarkup?: InlineKeyboardMarkup;
+};
+
+type Reply = string | BotReply;
 
 const worker: ExportedHandler<Env> = {
   fetch(request, env, ctx) {
@@ -78,8 +111,14 @@ export async function handleRequest(
       return new Response(null, { status: 200 });
     }
 
-    const userId = update.message?.from?.id;
-    if (userId === undefined || !(await claimUpdate(env.PERSONAL_ASSISTANT_DB, update.update_id, userId))) {
+    const actorId = update.message?.from?.id ?? update.callback_query?.from.id;
+    if (actorId === undefined || !(await claimUpdate(env.PERSONAL_ASSISTANT_DB, update.update_id, actorId))) {
+      return new Response(null, { status: 200 });
+    }
+
+    if (update.callback_query) {
+      await handleCallbackQuery(update.callback_query, env, telegramFetch);
+      await answerCallbackQuery(env, update.callback_query.id, telegramFetch);
       return new Response(null, { status: 200 });
     }
 
@@ -94,8 +133,22 @@ export async function handleRequest(
       return new Response(null, { status: 200 });
     }
 
-    const reply = await getReply(text, update, env, telegramFetch, aiFetch);
-    if (reply !== null) await sendMessage(env, update.message.chat.id, reply, telegramFetch);
+    let reply: Reply | null;
+    if (text.startsWith("/")) {
+      reply = await getReply(text, update, env, telegramFetch, aiFetch);
+    } else {
+      const telegramUserId = update.message.from?.id;
+      if (telegramUserId === undefined) return new Response(null, { status: 200 });
+      const userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
+        telegramUserId,
+        telegramChatId: update.message.chat.id,
+        timezone: env.APP_TIMEZONE,
+        currency: env.DEFAULT_CURRENCY,
+      });
+      const editReply = await handleEditInput(text, userId, update.message.chat.id, env);
+      reply = editReply ?? await getReply(text, update, env, telegramFetch, aiFetch);
+    }
+    if (reply !== null) await sendBotReply(env, update.message.chat.id, reply, telegramFetch);
     return new Response(null, { status: 200 });
   } catch (error) {
     console.error("Webhook processing failed", error instanceof Error ? error.message : "unknown error");
@@ -109,7 +162,7 @@ async function getReply(
   env: Env,
   telegramFetch: typeof fetch,
   aiFetch: typeof fetch,
-): Promise<string | null> {
+): Promise<Reply | null> {
   const commandReply = getCommandReply(text);
   if (commandReply) {
     return commandReply;
@@ -146,6 +199,8 @@ async function getReply(
 
   if (
     intent.action === "summary" ||
+    intent.action === "list_tasks" ||
+    intent.action === "list_reminders" ||
     intent.action === "list_expenses" ||
     intent.action === "list_notes" ||
     intent.action === "get_note" ||
@@ -166,6 +221,20 @@ async function getReply(
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
     });
+    if (intent.action === "list_tasks") {
+      if (!intent.filter) {
+        return { text: "¿Qué tareas quieres consultar?", replyMarkup: buildFilterKeyboard("task") };
+      }
+      const result = await listTasks(env.PERSONAL_ASSISTANT_DB, { userId, filter: intent.filter, limit: 10 });
+      return formatTaskListReply(result.tasks, result.nextBeforeId, intent.filter, env.APP_TIMEZONE);
+    }
+    if (intent.action === "list_reminders") {
+      if (!intent.filter) {
+        return { text: "¿Qué recordatorios quieres consultar?", replyMarkup: buildFilterKeyboard("reminder") };
+      }
+      const result = await listReminders(env.PERSONAL_ASSISTANT_DB, { userId, filter: intent.filter, limit: 10 });
+      return formatReminderListReply(result.reminders, result.nextBeforeId, intent.filter, env.APP_TIMEZONE);
+    }
     if (intent.action === "list_notes") {
       const { notes, nextBeforeId } = await listNotes(env.PERSONAL_ASSISTANT_DB, userId, intent.beforeId);
       if (!notes.length) return intent.beforeId ? "No hay más guardados. Volver: /guardados" : "No tienes guardados. Envía una foto o documento con la descripción «Guarda».";
@@ -296,6 +365,221 @@ async function getReply(
   }
 
   return "No entendí ese mensaje. Puedes consultar /guardados o ver ejemplos en /help.";
+}
+
+async function sendBotReply(
+  env: Env,
+  chatId: number,
+  reply: Reply,
+  telegramFetch: typeof fetch,
+): Promise<void> {
+  if (typeof reply === "string") {
+    await sendMessage(env, chatId, reply, telegramFetch);
+    return;
+  }
+  await sendMessage(env, chatId, reply.text, telegramFetch, { replyMarkup: reply.replyMarkup });
+}
+
+async function handleCallbackQuery(
+  callbackQuery: TelegramCallbackQuery,
+  env: Env,
+  telegramFetch: typeof fetch,
+): Promise<void> {
+  const source = callbackQuery.message;
+  const action = parseCallbackData(callbackQuery.data);
+  if (!source || !action) {
+    if (source) await sendMessage(env, source.chat.id, "Esta acción ya no está disponible.", telegramFetch);
+    return;
+  }
+
+  const userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
+    telegramUserId: callbackQuery.from.id,
+    telegramChatId: source.chat.id,
+    timezone: env.APP_TIMEZONE,
+    currency: env.DEFAULT_CURRENCY,
+  });
+
+  if (action.kind === "edit_cancel") {
+    await clearEditSession(env.PERSONAL_ASSISTANT_DB, userId);
+    await sendMessage(env, source.chat.id, "Edición cancelada.", telegramFetch);
+    return;
+  }
+
+  if (action.kind === "filter" || action.kind === "page") {
+    const reply = await getListReply(env, userId, action.resource, action.filter, action.kind === "page" ? action.beforeId : undefined);
+    await sendBotReply(env, source.chat.id, reply, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "item") {
+    const item = action.resource === "task"
+      ? await getTask(env.PERSONAL_ASSISTANT_DB, userId, action.id)
+      : await getReminder(env.PERSONAL_ASSISTANT_DB, userId, action.id);
+    if (!item) {
+      await sendMessage(env, source.chat.id, "No encontré ese elemento o ya no está disponible.", telegramFetch);
+      return;
+    }
+    const reply: BotReply = {
+      text: formatItemDetail(action.resource, item, env.APP_TIMEZONE),
+      replyMarkup: buildItemKeyboard(action.resource, action.id, item.status, "all"),
+    };
+    await sendBotReply(env, source.chat.id, reply, telegramFetch);
+    return;
+  }
+
+  const item = action.resource === "task"
+    ? await getTask(env.PERSONAL_ASSISTANT_DB, userId, action.id)
+    : await getReminder(env.PERSONAL_ASSISTANT_DB, userId, action.id);
+  if (!item) {
+    await sendMessage(env, source.chat.id, "No encontré ese elemento o ya no está disponible.", telegramFetch);
+    return;
+  }
+
+  if (action.action === "edit") {
+    if (item.status !== "pending") {
+      await sendMessage(env, source.chat.id, "Solo puedes editar elementos pendientes.", telegramFetch);
+      return;
+    }
+    await startEditSession(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: source.chat.id,
+      resourceType: action.resource,
+      resourceId: action.id,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    });
+    const prompt = action.resource === "task"
+      ? "✏️ Escribe el nuevo nombre de la tarea."
+      : "✏️ Escribe el nuevo nombre y horario del recordatorio.\nEjemplo: renovar póliza mañana a las 18:00";
+    await sendBotReply(env, source.chat.id, { text: prompt, replyMarkup: buildEditCancelKeyboard(action.resource) }, telegramFetch);
+    return;
+  }
+
+  const changed = action.resource === "task"
+    ? action.action === "complete"
+      ? await completeTask(env.PERSONAL_ASSISTANT_DB, { userId, taskId: action.id })
+      : await cancelTask(env.PERSONAL_ASSISTANT_DB, { userId, taskId: action.id })
+    : action.action === "complete"
+      ? await completeReminder(env.PERSONAL_ASSISTANT_DB, { userId, reminderId: action.id })
+      : await cancelReminder(env.PERSONAL_ASSISTANT_DB, { userId, reminderId: action.id });
+
+  if (!changed) {
+    await sendMessage(env, source.chat.id, "Ese elemento ya no está pendiente.", telegramFetch);
+    return;
+  }
+
+  const verb = action.action === "complete"
+    ? action.resource === "task" ? "completada" : "completado"
+    : action.resource === "task" ? "cancelada" : "cancelado";
+  await sendMessage(env, source.chat.id, `✅ ${action.resource === "task" ? "Tarea" : "Recordatorio"} ${verb}.\n\n${item.title}`, telegramFetch);
+}
+
+async function handleEditInput(text: string, userId: number, chatId: number, env: Env): Promise<Reply | null> {
+  const session = await getActiveEditSession(env.PERSONAL_ASSISTANT_DB, userId);
+  if (!session || session.chatId !== chatId) return null;
+
+  if (/^(?:cancelar|cancelar\s+edici[oó]n|salir)$/iu.test(text.trim())) {
+    await clearEditSession(env.PERSONAL_ASSISTANT_DB, userId);
+    return "Edición cancelada.";
+  }
+
+  if (session.resourceType === "task") {
+    try {
+      const changed = await updateTaskTitle(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        taskId: session.resourceId,
+        title: text,
+      });
+      await clearEditSession(env.PERSONAL_ASSISTANT_DB, userId);
+      return changed ? `✅ Tarea actualizada\n\n${text.trim().replace(/\s+/g, " ")}` : "La tarea ya no está pendiente o no existe.";
+    } catch {
+      return "No pude usar ese nombre. Escribe un nombre de tarea de hasta 500 caracteres.";
+    }
+  }
+
+  const intent = parseIntent(`recordar ${text}`, {
+    timezone: env.APP_TIMEZONE,
+    currency: env.DEFAULT_CURRENCY,
+  });
+  if (intent.action !== "create_reminder") {
+    return "Indica el nombre y horario. Ejemplo: renovar póliza mañana a las 18:00";
+  }
+
+  try {
+    const changed = await updateReminder(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      reminderId: session.resourceId,
+      title: intent.title,
+      remindAt: intent.remindAt,
+    });
+    await clearEditSession(env.PERSONAL_ASSISTANT_DB, userId);
+    return changed
+      ? `✅ Recordatorio actualizado\n\n${intent.title}\n${formatReminderAt(intent.remindAt, env.APP_TIMEZONE)}`
+      : "El recordatorio ya no está pendiente o no existe.";
+  } catch {
+    return "No pude actualizar el recordatorio. Indica un nombre y una fecha futura válidos.";
+  }
+}
+
+async function getListReply(
+  env: Env,
+  userId: number,
+  resource: QueryResource,
+  filter: QueryFilter,
+  beforeId?: number,
+): Promise<BotReply> {
+  if (resource === "task") {
+    const result = await listTasks(env.PERSONAL_ASSISTANT_DB, { userId, filter, beforeId, limit: beforeId ? 20 : 10 });
+    return formatTaskListReply(result.tasks, result.nextBeforeId, filter, env.APP_TIMEZONE);
+  }
+  const result = await listReminders(env.PERSONAL_ASSISTANT_DB, { userId, filter, beforeId, limit: beforeId ? 20 : 10 });
+  return formatReminderListReply(result.reminders, result.nextBeforeId, filter, env.APP_TIMEZONE);
+}
+
+function formatTaskListReply(
+  tasks: TaskListItem[],
+  nextBeforeId: number | undefined,
+  filter: QueryFilter,
+  timezone: string,
+): BotReply {
+  const label = filterLabel("task", filter);
+  const text = tasks.length
+    ? [`📋 Tareas · ${label}`, "", ...tasks.map((task) => `• ${task.title}\n  ${formatTaskDate(task, timezone)}`)].join("\n")
+    : `📋 Tareas · ${label}\n\nNo hay tareas en este estado.`;
+  return { text, replyMarkup: tasks.length ? buildListKeyboard("task", tasks, nextBeforeId, filter, timezone) : buildFilterKeyboard("task") };
+}
+
+function formatReminderListReply(
+  reminders: ReminderListItem[],
+  nextBeforeId: number | undefined,
+  filter: QueryFilter,
+  timezone: string,
+): BotReply {
+  const label = filterLabel("reminder", filter);
+  const text = reminders.length
+    ? [`⏰ Recordatorios · ${label}`, "", ...reminders.map((reminder) => `• ${reminder.title}\n  ${formatDate(reminder.remindAt, timezone)}`)].join("\n")
+    : `⏰ Recordatorios · ${label}\n\nNo hay recordatorios en este estado.`;
+  return { text, replyMarkup: reminders.length ? buildListKeyboard("reminder", reminders, nextBeforeId, filter, timezone) : buildFilterKeyboard("reminder") };
+}
+
+function formatItemDetail(resource: QueryResource, item: TaskListItem | ReminderListItem, timezone: string): string {
+  const status = item.status === "pending" ? "Pendiente" : item.status === "completed" ? "Completado" : "Cancelado";
+  const date = resource === "task" ? formatTaskDate(item as TaskListItem, timezone) : formatDate((item as ReminderListItem).remindAt, timezone);
+  return `${resource === "task" ? "📋 Tarea" : "⏰ Recordatorio"}\n\n${item.title}\nEstado: ${status}\nFecha: ${date}`;
+}
+
+function formatTaskDate(task: TaskListItem, timezone: string): string {
+  return task.dueAt ? `Vence: ${formatDate(task.dueAt, timezone)}` : `Creada: ${formatDate(task.createdAt, timezone)}`;
+}
+
+function formatDate(value: string, timezone: string): string {
+  const local = getZonedDateTime(new Date(value), timezone);
+  const pad = (number: number) => String(number).padStart(2, "0");
+  return `${local.year}-${pad(local.month)}-${pad(local.day)} ${pad(local.hour)}:${pad(local.minute)}`;
+}
+
+function filterLabel(resource: QueryResource, filter: QueryFilter): string {
+  if (resource === "task") return filter === "pending" ? "Pendientes" : filter === "completed" ? "Completadas" : filter === "cancelled" ? "Canceladas" : "Todas";
+  return filter === "pending" ? "Pendientes" : filter === "completed" ? "Completados" : filter === "cancelled" ? "Cancelados" : "Todos";
 }
 
 function formatReminderAt(remindAt: string, timezone: string): string {

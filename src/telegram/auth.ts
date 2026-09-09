@@ -7,11 +7,12 @@ export function hasValidWebhookSecret(request: Request, env: Env): boolean {
 }
 
 export function isAuthorizedUpdate(update: TelegramUpdate, env: Env): boolean {
-  const message = update.message;
+  const message = update.message ?? update.callback_query?.message;
+  const user = update.message?.from ?? update.callback_query?.from;
   return (
     Boolean(env.TELEGRAM_ALLOWED_USER_ID) &&
     message?.chat.type === "private" &&
-    message.from?.is_bot === false &&
-    String(message.from.id) === env.TELEGRAM_ALLOWED_USER_ID
+    user?.is_bot === false &&
+    String(user.id) === env.TELEGRAM_ALLOWED_USER_ID
   );
 }

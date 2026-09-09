@@ -47,7 +47,7 @@ async function findDueReminder(db: D1Database, nowIso: string): Promise<DueRemin
     .prepare(
       "SELECT reminders.id, reminders.user_id AS userId, users.telegram_chat_id AS chatId, reminders.title " +
         "FROM reminders INNER JOIN users ON users.id = reminders.user_id " +
-        "WHERE reminders.remind_at <= ? AND (reminders.status = 'pending' OR " +
+        "WHERE reminders.cancelled_at IS NULL AND reminders.remind_at <= ? AND (reminders.status = 'pending' OR " +
         "(reminders.status = 'processing' AND reminders.processing_until <= ?)) " +
         "ORDER BY reminders.remind_at ASC, reminders.id ASC LIMIT 1",
     )
@@ -61,7 +61,7 @@ async function claimReminder(db: D1Database, id: number, nowIso: string, leaseUn
   const result = await db
     .prepare(
       "UPDATE reminders SET status = 'processing', processing_until = ? " +
-        "WHERE id = ? AND remind_at <= ? AND (status = 'pending' OR " +
+        "WHERE id = ? AND cancelled_at IS NULL AND remind_at <= ? AND (status = 'pending' OR " +
         "(status = 'processing' AND processing_until <= ?))",
     )
     .bind(leaseUntil, id, nowIso, nowIso)
@@ -72,7 +72,7 @@ async function claimReminder(db: D1Database, id: number, nowIso: string, leaseUn
 
 async function markReminderSent(db: D1Database, id: number, sentAt: string): Promise<void> {
   await db
-    .prepare("UPDATE reminders SET status = 'sent', sent_at = ?, processing_until = NULL WHERE id = ? AND status = 'processing'")
+    .prepare("UPDATE reminders SET status = 'sent', sent_at = ?, processing_until = NULL WHERE id = ? AND status = 'processing' AND cancelled_at IS NULL")
     .bind(sentAt, id)
     .run();
 }
