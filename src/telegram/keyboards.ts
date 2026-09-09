@@ -1,6 +1,6 @@
 import { getZonedDateTime } from "../shared/dates";
 import type { InlineKeyboardButton, InlineKeyboardMarkup } from "./client";
-import type { ReminderListItem, ReminderFilter } from "../modules/reminders/repository";
+import type { ReminderListItem } from "../modules/reminders/repository";
 import type { TaskFilter, TaskListItem } from "../modules/tasks/repository";
 
 export type QueryResource = "task" | "reminder";
@@ -81,8 +81,6 @@ export function buildItemKeyboard(
       { text: "✏️ Editar", callback_data: `pa:${resourceCode(resource)}:a:e:${id}` },
       { text: "❌ Cancelar", callback_data: `pa:${resourceCode(resource)}:a:x:${id}` },
     ]);
-  } else if (status === "completed") {
-    rows.push([{ text: "✏️ Editar", callback_data: `pa:${resourceCode(resource)}:a:e:${id}` }]);
   }
   rows.push([{ text: "↩️ Volver", callback_data: `pa:${resourceCode(resource)}:f:${FILTER_CODES[filter]}` }]);
   return { inline_keyboard: rows };

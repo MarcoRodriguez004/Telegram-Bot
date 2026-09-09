@@ -85,6 +85,14 @@ export async function listTasks(db: D1Database, input: ListTasksInput): Promise<
   return { tasks, nextBeforeId: result.results.length > limit ? tasks.at(-1)?.id : undefined };
 }
 
+export async function getTask(db: D1Database, userId: number, taskId: number): Promise<TaskListItem | null> {
+  validateUserId(userId);
+  validateRecordId(taskId, "Task");
+  return db.prepare(
+    "SELECT id, title, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'done' THEN 'completed' ELSE 'pending' END AS status, due_at AS dueAt, created_at AS createdAt FROM tasks WHERE user_id = ? AND id = ?",
+  ).bind(userId, taskId).first<TaskListItem>();
+}
+
 export async function completeTask(db: D1Database, input: CompleteTaskInput): Promise<boolean> {
   validateUserId(input.userId);
   validateRecordId(input.taskId, "Task");

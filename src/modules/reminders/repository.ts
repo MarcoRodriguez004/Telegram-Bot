@@ -92,6 +92,14 @@ export async function listReminders(db: D1Database, input: ListRemindersInput): 
   return { reminders, nextBeforeId: result.results.length > limit ? reminders.at(-1)?.id : undefined };
 }
 
+export async function getReminder(db: D1Database, userId: number, reminderId: number): Promise<ReminderListItem | null> {
+  validateUserId(userId);
+  validateRecordId(reminderId, "Reminder");
+  return db.prepare(
+    "SELECT id, title, remind_at AS remindAt, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'sent' THEN 'completed' ELSE 'pending' END AS status, created_at AS createdAt FROM reminders WHERE user_id = ? AND id = ?",
+  ).bind(userId, reminderId).first<ReminderListItem>();
+}
+
 export async function completeReminder(db: D1Database, input: CompleteReminderInput): Promise<boolean> {
   validateUserId(input.userId);
   validateRecordId(input.reminderId, "Reminder");

@@ -32,7 +32,7 @@ La memoria conversacional de varios turnos queda fuera de este incremento.
 ## Decisiones por defecto propuestas
 
 - Tareas: ordenar por `created_at DESC`, mostrar 10 inicialmente y 20 por página posterior.
-- Recordatorios: ordenar por `remind_at ASC` para próximos y por fecha descendente para históricos.
+- Tareas y recordatorios: ordenar por creación descendente (`id DESC`) para devolver primero los 10 más recientes de forma estable.
 - Fechas: mostrar en `America/Mexico_City` con formato `YYYY-MM-DD HH:mm`.
 - Consultas de lectura no requieren confirmación; cambios de estado sí se ejecutan únicamente desde un callback validado.
 - Nunca mostrar el ID de D1 al usuario.

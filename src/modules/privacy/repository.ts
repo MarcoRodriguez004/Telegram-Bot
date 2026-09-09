@@ -21,6 +21,7 @@ export async function deleteUserData(db: D1Database, telegramUserId: number): Pr
     db.prepare("DELETE FROM reminders WHERE user_id = ?").bind(user.id),
     db.prepare("DELETE FROM expenses WHERE user_id = ?").bind(user.id),
     db.prepare("DELETE FROM notes WHERE user_id = ?").bind(user.id),
+    db.prepare("DELETE FROM edit_sessions WHERE user_id = ?").bind(user.id),
     db.prepare("DELETE FROM users WHERE id = ?").bind(user.id),
   ]);
 }
