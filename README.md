@@ -16,6 +16,8 @@ Ya existen capacidades funcionales en TypeScript para tareas, recordatorios, gas
 
 El parser actual es deliberadamente determinista y conservador, pero ya acepta frases naturales acotadas para recordatorios con hora, gastos con categoría/descripción e historial de gastos. No inventa un monto cuando falta.
 
+Cuando se configura `OPENAI_API_KEY`, los mensajes que el parser no reconoce pasan por un intérprete opcional de OpenAI Responses API con Structured Outputs. La IA solo devuelve una intención cerrada; el Worker valida los campos y ejecuta los repositorios existentes. Si la clave falta o la API falla, las reglas deterministas siguen funcionando. La memoria persistente de varios turnos todavía no está habilitada.
+
 Ejemplos desde Telegram:
 
 ```text
@@ -64,6 +66,8 @@ Invoke-WebRequest 'http://127.0.0.1:8787/cdn-cgi/local/scheduled?format=json'
 El borrado de datos requiere escribir exactamente `/borrar_datos CONFIRMAR`. Elimina tareas, recordatorios, gastos, notas y el perfil del usuario; conserva `processed_updates`, que es el registro técnico anti-replay.
 
 Para probarlo desde Telegram necesitaremos desplegar el Worker y registrar el webhook. Completa `.dev.vars` con el token del bot, el secret del webhook y tu `TELEGRAM_ALLOWED_USER_ID` cuando lleguemos a esa fase.
+
+Para habilitar la interpretación conversacional local, añade también `OPENAI_API_KEY` y `OPENAI_MODEL="gpt-5.6-luna"` a `.dev.vars`. En producción configura la clave con `npx wrangler secret put OPENAI_API_KEY`; nunca la versiones.
 
 Comandos de calidad:
 

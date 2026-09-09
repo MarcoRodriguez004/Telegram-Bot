@@ -13,7 +13,8 @@ const TASK_COMMAND = /^(?:\/)?(?:tarea|pendiente)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/i
 const REMINDER_COMMAND = /^(?:\/)?(?:recordar|recordatorio)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const NATURAL_REMINDER = /^(?:recu[eé]rdame|quiero\s+que\s+me\s+recuerdes?|me\s+(?:puedes|podrías)\s+recordar|av[ií]same)(?:\s+que)?\s+(.+)$/iu;
 const EXPENSE_COMMAND = /^(?:\/)?gasto(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
-const NATURAL_EXPENSE = /^(?:gast[eé]|apunta(?:me)?|anota)\s+(.+)$/iu;
+const NATURAL_EXPENSE = /^gast[eé]\s+(.+)$/iu;
+const NATURAL_EXPENSE_NOTE = /^(?:apunta(?:me)?|anota)\s+(.+)$/iu;
 const ADD_EXPENSE = /^agrega(?:r)?\s+(?:a\s+)?(?:los?\s+)?gastos?(?:\s+de)?\s+(.+)$/iu;
 const EXPENSE_HISTORY = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:el\s+)?historial\s+de\s+gastos?(?:\s+de\s+(.+))?$/iu;
 const NATURAL_EXPENSE_HISTORY = /^(?:mis\s+gastos?|gastos?)\s+(?:de|en)\s+(.+)$/iu;
@@ -93,6 +94,14 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   const naturalExpenseMatch = NATURAL_EXPENSE.exec(normalized);
   if (naturalExpenseMatch) {
     return parseNaturalExpense(naturalExpenseMatch[1] ?? "", options);
+  }
+
+  const naturalExpenseNoteMatch = NATURAL_EXPENSE_NOTE.exec(normalized);
+  if (naturalExpenseNoteMatch) {
+    const payload = naturalExpenseNoteMatch[1] ?? "";
+    return findNaturalExpenseAmount(payload).match
+      ? parseNaturalExpense(payload, options)
+      : { action: "unknown", reason: "unsupported_message" };
   }
 
   const addExpenseMatch = ADD_EXPENSE.exec(normalized);

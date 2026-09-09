@@ -39,6 +39,13 @@ describe("expense parser", () => {
     });
   });
 
+  it("leaves note-like phrases without an amount for conversational interpretation", () => {
+    expect(parseIntent("anota comprar medicina", { currency: "MXN" })).toEqual({
+      action: "unknown",
+      reason: "unsupported_message",
+    });
+  });
+
   it("parses an add-to-category expense phrase", () => {
     expect(parseIntent("Agrega a Gastos de carro 450 por compra de radiador", { currency: "MXN" })).toEqual({
       action: "create_expense",

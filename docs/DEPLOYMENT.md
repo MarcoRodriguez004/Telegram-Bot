@@ -54,9 +54,10 @@ Ejecuta cada comando e introduce el valor cuando Wrangler lo solicite:
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 npx wrangler secret put TELEGRAM_ALLOWED_USER_ID
+npx wrangler secret put OPENAI_API_KEY
 ```
 
-No pongas estos valores en `wrangler.jsonc`, `vars`, un commit, la URL de Telegram ni el historial del shell. El secret del webhook debe usar únicamente letras, números, `_` o `-`, tal como exige Telegram.
+No pongas los secretos en `wrangler.jsonc`, `vars`, un commit, la URL de Telegram ni el historial del shell. `OPENAI_MODEL` es una variable pública de configuración (`gpt-5.6-luna` por defecto); `OPENAI_API_KEY` debe permanecer como secret. El secret del webhook debe usar únicamente letras, números, `_` o `-`, tal como exige Telegram.
 
 ## 4. Registrar el webhook
 
@@ -93,8 +94,9 @@ Debe mostrar la URL del Worker. Si `last_error_message` aparece, corrige el prob
 1. Abre `https://<worker>.workers.dev/health` y confirma `{"ok":true,...}`.
 2. En el chat privado autorizado envía `/start`.
 3. Envía `/tarea prueba de producción` y confirma que recibes una respuesta.
-4. Envía `/resumen` y confirma que la consulta responde.
-5. Verifica en el dashboard de Worker que no haya errores de ejecución.
+4. Envía `por favor anota comprar medicina` y confirma que la interpretación natural crea una tarea.
+5. Envía `/resumen` y confirma que la consulta responde.
+6. Verifica en el dashboard de Worker que no haya errores de ejecución ni respuestas fallidas de OpenAI.
 
 No pruebes `/borrar_datos CONFIRMAR` en producción salvo que quieras borrar la cuenta real; la cobertura automatizada ya está en `tests/privacy-webhook.test.ts`.
 
@@ -110,6 +112,7 @@ En GitHub, abre `Settings → Environments`, crea el entorno `production` y aña
 | `CLOUDFLARE_ACCOUNT_ID` | ID de la cuenta de Cloudflare |
 
 No copies aquí `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` ni `TELEGRAM_ALLOWED_USER_ID`: esos secretos ya viven en Cloudflare y no son necesarios para construir el Worker.
+Tampoco copies `OPENAI_API_KEY` en GitHub: el workflow publica el Worker y Cloudflare conserva el secret.
 
 El workflow usa esta secuencia:
 

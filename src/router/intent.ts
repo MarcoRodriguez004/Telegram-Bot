@@ -8,4 +8,6 @@ export type Intent =
   | { action: "get_note"; noteId: number }
   | { action: "summary"; range: "today" | "week" | "month" }
   | { action: "delete_data"; confirmation: true }
+  | { action: "reply"; message: string }
+  | { action: "clarify"; question: string; missing: string[] }
   | { action: "unknown"; reason: string };
