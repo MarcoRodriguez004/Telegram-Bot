@@ -8,7 +8,8 @@
 	},
 	"vars": {
 		"APP_TIMEZONE": "America/Mexico_City",
-		"DEFAULT_CURRENCY": "MXN"
+		"DEFAULT_CURRENCY": "MXN",
+		"OPENAI_MODEL": "gpt-5.6-luna"
 	},
 	"triggers": {
 		"crons": [

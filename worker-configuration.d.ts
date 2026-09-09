@@ -6,4 +6,6 @@ export interface Env {
   TELEGRAM_ALLOWED_USER_ID: string;
   APP_TIMEZONE: string;
   DEFAULT_CURRENCY: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
 }

@@ -118,13 +118,13 @@ La especificación detallada está en [`docs/SPEC-AI-CONVERSATION.md`](../docs/S
 
 ### Orden de trabajo
 
-- [ ] Implementar el adaptador de OpenAI Responses API con Structured Outputs y timeout.
-- [ ] Definir y validar el contrato cerrado `AiIntent`.
-- [ ] Integrar el fallback de IA después del parser determinista.
-- [ ] Ejecutar únicamente acciones existentes y mantener el borrado fuera del alcance del modelo.
-- [ ] Añadir configuración/secrets documentados y fallback cuando la IA esté deshabilitada.
-- [ ] Añadir pruebas unitarias, pruebas de integración del webhook y mocks de API sin exponer secretos.
-- [ ] Ejecutar typecheck, lint, build, tests y auditoría antes del PR.
+- [x] Implementar el adaptador de OpenAI Responses API con Structured Outputs y timeout.
+- [x] Definir y validar el contrato cerrado `AiIntent`.
+- [x] Integrar el fallback de IA después del parser determinista.
+- [x] Ejecutar únicamente acciones existentes y mantener el borrado fuera del alcance del modelo.
+- [x] Añadir configuración/secrets documentados y fallback cuando la IA esté deshabilitada.
+- [x] Añadir pruebas unitarias, pruebas de integración del webhook y mocks de API sin exponer secretos.
+- [x] Ejecutar typecheck, lint, build, tests y auditoría antes del PR.
 
 ### Dependencias explícitas
 
