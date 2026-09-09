@@ -1,8 +1,8 @@
 # Especificación: interpretación conversacional asistida por IA
 
-**Estado:** propuesta para revisión antes de implementar código  
-**Rama:** `feature/ai-conversation`  
-**Base:** `origin/main`
+**Estado:** capacidades iniciales implementadas; memoria de guardados en revisión
+**Ramas:** `feature/ai-conversation` y `feature/conversation-memory`
+**Base de la memoria:** `Dev`
 
 ## Objetivo
 
@@ -20,10 +20,13 @@ La IA no tendrá acceso directo a D1, Telegram ni a herramientas arbitrarias. So
 | Guardar nota/enlace | Texto o URL con intención de guardar | Guarda el contenido | Sí |
 | Consultar | “¿Qué tengo pendiente?”, “mis guardados”, “resumen de esta semana” | Ejecuta la consulta existente | Sí |
 | Conversación de ayuda | “¿Qué puedes hacer?” | Respuesta breve con capacidades reales | Sí |
-| Memoria de varios turnos | “mañana” después de una pregunta previa | Mantener borradores/contexto en D1 | No; rama posterior |
+| Consultar imágenes guardadas | “Mis fotos”, “muéstrame las imágenes guardadas” | Lista solo fotos almacenadas | Sí |
+| Memoria de varios turnos | “muestramelas” después de “mis fotos” | Mantener la última consulta de guardados en D1 durante 15 minutos | En `feature/conversation-memory`; no incluye todavía borradores generales |
 | Acciones destructivas | Borrar datos | Solo flujo determinista con confirmación exacta | No se delega a la IA |
 
 La primera versión no permitirá que el modelo invente consultas, ejecute SQL, descargue enlaces, envíe mensajes a terceros ni realice acciones fuera de este catálogo.
+
+Las frases de seguimiento de guardados, como «muestramelas» o «muestra más» después de «mis fotos», se resuelven usando contexto temporal por usuario y chat. Los borradores generales y el contexto de tareas o recordatorios siguen fuera de alcance.
 
 ## Flujo de decisión
 
@@ -78,7 +81,7 @@ El código no confiará en que el modelo respete tipos: validará enums, longitu
 
 ## Entrega y ramas
 
-Esta rama implementará únicamente el adaptador de interpretación y su integración con el router. La memoria persistente de varios turnos, si se desea, se entregará después en otra rama (`feature/ai-conversation-memory`) porque agrega retención de datos, expiración de borradores y decisiones de privacidad.
+La rama `feature/ai-conversation` implementó el adaptador de interpretación y su integración con el router. La rama `feature/conversation-memory` añade únicamente el contexto temporal de consultas de guardados: no almacena el texto completo, expira a los 15 minutos y se elimina con los datos del usuario. El contexto general de tareas, recordatorios y borradores requiere una especificación posterior.
 
 El flujo de entrega será: `feature/ai-conversation` → PR a `Dev` → PR de `Dev` a `main`, con los checks de CI obligatorios y sin hacer push directo a ramas protegidas.
 

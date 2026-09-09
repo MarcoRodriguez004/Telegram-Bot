@@ -6,7 +6,7 @@ export type Intent =
   | { action: "create_expense"; amountCents: number; currency: string; category: string; description?: string }
   | { action: "list_expenses"; category?: string; range: "all" }
   | { action: "save_note"; content: string; url?: string }
-  | { action: "list_notes"; beforeId?: number }
+  | { action: "list_notes"; beforeId?: number; kind?: "all" | "photos" | "documents" }
   | { action: "get_note"; noteId: number }
   | { action: "summary"; range: "today" | "week" | "month" }
   | { action: "delete_data"; confirmation: true }

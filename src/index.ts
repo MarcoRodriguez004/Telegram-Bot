@@ -28,6 +28,7 @@ import {
 } from "./modules/tasks/repository";
 import type { TaskListItem } from "./modules/tasks/repository";
 import { clearEditSession, getActiveEditSession, startEditSession } from "./modules/edit-sessions/repository";
+import { getSavedNotesContext, saveSavedNotesContext } from "./modules/conversation/repository";
 import { parseIntent } from "./router/parser";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
@@ -168,7 +169,28 @@ async function getReply(
     return commandReply;
   }
 
-  let intent = parseIntent(text, { timezone: env.APP_TIMEZONE, currency: env.DEFAULT_CURRENCY });
+  const message = update.message;
+  const telegramUserId = message?.from?.id;
+  let userId: number | undefined;
+  let savedNotesContext = undefined;
+  if (message && telegramUserId !== undefined) {
+    userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
+      telegramUserId,
+      telegramChatId: message.chat.id,
+      timezone: env.APP_TIMEZONE,
+      currency: env.DEFAULT_CURRENCY,
+    });
+    savedNotesContext = await getSavedNotesContext(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: message.chat.id,
+    });
+  }
+
+  let intent = parseIntent(text, {
+    timezone: env.APP_TIMEZONE,
+    currency: env.DEFAULT_CURRENCY,
+    savedNotesContext: savedNotesContext ?? undefined,
+  });
   if (intent.action === "unknown" && intent.reason === "unsupported_message") {
     if (looksLikeDataDeletion(text)) {
       return "Para borrar tus datos escribe exactamente: /borrar_datos CONFIRMAR";
@@ -209,18 +231,10 @@ async function getReply(
     intent.action === "create_expense" ||
     intent.action === "save_note"
   ) {
-    const message = update.message;
-    const telegramUserId = message?.from?.id;
-    if (!message || telegramUserId === undefined) {
+    if (!message || telegramUserId === undefined || userId === undefined) {
       return "No pude identificar al usuario de Telegram.";
     }
 
-    const userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
-      telegramUserId,
-      telegramChatId: message.chat.id,
-      timezone: env.APP_TIMEZONE,
-      currency: env.DEFAULT_CURRENCY,
-    });
     if (intent.action === "list_tasks") {
       if (!intent.filter) {
         return { text: "¿Qué tareas quieres consultar?", replyMarkup: buildFilterKeyboard("task") };
@@ -236,14 +250,25 @@ async function getReply(
       return formatReminderListReply(result.reminders, result.nextBeforeId, intent.filter, env.APP_TIMEZONE);
     }
     if (intent.action === "list_notes") {
-      const { notes, nextBeforeId } = await listNotes(env.PERSONAL_ASSISTANT_DB, userId, intent.beforeId);
-      if (!notes.length) return intent.beforeId ? "No hay más guardados. Volver: /guardados" : "No tienes guardados. Envía una foto o documento con la descripción «Guarda».";
+      const kind = intent.kind ?? "all";
+      const { notes, nextBeforeId } = await listNotes(env.PERSONAL_ASSISTANT_DB, userId, intent.beforeId, kind);
+      await saveSavedNotesContext(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        chatId: message.chat.id,
+        kind,
+        nextBeforeId,
+      });
+      if (!notes.length) {
+        if (intent.beforeId) return kind === "photos" ? "No hay más imágenes guardadas." : kind === "documents" ? "No hay más documentos guardados." : "No hay más guardados. Volver: /guardados";
+        return kind === "photos" ? "No tienes imágenes guardadas. Envía una foto con la descripción «Guarda»." : kind === "documents" ? "No tienes documentos guardados. Envía un documento con la descripción «Guarda»." : "No tienes guardados. Envía una foto o documento con la descripción «Guarda».";
+      }
       const lines = notes.map((note) => {
         const kind = note.file_kind === "photo" ? "Foto" : note.file_kind === "document" ? "Documento" : note.url ? "Enlace" : "Nota";
         const preview = note.content.replace(/\s+/g, " ");
         return `/guardado_${note.id} · ${kind} · ${preview.length > 160 ? preview.slice(0, 159) + "…" : preview}`;
       });
-      return ["📎 Mis guardados · más recientes primero", "", ...lines, "", "Toca un comando para ver el guardado.",
+      const title = kind === "photos" ? "📷 Imágenes guardadas · más recientes primero" : kind === "documents" ? "📄 Documentos guardados · más recientes primero" : "📎 Mis guardados · más recientes primero";
+      return [title, "", ...lines, "", "Toca un comando para ver el guardado.",
         ...(nextBeforeId ? [`Más: /guardados_${nextBeforeId}`] : []),
       ].join("\n");
     }

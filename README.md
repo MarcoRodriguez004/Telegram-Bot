@@ -32,7 +32,7 @@ Los gastos requieren un monto para conservar totales correctos. La conversación
 
 Envía una foto o documento **por separado**, con la descripción `Guarda` o `Guarda recibo de luz`. El bot confirma el guardado y muestra un comando como `/guardado_123` para recibir el archivo de vuelta.
 
-Escribe `mis guardados` o `/guardados` para ver fotos, documentos, notas y enlaces, incluidos los que ya habías guardado. La lista muestra diez elementos, del más reciente al más antiguo; toca `/guardados_123` al final para ver más. Para abrir uno, toca su comando `/guardado_123` o escribe `ver guardado 123`.
+Escribe `mis guardados` o `/guardados` para ver fotos, documentos, notas y enlaces, incluidos los que ya habías guardado. También puedes escribir `mis fotos` o `muéstrame las imágenes guardadas` para listar solo imágenes. Si después escribes `muestramelas` o `muestra más`, el bot conserva esa consulta durante 15 minutos en la base de datos para continuarla sin repetir el contexto. La lista muestra diez elementos, del más reciente al más antiguo; toca `/guardados_123` al final para ver más. Para abrir uno, toca su comando `/guardado_123` o escribe `ver guardado 123`.
 
 Una foto/documento sin `Guarda` en la descripción recibe instrucciones y no se guarda. Los álbumes no se guardan como conjunto: envía cada archivo por separado con su descripción. Las fotos enviadas antes de implementar esta función deben enviarse nuevamente.
 

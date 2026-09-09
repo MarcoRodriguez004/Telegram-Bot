@@ -70,7 +70,7 @@ $workerUrl = Read-Host "URL pública del Worker"
 $body = @{
   url = "$workerUrl/telegram/webhook"
   secret_token = $webhookSecret
-  allowed_updates = @("message")
+  allowed_updates = @("message", "callback_query")
 } | ConvertTo-Json
 
 Invoke-RestMethod `
@@ -126,7 +126,7 @@ Cloudflare también ofrece Workers Builds como alternativa nativa para GitHub, p
 
 ### Versión con fotos y documentos
 
-`0002_note_attachments.sql` añade dos columnas opcionales a `notes`, una restricción de coherencia y un índice. Conserva las notas existentes. Antes de integrar esta versión en `main`, comprueba que el token de GitHub tenga `D1 → Edit`; no basta con permiso para desplegar Workers. No es necesario cambiar el webhook, porque sigue recibiendo actualizaciones `message`.
+`0002_note_attachments.sql` añade dos columnas opcionales a `notes`, una restricción de coherencia y un índice. `0004_conversation_context.sql` añade el contexto temporal de consultas, sin guardar el texto completo de los mensajes. Conserva los datos existentes. Antes de integrar esta versión en `main`, comprueba que el token de GitHub tenga `D1 → Edit`; no basta con permiso para desplegar Workers. El webhook debe aceptar actualizaciones `message` y `callback_query` para que funcionen los botones.
 
 Prueba desde la cuenta autorizada: envía una foto con `Guarda recibo de prueba`, escribe `mis guardados` y toca el comando `/guardado_<id>` devuelto. Repite con un PDF. Los archivos enviados antes de esta versión deben enviarse nuevamente.
 

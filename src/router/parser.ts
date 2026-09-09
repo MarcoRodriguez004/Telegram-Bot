@@ -1,4 +1,5 @@
 import type { Intent } from "./intent";
+import type { SavedNotesContext } from "../modules/conversation/repository";
 import { getZonedDateTime, localDateTimeToUtc } from "../shared/dates";
 import { MAX_EXPENSE_CENTS, parseAmountCents } from "../shared/money";
 import { normalizeHttpUrl } from "../shared/urls";
@@ -21,6 +22,9 @@ const ADD_EXPENSE = /^agrega(?:r)?\s+(?:a\s+)?(?:los?\s+)?gastos?(?:\s+de)?\s+(.
 const EXPENSE_HISTORY = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:el\s+)?historial\s+de\s+gastos?(?:\s+de\s+(.+))?$/iu;
 const NATURAL_EXPENSE_HISTORY = /^(?:mis\s+gastos?|gastos?)\s+(?:de|en)\s+(.+)$/iu;
 const NOTE_COMMAND = /^(?:\/)?(?:nota|apunte)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const SAVED_MEDIA_LIST = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:(?:mis\s+)?(?:las?\s+)?(?:im[aá]genes?|fotos?|fotograf[ií]as?)\s+guardad(?:as|os)|mis\s+(?:im[aá]genes?|fotos?|fotograf[ií]as?))$/iu;
+const SAVED_MEDIA_FOLLOW_UP = /^(?:mu[eé]stra(?:me)?|ens[eé]ña(?:me)?|dame)\s*(?:las|los|esas|esos)?$/iu;
+const SAVED_MEDIA_MORE = /^(?:mu[eé]stra(?:me)?|ens[eé]ña(?:me)?|dame)\s+(?:m[aá]s|otras?|siguientes?)$/iu;
 const SAVED_LIST = /^(?:(?:mu[eé]strame\s+)?mis\s+guardados|\/?guardados)(?:_(\d+)|\s+antes\s+(\d+))?(?:@[a-z0-9_]+)?$/iu;
 const SAVED_ITEM = /^(?:ver\s+guardado\s+|\/?guardado(?:_|\s+))(\d+)(?:@[a-z0-9_]+)?$/iu;
 const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
@@ -38,6 +42,7 @@ export interface ParseOptions {
   now?: Date;
   timezone?: string;
   currency?: string;
+  savedNotesContext?: SavedNotesContext;
 }
 
 export function parseIntent(text: string, options: ParseOptions = {}): Intent {
@@ -45,6 +50,24 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
 
   if (!normalized || normalized.length > MAX_MESSAGE_LENGTH) {
     return { action: "unknown", reason: "unsupported_message" };
+  }
+
+  if (SAVED_MEDIA_LIST.test(normalized)) {
+    return { action: "list_notes", kind: "photos" };
+  }
+
+  if (options.savedNotesContext && SAVED_MEDIA_MORE.test(normalized)) {
+    return options.savedNotesContext.nextBeforeId
+      ? {
+          action: "list_notes",
+          kind: options.savedNotesContext.kind,
+          beforeId: options.savedNotesContext.nextBeforeId,
+        }
+      : { action: "list_notes", kind: options.savedNotesContext.kind };
+  }
+
+  if (options.savedNotesContext && SAVED_MEDIA_FOLLOW_UP.test(normalized)) {
+    return { action: "list_notes", kind: options.savedNotesContext.kind };
   }
 
   const savedList = SAVED_LIST.exec(normalized);
