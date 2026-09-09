@@ -42,6 +42,7 @@ describe("deleteUserData", () => {
       { query: "DELETE FROM reminders WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM expenses WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM notes WHERE user_id = ?", values: [7] },
+      { query: "DELETE FROM edit_sessions WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM users WHERE id = ?", values: [7] },
     ]);
     expect(batchedStatements.some((statement) => statement.query.includes("processed_updates"))).toBe(false);

@@ -93,6 +93,20 @@ describe("interpretMessage", () => {
     expect(result).toEqual({ action: "create_task", title: "comprar medicina" });
   });
 
+  it("normalizes task and reminder list intents with optional filters", async () => {
+    const responses = [
+      openAiResponse(candidate({ action: "list_tasks", filter: null, message: null })),
+      openAiResponse(candidate({ action: "list_reminders", filter: "completed", message: null })),
+    ];
+    const fetcher: typeof fetch = async () => responses.shift()!;
+
+    await expect(interpretMessage("cuáles son mis tareas", { apiKey: "test-key", fetcher })).resolves.toEqual({ action: "list_tasks" });
+    await expect(interpretMessage("mis recordatorios completados", { apiKey: "test-key", fetcher })).resolves.toEqual({
+      action: "list_reminders",
+      filter: "completed",
+    });
+  });
+
   it("normalizes reminder and expense data through business validation", async () => {
     const responses = [
       openAiResponse(candidate({

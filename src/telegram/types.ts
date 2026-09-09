@@ -20,6 +20,13 @@ export interface TelegramMessage {
   document?: TelegramDocument;
 }
 
+export interface TelegramCallbackQuery {
+  id: string;
+  from: TelegramUser;
+  message?: TelegramMessage;
+  data?: string;
+}
+
 export interface TelegramDocument {
   file_id: string;
   file_unique_id: string;
@@ -41,6 +48,7 @@ export interface TelegramPhotoSize {
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 }
 
 export function parseTelegramUpdate(input: unknown): TelegramUpdate | null {
@@ -56,11 +64,22 @@ export function parseTelegramUpdate(input: unknown): TelegramUpdate | null {
   if (input.message !== undefined && !isTelegramMessage(input.message)) {
     return null;
   }
+  if (input.callback_query !== undefined && !isTelegramCallbackQuery(input.callback_query)) {
+    return null;
+  }
 
   return {
     update_id: updateId,
     message: input.message as TelegramMessage | undefined,
+    callback_query: input.callback_query as TelegramCallbackQuery | undefined,
   };
+}
+
+function isTelegramCallbackQuery(value: unknown): value is TelegramCallbackQuery {
+  if (!isRecord(value) || typeof value.id !== "string" || value.id.length < 1 || value.id.length > 256) return false;
+  if (!isTelegramUser(value.from)) return false;
+  if (value.message !== undefined && !isTelegramMessage(value.message)) return false;
+  return value.data === undefined || (typeof value.data === "string" && value.data.length <= 64);
 }
 
 function isTelegramMessage(value: unknown): value is TelegramMessage {
@@ -70,7 +89,7 @@ function isTelegramMessage(value: unknown): value is TelegramMessage {
   if (!isRecord(value.chat) || !Number.isInteger(value.chat.id) || !isChatType(value.chat.type)) {
     return false;
   }
-  if (value.from !== undefined && (!isRecord(value.from) || !Number.isInteger(value.from.id))) {
+  if (value.from !== undefined && !isTelegramUser(value.from)) {
     return false;
   }
   if (value.text !== undefined && typeof value.text !== "string") return false;
@@ -82,6 +101,11 @@ function isTelegramMessage(value: unknown): value is TelegramMessage {
       typeof photo.width === "number" && Number.isSafeInteger(photo.width) && photo.width > 0 &&
       typeof photo.height === "number" && Number.isSafeInteger(photo.height) && photo.height > 0))) return false;
   return true;
+}
+
+function isTelegramUser(value: unknown): value is TelegramUser {
+  return isRecord(value) && typeof value.id === "number" && Number.isInteger(value.id) && value.id >= 1 && typeof value.is_bot === "boolean" &&
+    (value.first_name === undefined || typeof value.first_name === "string");
 }
 
 function isTelegramFile(value: Record<string, unknown>): boolean {

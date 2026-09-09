@@ -6,13 +6,40 @@ interface TelegramApiResponse {
   ok?: boolean;
 }
 
+export interface InlineKeyboardButton {
+  text: string;
+  callback_data: string;
+}
+
+export interface InlineKeyboardMarkup {
+  inline_keyboard: InlineKeyboardButton[][];
+}
+
+export interface SendMessageOptions {
+  replyMarkup?: InlineKeyboardMarkup;
+}
+
 export async function sendMessage(
   env: Env,
   chatId: number,
   text: string,
   telegramFetch: typeof fetch = fetch,
+  options: SendMessageOptions = {},
 ): Promise<void> {
-  await callTelegram(env, "sendMessage", { chat_id: chatId, text }, telegramFetch);
+  const body: Record<string, unknown> = { chat_id: chatId, text };
+  if (options.replyMarkup) body.reply_markup = options.replyMarkup;
+  await callTelegram(env, "sendMessage", body, telegramFetch);
+}
+
+export async function answerCallbackQuery(
+  env: Env,
+  callbackQueryId: string,
+  telegramFetch: typeof fetch = fetch,
+  text?: string,
+): Promise<void> {
+  const body: Record<string, unknown> = { callback_query_id: callbackQueryId };
+  if (text) body.text = text;
+  await callTelegram(env, "answerCallbackQuery", body, telegramFetch);
 }
 
 export async function sendAttachment(
@@ -31,7 +58,7 @@ export async function sendAttachment(
 
 async function callTelegram(
   env: Env,
-  method: "sendMessage" | "sendPhoto" | "sendDocument",
+  method: "sendMessage" | "sendPhoto" | "sendDocument" | "answerCallbackQuery",
   body: Record<string, unknown>,
   telegramFetch: typeof fetch,
 ): Promise<void> {
