@@ -37,9 +37,10 @@ No uses `--local` en este paso: las migraciones locales y remotas son bases dist
 
 ## 2. Publicar el Worker
 
-Para una primera publicación manual:
+Para una publicación manual, aplica las migraciones pendientes antes de publicar el código:
 
 ```powershell
+npm run db:migrate:remote
 npm run deploy
 ```
 
@@ -105,7 +106,7 @@ En GitHub, abre `Settings → Environments`, crea el entorno `production` y aña
 
 | Secreto | Valor |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | Token API de Cloudflare con la plantilla `Edit Cloudflare Workers`, limitado a esta cuenta |
+| `CLOUDFLARE_API_TOKEN` | Token API de Cloudflare con la plantilla `Edit Cloudflare Workers` y permiso adicional `Account → D1 → Edit`, limitado a esta cuenta |
 | `CLOUDFLARE_ACCOUNT_ID` | ID de la cuenta de Cloudflare |
 
 No copies aquí `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` ni `TELEGRAM_ALLOWED_USER_ID`: esos secretos ya viven en Cloudflare y no son necesarios para construir el Worker.
@@ -113,16 +114,22 @@ No copies aquí `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` ni `TELEGRAM_ALL
 El workflow usa esta secuencia:
 
 1. En cada pull request y push a `main` o `Dev`: `npm ci`, lint, typecheck, tests, `npm audit --audit-level=high` y `npm run build`.
-2. Solo en un push a `main` que supera `quality`: `cloudflare/wrangler-action@v4` ejecuta `wrangler deploy`.
+2. Solo en un push a `main` que supera `quality`: `cloudflare/wrangler-action@v4` aplica las migraciones de D1 con `d1 migrations apply PERSONAL_ASSISTANT_DB --remote` y después ejecuta `deploy`. Si falla la migración, no publica el Worker.
 3. Después del despliegue: comprueba `GET /health` en `https://personal-assistant-bot.personal-assistant-bot-marco.workers.dev`.
 
 El nombre del Worker debe coincidir con `name` en `wrangler.jsonc`. Se recomienda proteger `main` para que los cambios entren mediante pull request con el check `CI / quality` aprobado.
 
 Cloudflare también ofrece Workers Builds como alternativa nativa para GitHub, pero no debe activarse simultáneamente con este workflow porque produciría dos sistemas de despliegue para el mismo Worker.
 
+### Versión con fotos y documentos
+
+`0002_note_attachments.sql` añade dos columnas opcionales a `notes`, una restricción de coherencia y un índice. Conserva las notas existentes. Antes de integrar esta versión en `main`, comprueba que el token de GitHub tenga `D1 → Edit`; no basta con permiso para desplegar Workers. No es necesario cambiar el webhook, porque sigue recibiendo actualizaciones `message`.
+
+Prueba desde la cuenta autorizada: envía una foto con `Guarda recibo de prueba`, escribe `mis guardados` y toca el comando `/guardado_<id>` devuelto. Repite con un PDF. Los archivos enviados antes de esta versión deben enviarse nuevamente.
+
 ## Rollback
 
-El rollback de código se hace publicando un commit anterior desde `main` o revirtiendo el commit problemático y dejando que Workers Builds despliegue de nuevo. Primero comprueba `/health` y `getWebhookInfo`; no borres el Worker ni la base D1 para revertir código.
+El rollback de código se hace publicando un commit anterior desde `main` o revirtiendo el commit problemático y dejando que GitHub Actions despliegue de nuevo. Primero comprueba `/health` y `getWebhookInfo`; no borres el Worker ni la base D1 para revertir código. Las columnas opcionales de `0002_note_attachments.sql` pueden permanecer al volver al código anterior: no las elimines, pues contienen las referencias guardadas.
 
 Las migraciones actuales son acumulativas. Antes de añadir una migración destructiva hay que diseñar una estrategia expand/contract y una copia/exportación; no se debe “rollbackear” producción borrando tablas manualmente.
 
