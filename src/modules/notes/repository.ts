@@ -11,10 +11,13 @@ export interface SavedNote {
 }
 
 const SAVED_PAGE_SIZE = 10;
+export type SavedNoteKind = "all" | "photos" | "documents";
 
-export async function listNotes(db: D1Database, userId: number, beforeId?: number) {
+export async function listNotes(db: D1Database, userId: number, beforeId?: number, kind: SavedNoteKind = "all") {
+  if (kind !== "all" && kind !== "photos" && kind !== "documents") throw new Error("Saved note kind is invalid");
+  const kindCondition = kind === "photos" ? " AND file_kind = 'photo'" : kind === "documents" ? " AND file_kind = 'document'" : "";
   const result = await db.prepare(
-    "SELECT id, content, url, file_kind, file_id FROM notes WHERE user_id = ? AND id < ? ORDER BY id DESC LIMIT ?",
+    `SELECT id, content, url, file_kind, file_id FROM notes WHERE user_id = ? AND id < ?${kindCondition} ORDER BY id DESC LIMIT ?`,
   ).bind(userId, beforeId ?? Number.MAX_SAFE_INTEGER, SAVED_PAGE_SIZE + 1).all<SavedNote>();
   const notes = result.results.slice(0, SAVED_PAGE_SIZE);
   return { notes, nextBeforeId: result.results.length > SAVED_PAGE_SIZE ? notes.at(-1)?.id : undefined };
