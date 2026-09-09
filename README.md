@@ -26,6 +26,18 @@ Muéstrame el historial de gastos de carro
 
 Los gastos requieren un monto para conservar totales correctos. La conversación de dos pasos para pedir el monto y completarlo queda como una mejora posterior.
 
+## Fotos, documentos y mis guardados
+
+Envía una foto o documento **por separado**, con la descripción `Guarda` o `Guarda recibo de luz`. El bot confirma el guardado y muestra un comando como `/guardado_123` para recibir el archivo de vuelta.
+
+Escribe `mis guardados` o `/guardados` para ver fotos, documentos, notas y enlaces, incluidos los que ya habías guardado. La lista muestra diez elementos, del más reciente al más antiguo; toca `/guardados_123` al final para ver más. Para abrir uno, toca su comando `/guardado_123` o escribe `ver guardado 123`.
+
+Una foto/documento sin `Guarda` en la descripción recibe instrucciones y no se guarda. Los álbumes no se guardan como conjunto: envía cada archivo por separado con su descripción. Las fotos enviadas antes de implementar esta función deben enviarse nuevamente.
+
+El bot conserva en D1 la descripción y el identificador del archivo en Telegram; no descarga los archivos, no lee el recibo mediante OCR y no crea gastos automáticamente. La recuperación depende de Telegram y del mismo bot. Para preservar la calidad original de una imagen, envíala como documento. `/borrar_datos CONFIRMAR` elimina estos registros de D1, pero no borra los mensajes o archivos que siguen en el chat de Telegram.
+
+Antes de publicar esta versión hay que aplicar `0002_note_attachments.sql`. El pipeline ejecuta las migraciones remotas antes del despliegue; su token requiere el permiso D1 de edición. Consulta [el procedimiento de despliegue](docs/DEPLOYMENT.md).
+
 ## Probarlo localmente
 
 Requisitos: Node.js 22 LTS recomendado y npm.

@@ -18,6 +18,8 @@ const ADD_EXPENSE = /^agrega(?:r)?\s+(?:a\s+)?(?:los?\s+)?gastos?(?:\s+de)?\s+(.
 const EXPENSE_HISTORY = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:el\s+)?historial\s+de\s+gastos?(?:\s+de\s+(.+))?$/iu;
 const NATURAL_EXPENSE_HISTORY = /^(?:mis\s+gastos?|gastos?)\s+(?:de|en)\s+(.+)$/iu;
 const NOTE_COMMAND = /^(?:\/)?(?:nota|apunte)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const SAVED_LIST = /^(?:(?:mu[eé]strame\s+)?mis\s+guardados|\/?guardados)(?:_(\d+)|\s+antes\s+(\d+))?(?:@[a-z0-9_]+)?$/iu;
+const SAVED_ITEM = /^(?:ver\s+guardado\s+|\/?guardado(?:_|\s+))(\d+)(?:@[a-z0-9_]+)?$/iu;
 const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const DELETE_DATA_COMMAND = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?\s+CONFIRMAR$/u;
@@ -40,6 +42,23 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
 
   if (!normalized || normalized.length > MAX_MESSAGE_LENGTH) {
     return { action: "unknown", reason: "unsupported_message" };
+  }
+
+  const savedList = SAVED_LIST.exec(normalized);
+  if (savedList) {
+    const cursor = savedList[1] ?? savedList[2];
+    if (cursor === undefined) return { action: "list_notes" };
+    const beforeId = Number(cursor);
+    return Number.isSafeInteger(beforeId) && beforeId > 0
+      ? { action: "list_notes", beforeId }
+      : { action: "unknown", reason: "invalid_saved_id" };
+  }
+  const savedItem = SAVED_ITEM.exec(normalized);
+  if (savedItem) {
+    const noteId = Number(savedItem[1]);
+    return Number.isSafeInteger(noteId) && noteId > 0
+      ? { action: "get_note", noteId }
+      : { action: "unknown", reason: "invalid_saved_id" };
   }
 
   if (DELETE_DATA_COMMAND.test(normalized)) {

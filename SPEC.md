@@ -57,12 +57,27 @@ type Intent =
   | { action: "create_expense"; amountCents: number; currency: string; category: string; description?: string }
   | { action: "list_expenses"; category?: string; range: "all" }
   | { action: "save_note"; content: string; url?: string }
+  | { action: "list_notes"; beforeId?: number }
+  | { action: "get_note"; noteId: number }
   | { action: "summary"; range: "today" | "week" | "month" }
   | { action: "delete_data"; confirmation: true }
   | { action: "unknown"; reason: string };
 ```
 
 El executor no confía en texto libre: valida el `Intent`, acepta solo acciones conocidas y usa consultas D1 parametrizadas.
+
+## Guardados con archivos
+
+- Fotos y documentos se guardan con `Guarda` o `Guarda <descripción>` en el caption del mismo mensaje. El caption no ejecuta las demás intenciones del parser.
+- El webhook valida los metadatos antes de procesarlos. Guarda la referencia `file_id` y tipo original en `notes`, usando la migración aditiva `0002_note_attachments.sql`. Para fotos elige la mayor resolución recibida. Si no hay descripción, usa el nombre del documento como título sin persistirlo por duplicado.
+- Sin una instrucción de guardado, el bot explica cómo enviar el archivo. Cada archivo requiere su propio mensaje e instrucción; no hay agrupación de álbumes ni estado conversacional implícito.
+- `mis guardados` y `/guardados` listan diez notas/archivos por página, ordenados por ID descendente. `/guardados_<id>` continúa antes de ese ID; las nuevas inserciones no desplazan la paginación.
+- `/guardado_<id>`, `/guardado <id>` y `ver guardado <id>` devuelven texto/enlace o el archivo usando `sendPhoto`/`sendDocument`. Todas las consultas se restringen al usuario autenticado.
+- El registro conserva hasta 1000 caracteres de descripción. La vista de lista limita cada descripción a 160 caracteres. La base rechaza referencias que carezcan de identificador o tipo.
+- Los archivos permanecen en Telegram; no hay descarga, OCR ni extracción de gastos. D1 conserva las referencias hasta que el usuario solicita el borrado. El borrado no elimina mensajes ni copias de Telegram.
+- Si Telegram rechaza la recuperación, el bot conserva el registro e indica cómo volver a solicitarlo.
+
+Referencia: [Telegram Bot API, envío por file_id](https://core.telegram.org/bots/api#sending-files).
 
 ## Seguridad
 

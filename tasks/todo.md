@@ -14,3 +14,5 @@
 - [ ] Añadir parser ampliado y LLM opcional.
 - [x] Recordatorios naturales con hora (`2pm`, `2:30 pm`, `14:00`).
 - [x] Gastos naturales con categoría, descripción e historial por categoría.
+- [x] Guardar fotos y documentos con `Guarda` en la descripción.
+- [x] Consultar `mis guardados` con paginación y recuperar archivos, notas y enlaces.

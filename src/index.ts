@@ -5,14 +5,15 @@ import { createReminder } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { createExpense, getExpenseHistory } from "./modules/expenses/repository";
 import type { ExpenseHistoryResult } from "./modules/expenses/repository";
-import { createNote } from "./modules/notes/repository";
+import { createNote, getNote, listNotes } from "./modules/notes/repository";
+import { saveMedia } from "./modules/notes/media";
 import { getSummary } from "./modules/summary/repository";
 import type { SummaryResult } from "./modules/summary/repository";
 import { createTask } from "./modules/tasks/repository";
 import { parseIntent } from "./router/parser";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
-import { sendMessage } from "./telegram/client";
+import { sendAttachment, sendMessage } from "./telegram/client";
 import { parseTelegramUpdate } from "./telegram/types";
 import type { TelegramUpdate } from "./telegram/types";
 import type { Env } from "./types";
@@ -80,13 +81,19 @@ export async function handleRequest(
       return new Response(null, { status: 200 });
     }
 
+    if (update.message?.photo || update.message?.document) {
+      const reply = await saveMedia(update.message, env);
+      await sendMessage(env, update.message.chat.id, reply, telegramFetch);
+      return new Response(null, { status: 200 });
+    }
+
     const text = update.message?.text?.trim();
     if (!text || !update.message) {
       return new Response(null, { status: 200 });
     }
 
-    const reply = await getReply(text, update, env);
-    await sendMessage(env, update.message.chat.id, reply, telegramFetch);
+    const reply = await getReply(text, update, env, telegramFetch);
+    if (reply !== null) await sendMessage(env, update.message.chat.id, reply, telegramFetch);
     return new Response(null, { status: 200 });
   } catch (error) {
     console.error("Webhook processing failed", error instanceof Error ? error.message : "unknown error");
@@ -94,7 +101,7 @@ export async function handleRequest(
   }
 }
 
-async function getReply(text: string, update: TelegramUpdate, env: Env): Promise<string> {
+async function getReply(text: string, update: TelegramUpdate, env: Env, telegramFetch: typeof fetch): Promise<string | null> {
   const commandReply = getCommandReply(text);
   if (commandReply) {
     return commandReply;
@@ -114,6 +121,8 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
   if (
     intent.action === "summary" ||
     intent.action === "list_expenses" ||
+    intent.action === "list_notes" ||
+    intent.action === "get_note" ||
     intent.action === "create_task" ||
     intent.action === "create_reminder" ||
     intent.action === "create_expense" ||
@@ -131,6 +140,33 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
     });
+    if (intent.action === "list_notes") {
+      const { notes, nextBeforeId } = await listNotes(env.PERSONAL_ASSISTANT_DB, userId, intent.beforeId);
+      if (!notes.length) return intent.beforeId ? "No hay más guardados. Volver: /guardados" : "No tienes guardados. Envía una foto o documento con la descripción «Guarda».";
+      const lines = notes.map((note) => {
+        const kind = note.file_kind === "photo" ? "Foto" : note.file_kind === "document" ? "Documento" : note.url ? "Enlace" : "Nota";
+        const preview = note.content.replace(/\s+/g, " ");
+        return `/guardado_${note.id} · ${kind} · ${preview.length > 160 ? preview.slice(0, 159) + "…" : preview}`;
+      });
+      return ["📎 Mis guardados · más recientes primero", "", ...lines, "", "Toca un comando para ver el guardado.",
+        ...(nextBeforeId ? [`Más: /guardados_${nextBeforeId}`] : []),
+      ].join("\n");
+    }
+
+    if (intent.action === "get_note") {
+      const note = await getNote(env.PERSONAL_ASSISTANT_DB, userId, intent.noteId);
+      if (!note) return "No encontré ese guardado. Consulta /guardados.";
+      if (note.file_kind && note.file_id) {
+        try {
+          await sendAttachment(env, message.chat.id, { kind: note.file_kind, fileId: note.file_id }, note.content, telegramFetch);
+          return null;
+        } catch {
+          console.error("Saved attachment delivery failed");
+          return `No pude enviar el archivo. Sigue guardado; intenta de nuevo con /guardado_${note.id}.`;
+        }
+      }
+      return note.url && note.content !== note.url ? `${note.content}\n${note.url}` : note.content;
+    }
     if (intent.action === "summary") {
       const dateRange = getSummaryDateRange(intent.range, new Date(), env.APP_TIMEZONE);
       const summary = await getSummary(env.PERSONAL_ASSISTANT_DB, { userId, ...dateRange });
@@ -213,6 +249,10 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
     return "Escribe el contenido de la nota. Ejemplo: /nota recordar renovar seguro";
   }
 
+  if (intent.action === "unknown" && intent.reason === "invalid_saved_id") {
+    return "Usa el comando que aparece junto al archivo en /guardados.";
+  }
+
   if (intent.action === "unknown" && intent.reason === "missing_note_url") {
     return "No encontré el link. Usa una URL http o https, por ejemplo: guardar https://ejemplo.com";
   }
@@ -229,7 +269,7 @@ async function getReply(text: string, update: TelegramUpdate, env: Env): Promise
     return "Para borrar tus datos escribe exactamente: /borrar_datos CONFIRMAR";
   }
 
-  return "Todavía estoy construyendo mis módulos. Por ahora prueba /start, /help o /tarea comprar medicina.";
+  return "No entendí ese mensaje. Puedes consultar /guardados o ver ejemplos en /help.";
 }
 
 function formatReminderAt(remindAt: string, timezone: string): string {
@@ -298,11 +338,11 @@ function getCommandReply(text: string): string | null {
   const command = text.split(/\s+/, 1)[0].toLowerCase().split("@")[0];
 
   if (command === "/start") {
-    return "👋 Bienvenido a Personal Assistant.\n\nEscribe una tarea, gasto o recordatorio en lenguaje natural.";
+    return "👋 Bienvenido a Personal Assistant.\n\nEscribe una tarea, gasto o recordatorio en lenguaje natural. También puedes enviar una foto o documento con la descripción «Guarda» y consultar /guardados.";
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos y enlaces.\n\nEjemplos:\n• tarea comprar medicina\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• guardar https://ejemplo.com";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces y archivos.\n\nEjemplos:\n• tarea comprar medicina\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• guardar https://ejemplo.com\n• nota póliza pendiente\n• Envía una foto o documento con la descripción «Guarda recibo de luz» (uno por mensaje).\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
 
   return null;
