@@ -30,6 +30,17 @@ function openAiResponse(value: AiCandidate): Response {
   }), { status: 200 });
 }
 
+function openAiRestResponse(value: AiCandidate): Response {
+  return new Response(JSON.stringify({
+    status: "completed",
+    output: [{
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: JSON.stringify(value) }],
+    }],
+  }), { status: 200 });
+}
+
 describe("interpretMessage", () => {
   it("does not call OpenAI when the key is not configured", async () => {
     let calls = 0;
@@ -65,6 +76,21 @@ describe("interpretMessage", () => {
       store: false,
       text: { format: { type: "json_schema", name: "assistant_intent", strict: true } },
     });
+  });
+
+  it("reads structured output from the raw Responses API payload", async () => {
+    const result = await interpretMessage("por favor anota comprar medicina", {
+      apiKey: "test-key",
+      timezone: "America/Mexico_City",
+      currency: "MXN",
+      fetcher: async () => openAiRestResponse(candidate({
+        action: "create_task",
+        title: "comprar medicina",
+        message: null,
+      })),
+    });
+
+    expect(result).toEqual({ action: "create_task", title: "comprar medicina" });
   });
 
   it("normalizes reminder and expense data through business validation", async () => {

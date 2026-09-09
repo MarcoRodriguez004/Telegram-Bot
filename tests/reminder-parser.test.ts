@@ -29,6 +29,14 @@ describe("reminder parser", () => {
     });
   });
 
+  it("accepts the common min abbreviation in a natural reminder", () => {
+    expect(parseIntent("me puedes recordar en 1 min imprimir documentos de encinos", options)).toEqual({
+      action: "create_reminder",
+      title: "imprimir documentos de encinos",
+      remindAt: "2026-09-07T19:31:00.000Z",
+    });
+  });
+
   it("supports a relative time before the reminder title", () => {
     expect(parseIntent("recuérdame en 1 minuto apagar la pc", options)).toEqual({
       action: "create_reminder",
