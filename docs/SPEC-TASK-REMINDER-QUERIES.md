@@ -12,17 +12,18 @@ La memoria conversacional de varios turnos queda fuera de este incremento.
 ## Requisitos acordados
 
 1. Un mensaje ambiguo como «mis tareas» pregunta el estado mediante botones: `Completadas`, `Pendientes`, `Canceladas` y `Todas`.
-2. La primera página muestra las 10 más recientes y la fecha local.
-3. Un botón `Consultar más` muestra las siguientes 20; debe poder repetirse mientras existan resultados.
-4. Las listas no muestran IDs internos.
-5. Para completar una tarea, el usuario pulsa un botón cuyo texto contiene el nombre de la tarea.
-6. Las tareas/recordatorios se muestran como botones para seleccionar el registro que se desea editar.
-7. La selección debe producir acciones posteriores sin exigir que el usuario vuelva a escribir el título completo.
+2. Un mensaje ambiguo como «mis recordatorios» pregunta el estado mediante botones: `Pendientes`, `Completados`, `Cancelados` y `Todos`.
+3. La primera página muestra las 10 más recientes y la fecha local.
+4. Un botón `Consultar más` muestra las siguientes 20; debe poder repetirse mientras existan resultados.
+5. Las listas no muestran IDs internos.
+6. Para completar una tarea, el usuario pulsa un botón cuyo texto contiene el nombre de la tarea.
+7. Las tareas/recordatorios se muestran como botones para seleccionar el registro que se desea editar.
+8. La selección debe producir acciones posteriores sin exigir que el usuario vuelva a escribir el título completo.
 
 ## Alcance técnico
 
 - Añadir consultas paginadas y operaciones de estado en los repositorios de tareas y recordatorios.
-- Añadir estados persistentes para cancelación, con migración D1 compatible con datos existentes.
+- Añadir estados persistentes para cancelación y completar recordatorios, con migración D1 compatible con datos existentes.
 - Extender el contrato `Intent` y el esquema de OpenAI con consultas y acciones seguras.
 - Parsear y validar `callback_query` de Telegram; responder al callback y editar o enviar el mensaje correspondiente.
 - Codificar callbacks opacos, limitados y autorizados por usuario; nunca confiar en el texto visible del botón.
@@ -38,10 +39,9 @@ La memoria conversacional de varios turnos queda fuera de este incremento.
 
 ## Open Questions
 
-1. Para recordatorios, las cuatro opciones deben llamarse `Pendientes`, `Enviados`, `Cancelados` y `Todos`, o se desea otro conjunto de estados?
-2. Al pulsar una tarea/recordatorio, ¿el menú debe ofrecer `Completar`, `Editar`, `Cancelar` y `Volver`, o se necesita otra acción?
-3. ¿Editar tarea permite cambiar solo el nombre, o también fecha límite? ¿Editar recordatorio permite cambiar nombre y fecha/hora?
-4. ¿La cancelación debe conservar el registro como `cancelled` (recomendado) o eliminarlo?
+1. Al pulsar una tarea/recordatorio, ¿el menú debe ofrecer `Completar`, `Editar`, `Cancelar` y `Volver`, o se necesita otra acción?
+2. ¿Editar tarea permite cambiar solo el nombre, o también fecha límite? ¿Editar recordatorio permite cambiar nombre y fecha/hora?
+3. ¿La cancelación debe conservar el registro como `cancelled` (recomendado) o eliminarlo?
 
 ## Criterios de aceptación
 
