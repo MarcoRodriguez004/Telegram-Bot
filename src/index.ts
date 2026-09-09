@@ -1,4 +1,5 @@
 import { ensureUser } from "./db/users";
+import { interpretMessage } from "./ai/openai";
 import { claimUpdate } from "./db/repository";
 import { deleteUserData } from "./modules/privacy/repository";
 import { createReminder } from "./modules/reminders/repository";
@@ -35,6 +36,7 @@ export async function handleRequest(
   request: Request,
   env: Env,
   telegramFetch: typeof fetch = fetch,
+  aiFetch: typeof fetch = fetch,
 ): Promise<Response> {
   const url = new URL(request.url);
 
@@ -92,7 +94,7 @@ export async function handleRequest(
       return new Response(null, { status: 200 });
     }
 
-    const reply = await getReply(text, update, env, telegramFetch);
+    const reply = await getReply(text, update, env, telegramFetch, aiFetch);
     if (reply !== null) await sendMessage(env, update.message.chat.id, reply, telegramFetch);
     return new Response(null, { status: 200 });
   } catch (error) {
@@ -101,13 +103,34 @@ export async function handleRequest(
   }
 }
 
-async function getReply(text: string, update: TelegramUpdate, env: Env, telegramFetch: typeof fetch): Promise<string | null> {
+async function getReply(
+  text: string,
+  update: TelegramUpdate,
+  env: Env,
+  telegramFetch: typeof fetch,
+  aiFetch: typeof fetch,
+): Promise<string | null> {
   const commandReply = getCommandReply(text);
   if (commandReply) {
     return commandReply;
   }
 
-  const intent = parseIntent(text, { timezone: env.APP_TIMEZONE, currency: env.DEFAULT_CURRENCY });
+  let intent = parseIntent(text, { timezone: env.APP_TIMEZONE, currency: env.DEFAULT_CURRENCY });
+  if (intent.action === "unknown" && intent.reason === "unsupported_message") {
+    if (looksLikeDataDeletion(text)) {
+      return "Para borrar tus datos escribe exactamente: /borrar_datos CONFIRMAR";
+    }
+
+    const aiIntent = await interpretMessage(text, {
+      apiKey: env.OPENAI_API_KEY,
+      model: env.OPENAI_MODEL,
+      timezone: env.APP_TIMEZONE,
+      currency: env.DEFAULT_CURRENCY,
+      fetcher: aiFetch,
+    });
+    if (aiIntent) intent = aiIntent;
+  }
+
   if (intent.action === "delete_data") {
     const telegramUserId = update.message?.from?.id;
     if (telegramUserId === undefined) {
@@ -117,6 +140,9 @@ async function getReply(text: string, update: TelegramUpdate, env: Env, telegram
     await deleteUserData(env.PERSONAL_ASSISTANT_DB, telegramUserId);
     return "🗑️ Tus datos personales fueron eliminados.";
   }
+
+  if (intent.action === "reply") return intent.message;
+  if (intent.action === "clarify") return intent.question;
 
   if (
     intent.action === "summary" ||
@@ -346,6 +372,10 @@ function getCommandReply(text: string): string | null {
   }
 
   return null;
+}
+
+function looksLikeDataDeletion(text: string): boolean {
+  return /\b(?:borr(?:a|ar)|elimin(?:a|ar))\b[\s\S]*\b(?:datos|todo|informaci[oó]n|tareas?|gastos?|notas?|recordatorios?)\b/iu.test(text);
 }
 
 function json(value: unknown): Response {
