@@ -53,7 +53,7 @@ Ejecuta cada comando e introduce el valor cuando Wrangler lo solicite:
 ```powershell
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
-npx wrangler secret put TELEGRAM_ALLOWED_USER_ID
+npx wrangler secret put TELEGRAM_ADMIN_USER_ID
 npx wrangler secret put OPENAI_API_KEY
 ```
 
@@ -92,7 +92,7 @@ Debe mostrar la URL del Worker. Si `last_error_message` aparece, corrige el prob
 ## 5. Smoke test
 
 1. Abre `https://<worker>.workers.dev/health` y confirma `{"ok":true,...}`.
-2. En el chat privado autorizado envía `/start`.
+2. En cualquier chat privado envía `/start`.
 3. Envía `/tarea prueba de producción` y confirma que recibes una respuesta.
 4. Envía `por favor anota comprar medicina` y confirma que la interpretación natural crea una tarea.
 5. Envía `/resumen` y confirma que la consulta responde.
@@ -111,7 +111,7 @@ En GitHub, abre `Settings → Environments`, crea el entorno `production` y aña
 | `CLOUDFLARE_API_TOKEN` | Token API de Cloudflare con la plantilla `Edit Cloudflare Workers` y permiso adicional `Account → D1 → Edit`, limitado a esta cuenta |
 | `CLOUDFLARE_ACCOUNT_ID` | ID de la cuenta de Cloudflare |
 
-No copies aquí `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` ni `TELEGRAM_ALLOWED_USER_ID`: esos secretos ya viven en Cloudflare y no son necesarios para construir el Worker.
+No copies aquí `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` ni `TELEGRAM_ADMIN_USER_ID`: esos secretos ya viven en Cloudflare y no son necesarios para construir el Worker.
 Tampoco copies `OPENAI_API_KEY` en GitHub: el workflow publica el Worker y Cloudflare conserva el secret.
 
 El workflow usa esta secuencia:
@@ -128,7 +128,7 @@ Cloudflare también ofrece Workers Builds como alternativa nativa para GitHub, p
 
 `0002_note_attachments.sql` añade dos columnas opcionales a `notes`, una restricción de coherencia y un índice. `0004_conversation_context.sql` añade el contexto temporal de consultas, sin guardar el texto completo de los mensajes. Conserva los datos existentes. Antes de integrar esta versión en `main`, comprueba que el token de GitHub tenga `D1 → Edit`; no basta con permiso para desplegar Workers. El webhook debe aceptar actualizaciones `message` y `callback_query` para que funcionen los botones.
 
-Prueba desde la cuenta autorizada: envía una foto con `Guarda recibo de prueba`, escribe `mis guardados` y toca el comando `/guardado_<id>` devuelto. Repite con un PDF. Los archivos enviados antes de esta versión deben enviarse nuevamente.
+Prueba desde cualquier cuenta privada: envía una foto con `Guarda recibo de prueba`, escribe `mis guardados` y toca el comando `/guardado_<id>` devuelto. Repite con un PDF. Los archivos enviados antes de esta versión deben enviarse nuevamente.
 
 ## Rollback
 

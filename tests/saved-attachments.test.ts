@@ -106,10 +106,8 @@ describe("saved attachments", () => {
   });
 
   it("does not expose another user's saved file", async () => {
-    const { send, sent, env } = setup();
-    env.TELEGRAM_ALLOWED_USER_ID = "99";
+    const { send, sent } = setup();
     await send({ from: { id: 99, is_bot: false }, chat: { id: 99, type: "private" }, document, caption: "Guarda privado" });
-    env.TELEGRAM_ALLOWED_USER_ID = "42";
     await send({ text: "mis guardados" });
     expect(sent.at(-1)?.body.text).toContain("No tienes guardados");
     await send({ text: "/guardado_1" });
@@ -117,13 +115,14 @@ describe("saved attachments", () => {
     expect(sent.every((item) => item.method === "sendMessage")).toBe(true);
   });
 
-  it("rejects unauthorized media, groups, and invalid webhook secrets", async () => {
+  it("accepts private users but rejects groups and invalid webhook secrets", async () => {
     const { send, sent, sqlite } = setup();
-    await send({ photo, caption: "Guarda", from: { id: 99, is_bot: false } });
+    await send({ photo, caption: "Guarda", from: { id: 99, is_bot: false }, chat: { id: 99, type: "private" } });
     await send({ document, caption: "Guarda", chat: { id: -123, type: "group" } });
     expect((await send({ photo, caption: "Guarda" }, 5, "wrong")).status).toBe(401);
-    expect(sent).toHaveLength(0);
-    expect(sqlite.prepare("SELECT * FROM notes").all()).toHaveLength(0);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].body.text).toContain("Foto guardada");
+    expect(sqlite.prepare("SELECT * FROM notes").all()).toHaveLength(1);
   });
 
   it("removes saved attachments with the existing privacy command", async () => {

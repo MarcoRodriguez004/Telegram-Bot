@@ -53,7 +53,7 @@ function callbackUpdate(updateId: number, data: string): string {
   });
 }
 
-function unauthorizedCallbackUpdate(updateId: number, data: string): string {
+function otherUserCallbackUpdate(updateId: number, data: string): string {
   return callbackUpdate(updateId, data).replace(/"id":42/g, '"id":99');
 }
 
@@ -66,7 +66,7 @@ async function post(body: string, env: Env, telegramFetch: typeof fetch, aiFetch
 }
 
 describe("task and reminder query webhook flow", () => {
-  it("ignores callbacks from another Telegram account", async () => {
+  it("does not expose or modify another Telegram user's task", async () => {
     const { db, sqlite } = createSqliteDb();
     const { env, calls, telegramFetch } = createEnv(db);
     await db.prepare("INSERT INTO users (telegram_user_id, telegram_chat_id, timezone, currency, created_at) VALUES (?, ?, ?, ?, ?)")
@@ -74,10 +74,10 @@ describe("task and reminder query webhook flow", () => {
     sqlite.prepare("INSERT INTO tasks (user_id, title, status, created_at) VALUES (?, ?, 'pending', ?)")
       .run(1, "no tocar", new Date().toISOString());
 
-    const response = await post(unauthorizedCallbackUpdate(50, "pa:t:a:c:1"), env, telegramFetch);
+    const response = await post(otherUserCallbackUpdate(50, "pa:t:a:c:1"), env, telegramFetch);
 
     expect(response.status).toBe(200);
-    expect(calls).toHaveLength(0);
+    expect(calls.some((call) => call.method === "sendMessage" && String(call.body.text).includes("No encontré"))).toBe(true);
     expect(sqlite.prepare("SELECT status FROM tasks WHERE id = 1").get()).toEqual({ status: "pending" });
   });
 

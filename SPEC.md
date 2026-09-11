@@ -27,7 +27,7 @@ El backend interpreta el mensaje, ejecuta una acción permitida, guarda el resul
 
 Incluye tareas, recordatorios, gastos, enlaces/notas, `/resumen`, autenticación por usuario de Telegram, deduplicación de actualizaciones, migraciones D1, pruebas con Vitest y despliegue automático desde GitHub mediante Workers Builds.
 
-No incluye grupos, panel web, Google Calendar, Gmail, scraping, búsqueda web, voz, pagos, multiusuario público ni automatizaciones externas.
+No incluye grupos, panel web, Google Calendar, Gmail, scraping, búsqueda web, voz, pagos ni automatizaciones externas. Los usuarios pueden usarlo desde chats privados de Telegram; cada usuario solo puede consultar y modificar sus propios datos.
 
 ## Flujo principal
 
@@ -36,7 +36,7 @@ Telegram
    │ POST /telegram/webhook
    ▼
 Cloudflare Worker
-   ├─ valida secret token y usuario permitido
+   ├─ valida secret token, chat privado y usuario real
    ├─ deduplica update_id en D1
    ├─ interpreta texto → Intent tipado
    ├─ ejecuta módulo permitido → D1
@@ -81,7 +81,8 @@ Referencia: [Telegram Bot API, envío por file_id](https://core.telegram.org/bot
 
 ## Seguridad
 
-- Solo se aceptan mensajes privados del `TELEGRAM_ALLOWED_USER_ID` configurado.
+- Se aceptan mensajes de usuarios reales en chats privados; los grupos y mensajes enviados por bots se ignoran.
+- `TELEGRAM_ADMIN_USER_ID` identifica al administrador que recibe el aviso de almacenamiento, no es una lista blanca.
 - El webhook verifica `X-Telegram-Bot-Api-Secret-Token`.
 - `TELEGRAM_BOT_TOKEN` y el secret del webhook se almacenan como secretos de Wrangler.
 - Los mensajes se limitan en tamaño antes de parsearse.
@@ -99,12 +100,12 @@ Referencia: [Telegram Bot API, envío por file_id](https://core.telegram.org/bot
 
 ## Éxito
 
-1. Un mensaje autorizado crea una sola acción persistente y recibe confirmación.
-2. Un mensaje no autorizado no consulta ni modifica información personal.
+1. Un mensaje de un usuario real en un chat privado crea una sola acción persistente y recibe confirmación.
+2. Cada usuario solo consulta y modifica su propia información personal.
 3. Un recordatorio persiste tras despliegues y se entrega al vencer.
 4. La aplicación funciona sin LLM configurado.
 5. Cada nueva capacidad se puede añadir como módulo sin convertir `src/index.ts` en un monolito.
 
 ## Estado actual
 
-El repositorio contiene el prototipo inicial en Python y una implementación ejecutable en TypeScript. TypeScript ya cubre el Worker, `/health`, webhook autenticado, allowlist, deduplicación, migración D1, parser determinista de tareas, recordatorios, gastos, notas, resumen y borrado explícito, creación idempotente de acciones, Cron Trigger y reintentos de entrega. El lenguaje natural amplio sigue pendiente; el prototipo Python se conserva como referencia temporal.
+El repositorio contiene el prototipo inicial en Python y una implementación ejecutable en TypeScript. TypeScript ya cubre el Worker, `/health`, webhook autenticado, multiusuario privado con aislamiento por usuario, deduplicación, migraciones D1, parser determinista de tareas, recordatorios, gastos, notas, resumen y borrado explícito, creación idempotente de acciones, Cron Trigger, reintentos de entrega y alerta de almacenamiento a 150 MB. El lenguaje natural amplio sigue pendiente; el prototipo Python se conserva como referencia temporal.

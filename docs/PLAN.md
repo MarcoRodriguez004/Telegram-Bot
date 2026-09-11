@@ -153,7 +153,8 @@ No prometeremos `exactly once`: Telegram es una API externa y un fallo entre env
 ## Seguridad desde el primer commit
 
 - Secret de Telegram validado en header.
-- Lista blanca de usuario y chat privado.
+- Chat privado y usuario real de Telegram; los grupos y bots se rechazan.
+- Aislamiento de datos por `telegram_user_id` para soportar múltiples usuarios.
 - Tokens solo en Cloudflare secrets; nunca en Git.
 - Mensajes con límite de longitud.
 - SQL con bindings, nunca interpolación de texto.
@@ -183,7 +184,7 @@ npm run build
 
 1. Crear el Worker y la base D1 con Wrangler.
 2. Aplicar migraciones localmente y luego en remoto.
-3. Guardar `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` y `TELEGRAM_ALLOWED_USER_ID` como secrets.
+3. Guardar `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` y `TELEGRAM_ADMIN_USER_ID` como secrets.
 4. Conectar el repositorio de GitHub a Workers Builds.
 5. Ejecutar `setWebhook` apuntando a `https://<worker>.workers.dev/telegram/webhook` con el secret.
 6. Usar `main` como rama de producción; PRs pasan CI antes de merge.
@@ -217,7 +218,8 @@ Calendario, compras, Gmail u otras capacidades, cada una como módulo con permis
 ## Qué significa terminado para V1
 
 - El Worker está desplegado y el webhook responde.
-- Solo la cuenta permitida puede usarlo.
+- Cualquier usuario real puede usarlo en un chat privado.
+- Cada usuario solo puede consultar y modificar sus propios datos.
 - Los cuatro casos de la tabla inicial funcionan y tienen pruebas.
 - Reiniciar o desplegar no elimina datos ni recordatorios.
 - Una actualización repetida no duplica una acción.
@@ -227,7 +229,7 @@ Calendario, compras, Gmail u otras capacidades, cada una como módulo con permis
 
 ## Coste y límites actuales
 
-La infraestructura puede mantenerse dentro del plan gratuito para un bot personal, pero no debe venderse como un límite permanente. La documentación actual de Cloudflare D1 indica que Workers Free incluye 5 millones de filas leídas por día, 100,000 filas escritas por día y 5 GB de almacenamiento total; el límite de tamaño de una base individual es 500 MB. Los límites se reinician diariamente en UTC. La primera fase no usa LLM, así que no añade coste por inferencia. Si activamos OpenAI después, habrá coste variable y una decisión explícita de privacidad.
+No se aplican límites de mensajes ni de uso de IA en la aplicación. El Worker revisa el tamaño real de D1 cada minuto y, al alcanzar 150 MB, avisa a los usuarios registrados que contacten al programador y envía al administrador la lista de IDs de Telegram registrados en ese momento. Es un umbral de alerta global de la base, no una cuota individual por usuario. La infraestructura puede mantenerse dentro del plan gratuito para un bot personal, pero no debe venderse como un límite permanente. La documentación actual de Cloudflare D1 indica que Workers Free incluye 5 millones de filas leídas por día, 100,000 filas escritas por día y 5 GB de almacenamiento total; el límite de tamaño de una base individual es 500 MB. Los límites se reinician diariamente en UTC. La primera fase no usa LLM, así que no añade coste por inferencia. Si activamos OpenAI después, habrá coste variable y una decisión explícita de privacidad.
 
 ## Fuentes verificadas
 

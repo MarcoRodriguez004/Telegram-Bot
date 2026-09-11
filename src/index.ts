@@ -13,6 +13,7 @@ import {
 import type { ReminderListItem } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { processDueNotifications } from "./modules/notifications/scheduler";
+import { monitorDatabaseStorage } from "./modules/storage/monitor";
 import {
   disablePersistentNotification,
   initializePersistentNotification,
@@ -88,6 +89,7 @@ const worker: ExportedHandler<Env> = {
     const now = new Date(controller.scheduledTime);
     await processDueReminders(env.PERSONAL_ASSISTANT_DB, env, now);
     await processDueNotifications(env.PERSONAL_ASSISTANT_DB, env, now);
+    await monitorDatabaseStorage(env.PERSONAL_ASSISTANT_DB, env, now);
   },
 };
 
@@ -135,7 +137,7 @@ export async function handleRequest(
       return new Response("Invalid Telegram update", { status: 400 });
     }
 
-    if (!isAuthorizedUpdate(update, env)) {
+    if (!isAuthorizedUpdate(update)) {
       return new Response(null, { status: 200 });
     }
 

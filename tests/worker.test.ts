@@ -44,14 +44,14 @@ function createEnv() {
   return { db, env, sentMessages, telegramFetch };
 }
 
-function telegramUpdate(updateId: number, userId = 42) {
+function telegramUpdate(updateId: number, userId = 42, chatType: "private" | "group" = "private", isBot = false) {
   return JSON.stringify({
     update_id: updateId,
     message: {
       message_id: 1,
       date: 1_757_000_000,
-      chat: { id: userId, type: "private" },
-      from: { id: userId, is_bot: false, first_name: "Marco" },
+      chat: { id: userId, type: chatType },
+      from: { id: userId, is_bot: isBot, first_name: "Marco" },
       text: "/start",
     },
   });
@@ -81,12 +81,12 @@ describe("Personal Assistant Worker", () => {
     expect(sentMessages).toHaveLength(0);
   });
 
-  it("ignores an unauthorized Telegram user", async () => {
+  it("ignores bots and group messages", async () => {
     const { env, db, sentMessages, telegramFetch } = createEnv();
     const request = new Request("https://bot.test/telegram/webhook", {
       method: "POST",
       headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
-      body: telegramUpdate(2, 99),
+      body: telegramUpdate(2, 99, "group"),
     });
 
     const response = await handleRequest(request, env, telegramFetch);
@@ -94,6 +94,21 @@ describe("Personal Assistant Worker", () => {
     expect(response.status).toBe(200);
     expect(sentMessages).toHaveLength(0);
     expect(db.processedUpdates.size).toBe(0);
+  });
+
+  it("accepts a second private Telegram user", async () => {
+    const { env, sentMessages, telegramFetch } = createEnv();
+    const request = new Request("https://bot.test/telegram/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
+      body: telegramUpdate(4, 99),
+    });
+
+    const response = await handleRequest(request, env, telegramFetch);
+
+    expect(response.status).toBe(200);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toMatchObject({ chat_id: 99 });
   });
 
   it("answers /start and does not process the same update twice", async () => {
