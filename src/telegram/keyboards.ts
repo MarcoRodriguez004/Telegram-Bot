@@ -134,9 +134,14 @@ export function buildGlobalNotificationKeyboard(): InlineKeyboardMarkup {
 
 export function buildGlobalNotificationIntervalKeyboard(scope: NotificationScope): InlineKeyboardMarkup {
   const scopeCode = scope === "task" ? "t" : scope === "reminder" ? "r" : "a";
+  const stopLabel = scope === "task"
+    ? "Parar avisos de todas las tareas"
+    : scope === "reminder"
+      ? "Parar avisos de todos los recordatorios"
+      : "Parar todos los avisos";
   return {
     inline_keyboard: [
-      [{ text: "Desactivar", callback_data: `pa:g:n:${scopeCode}:0` }],
+      [{ text: stopLabel, callback_data: `pa:g:n:${scopeCode}:0` }],
       ...[5, 10, 20, 30, 60].map((minutes) => [{
         text: `Activar cada ${minutes} minutos`,
         callback_data: `pa:g:n:${scopeCode}:${minutes}`,

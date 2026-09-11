@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildFilterKeyboard,
+  buildGlobalNotificationIntervalKeyboard,
   buildItemKeyboard,
   buildListKeyboard,
   buildNotificationChoiceKeyboard,
@@ -62,5 +63,10 @@ describe("task and reminder inline keyboards", () => {
     expect(buildPersistentAlertKeyboard("reminder", 9).inline_keyboard.flat().map((button) => button.text)).toEqual([
       "Parar avisos de este recordatorio", "✅ Completar", "❌ Cancelar",
     ]);
+  });
+
+  it("labels the global stop according to its scope", () => {
+    expect(buildGlobalNotificationIntervalKeyboard("all").inline_keyboard[0][0].text).toBe("Parar todos los avisos");
+    expect(buildGlobalNotificationIntervalKeyboard("task").inline_keyboard[0][0].text).toBe("Parar avisos de todas las tareas");
   });
 });
