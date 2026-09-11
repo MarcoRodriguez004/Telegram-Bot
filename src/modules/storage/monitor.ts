@@ -1,4 +1,5 @@
 import { sendMessage } from "../../telegram/client";
+import { calculateUserStorageUsage, type UserStorageUsage } from "./accounting";
 import type { Env } from "../../types";
 
 export const STORAGE_LIMIT_BYTES = 150 * 1024 * 1024;
@@ -33,21 +34,27 @@ export async function monitorDatabaseStorage(
     return sizeBytes;
   }
 
+  // Only perform the full per-user scan when a new alert is needed. The
+  // global D1 size check above remains cheap on every scheduled invocation.
+  const userUsage = await calculateUserStorageUsage(db);
+  const usageByUser = new Map(userUsage.map((usage) => [usage.telegramUserId, usage]));
   const users = await db.prepare("SELECT telegram_user_id AS telegramUserId, telegram_chat_id AS chatId FROM users")
     .all<UserDestination>();
   const adminUserId = parseTelegramUserId(env.TELEGRAM_ADMIN_USER_ID ?? env.TELEGRAM_ALLOWED_USER_ID);
   const destinations = users.results.filter((user) => Number.isSafeInteger(user.telegramUserId) && Number.isSafeInteger(user.chatId));
-  const userMessage = "⚠️ La base de datos alcanzó el límite de 150 MB. No agregues más información por ahora y contacta al programador.";
 
   for (const destination of destinations) {
     if (destination.telegramUserId === adminUserId) continue;
+    const usage = usageByUser.get(destination.telegramUserId);
+    const userMessage = `⚠️ La base de datos alcanzó el límite de 150 MB. Tu consumo lógico estimado es ${formatMegabytes(usage?.logicalBytes ?? 0)}. No agregues más información por ahora y contacta al programador.`;
     await deliverStorageAlert(env, destination.chatId, userMessage, telegramFetch);
   }
 
   if (adminUserId !== null) {
     const adminDestination = destinations.find((user) => user.telegramUserId === adminUserId);
     const knownUsers = destinations.map((user) => String(user.telegramUserId)).join(", ") || "ninguno";
-    const adminMessage = `⚠️ D1 alcanzó 150 MB (${formatMegabytes(sizeBytes)}). Usuarios registrados al cruzar el umbral: ${knownUsers}. Contacta al programador.`;
+    const usageSummary = formatUsageSummary(userUsage);
+    const adminMessage = `⚠️ D1 alcanzó 150 MB (${formatMegabytes(sizeBytes)}). Usuarios registrados al cruzar el umbral: ${knownUsers}.\n\nConsumo lógico estimado por usuario:\n${usageSummary}\n\nContacta al programador.`;
     await deliverStorageAlert(env, adminDestination?.chatId ?? adminUserId, adminMessage, telegramFetch);
   }
 
@@ -90,4 +97,13 @@ function parseTelegramUserId(value: string | undefined): number | null {
 
 function formatMegabytes(sizeBytes: number): string {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatUsageSummary(userUsage: UserStorageUsage[]): string {
+  if (userUsage.length === 0) return "ninguno";
+  const visibleUsers = userUsage.slice(0, 20);
+  const lines = visibleUsers.map((usage, index) => `${index + 1}. Telegram ${usage.telegramUserId}: ${formatMegabytes(usage.logicalBytes)}`);
+  const omittedUsers = userUsage.length - visibleUsers.length;
+  if (omittedUsers > 0) lines.push(`… y ${omittedUsers} usuario(s) más`);
+  return lines.join("\n");
 }

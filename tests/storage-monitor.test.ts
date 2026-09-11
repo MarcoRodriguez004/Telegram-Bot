@@ -4,6 +4,7 @@ import type { Env } from "../src/types";
 
 function createStorageDb(sizeBytes: number) {
   let overLimit = false;
+  let accountingCalls = 0;
   const messages: Array<{ chatId: number; text: string }> = [];
   const db = {
     prepare(query: string) {
@@ -17,6 +18,10 @@ function createStorageDb(sizeBytes: number) {
           return null;
         },
         async all<T>() {
+          if (query.includes("user-storage-accounting")) {
+            accountingCalls += 1;
+            return { results: [{ telegramUserId: 99, logicalBytes: 2 * 1024 * 1024 }, { telegramUserId: 42, logicalBytes: 1024 * 1024 }] } as D1Result<T>;
+          }
           return { results: [{ telegramUserId: 42, chatId: 42 }, { telegramUserId: 99, chatId: 99 }] } as D1Result<T>;
         },
         bind(...nextValues: unknown[]) {
@@ -26,8 +31,9 @@ function createStorageDb(sizeBytes: number) {
       return createStatement();
     },
     messages,
+    get accountingCalls() { return accountingCalls; },
   };
-  return db as unknown as D1Database & { messages: typeof messages };
+  return db as unknown as D1Database & { messages: typeof messages; accountingCalls: number };
 }
 
 function env(db: D1Database): Env {
@@ -55,7 +61,8 @@ describe("D1 storage monitor", () => {
     await monitorDatabaseStorage(database, env(database), new Date("2026-09-10T10:01:00.000Z"), telegramFetch);
 
     expect(database.messages).toHaveLength(2);
-    expect(database.messages.find((message) => message.chatId === 99)?.text).toContain("150 MB");
-    expect(database.messages.find((message) => message.chatId === 42)?.text).toContain("99");
+    expect(database.accountingCalls).toBe(1);
+    expect(database.messages.find((message) => message.chatId === 99)?.text).toContain("2.0 MB");
+    expect(database.messages.find((message) => message.chatId === 42)?.text).toContain("Telegram 99: 2.0 MB");
   });
 });

@@ -98,6 +98,14 @@ Referencia: [Telegram Bot API, envío por file_id](https://core.telegram.org/bot
 - Contrato: cada acción produce un resultado que Telegram puede enviar.
 - CI: `npm ci`, lint, typecheck, tests y build antes de desplegar.
 
+## Contabilidad de almacenamiento
+
+- El umbral operativo es global: 150 MiB de tamaño físico de D1.
+- Al cruzarlo, el administrador recibe el tamaño global y un ranking del consumo lógico estimado por usuario; los demás usuarios reciben únicamente su propio consumo estimado.
+- La estimación suma bytes UTF-8 de textos y referencias guardadas, más una reserva fija para metadatos numéricos y de fila. No cuenta el contenido de archivos alojados por Telegram.
+- No se aplica una cuota individual ni se bloquean escrituras. El desglose completo se calcula solo al cruzar el umbral por primera vez, para no escanear todas las tablas cada minuto.
+- El consumo lógico no pretende ser igual al tamaño físico: índices, páginas SQLite, migraciones, registros técnicos y espacio libre pueden quedar fuera de la atribución por usuario.
+
 ## Éxito
 
 1. Un mensaje de un usuario real en un chat privado crea una sola acción persistente y recibe confirmación.
