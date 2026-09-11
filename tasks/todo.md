@@ -35,14 +35,21 @@ Checkpoint:
 - [x] Las listas no muestran IDs y los callbacks solo modifican registros del usuario autorizado.
 - [x] `npm test`, lint, typecheck, build y audit pasan antes del despliegue (143 pruebas; audit sin vulnerabilidades).
 
-## Próxima idea: carpetas y datos personales
+## Carpetas y datos personales
 
-Propuesta futura, todavía sin implementar:
+Especificación: [`docs/SPEC-SAVED-FOLDERS.md`](../docs/SPEC-SAVED-FOLDERS.md). Implementado en `743ed00`.
 
-- [ ] Permitir frases como `guarda este INE en datos personales` al guardar una foto o documento.
-- [ ] Separar los guardados por colecciones/categorías, por ejemplo `Datos personales`, `Trabajo`, `Recibos` y `Sin clasificar`.
-- [ ] Mostrar `Mis imágenes` y `Mis archivos` como una navegación con botones de carpeta antes de listar elementos.
-- [ ] Mantener los archivos sensibles fuera de la lista general salvo que el usuario elija explícitamente la categoría.
-- [ ] Diseñar la categoría como una entidad controlada en D1, no como texto libre sin validación, y conservar el borrado completo mediante `/borrar_datos CONFIRMAR`.
+- [x] Crear carpetas dinámicas por usuario, sin catálogo fijo ni carpetas compartidas.
+- [x] Guardar notas, enlaces, fotos y documentos dentro de una carpeta existente.
+- [x] Mostrar `mis carpetas` en bloques de imágenes, archivos y enlaces/notas.
+- [x] Mostrar `mis imágenes`, `mis archivos` y `mis enlaces` con selección de carpeta y botones.
+- [x] Mantener `Sin carpeta` como categoría virtual para elementos antiguos o no clasificados.
+- [x] Validar propiedad de usuario en consultas, callbacks, guardado y paginación.
+- [x] Eliminar carpetas junto con los datos mediante `/borrar_datos CONFIRMAR`.
+- [x] Aplicar y probar localmente las migraciones `0009_saved_folders.sql` y `0010_saved_folder_context.sql`.
 
-La categoría solo organizaría la referencia al archivo guardado; antes de implementarla hay que definir retención, nombres de categorías, renombrado y el comportamiento de documentos sensibles como el INE.
+Decisiones pendientes para otro día:
+
+- [ ] Añadir renombrado, eliminación y movimiento de elementos entre carpetas.
+- [ ] Decidir si las carpetas vacías deben mostrarse en un bloque adicional.
+- [ ] Mantener creación explícita: una carpeta inexistente no se crea automáticamente por posibles errores de escritura.
