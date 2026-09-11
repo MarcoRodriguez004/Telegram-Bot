@@ -128,6 +128,21 @@ describe("conversation context", () => {
     })).resolves.toBeNull();
   });
 
+  it("keeps the selected folder and supports the links block", async () => {
+    const { db, userId } = await setup();
+    await saveSavedNotesContext(db, {
+      userId,
+      chatId: 42,
+      kind: "links",
+      folderId: 0,
+    });
+
+    await expect(getSavedNotesContext(db, { userId, chatId: 42 })).resolves.toEqual({
+      kind: "links",
+      folderId: 0,
+    });
+  });
+
   it("removes the context with the rest of the user's data", async () => {
     const { db, userId, sqlite } = await setup();
     await saveSavedNotesContext(db, { userId, chatId: 42, kind: "photos" });

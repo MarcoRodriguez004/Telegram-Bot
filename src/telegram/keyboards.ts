@@ -2,10 +2,16 @@ import type { InlineKeyboardButton, InlineKeyboardMarkup } from "./client";
 import type { ReminderListItem } from "../modules/reminders/repository";
 import type { TaskFilter, TaskListItem } from "../modules/tasks/repository";
 import type { NotificationIntervalMinutes, NotificationScope } from "../modules/notifications/repository";
+import type { SavedFolderListItem, SavedNoteKind } from "../modules/notes/repository";
 
 export type QueryResource = "task" | "reminder";
 export type QueryFilter = TaskFilter;
 export type ListedItem = TaskListItem | ReminderListItem;
+export type SavedFolderKind = Exclude<SavedNoteKind, "all">;
+
+export type FolderCallbackAction =
+  | { kind: "folder_item"; noteKind: SavedFolderKind; folderId: number | null }
+  | { kind: "folder_page"; noteKind: SavedFolderKind; folderId: number | null; beforeId: number };
 
 export type CallbackAction =
   | { kind: "filter"; resource: QueryResource; filter: QueryFilter }
@@ -15,7 +21,8 @@ export type CallbackAction =
   | { kind: "notification_set"; resource: QueryResource; id: number; intervalMinutes: NotificationIntervalMinutes | null }
   | { kind: "notification_scope"; scope: NotificationScope }
   | { kind: "notification_global_set"; scope: NotificationScope; intervalMinutes: NotificationIntervalMinutes | null }
-  | { kind: "edit_cancel"; resource: QueryResource };
+  | { kind: "edit_cancel"; resource: QueryResource }
+  | FolderCallbackAction;
 
 const FILTER_LABELS: Record<QueryResource, Array<{ filter: QueryFilter; label: string }>> = {
   task: [
@@ -87,6 +94,28 @@ export function buildItemKeyboard(
   }
   rows.push([{ text: "↩️ Volver", callback_data: `pa:${resourceCode(resource)}:f:${FILTER_CODES[filter]}` }]);
   return { inline_keyboard: rows };
+}
+
+export function buildFolderKeyboard(kind: SavedFolderKind, folders: SavedFolderListItem[]): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: folders.map((folder) => [{
+      text: `📁 ${folder.name} (${folder.count})`,
+      callback_data: `pa:f:i:${savedFolderKindCode(kind)}:${folder.id ?? 0}`,
+    }]),
+  };
+}
+
+export function buildFolderPageKeyboard(
+  kind: SavedFolderKind,
+  folderId: number | null,
+  nextBeforeId: number | undefined,
+): InlineKeyboardMarkup {
+  return nextBeforeId === undefined
+    ? { inline_keyboard: [] }
+    : { inline_keyboard: [[{
+      text: "Consultar más",
+      callback_data: `pa:f:p:${savedFolderKindCode(kind)}:${folderId ?? 0}:${nextBeforeId}`,
+    }]] };
 }
 
 export function buildNotificationChoiceKeyboard(resource: QueryResource, id: number): InlineKeyboardMarkup {
@@ -165,6 +194,21 @@ export function parseCallbackData(data: string | undefined): CallbackAction | nu
     const intervalMinutes = parseNotificationInterval(parts[4]);
     return scope && intervalMinutes !== undefined ? { kind: "notification_global_set", scope, intervalMinutes } : null;
   }
+  if (parts[1] === "f" && parts[2] === "i" && parts.length === 5) {
+    const noteKind = savedFolderKindFromCode(parts[3]);
+    const folderId = Number(parts[4]);
+    return noteKind && Number.isSafeInteger(folderId) && folderId >= 0
+      ? { kind: "folder_item", noteKind, folderId: folderId === 0 ? null : folderId }
+      : null;
+  }
+  if (parts[1] === "f" && parts[2] === "p" && parts.length === 6) {
+    const noteKind = savedFolderKindFromCode(parts[3]);
+    const folderIdValue = Number(parts[4]);
+    const beforeId = Number(parts[5]);
+    return noteKind && Number.isSafeInteger(folderIdValue) && folderIdValue >= 0 && Number.isSafeInteger(beforeId) && beforeId > 0
+      ? { kind: "folder_page", noteKind, folderId: folderIdValue === 0 ? null : folderIdValue, beforeId }
+      : null;
+  }
   if (parts[1] !== "t" && parts[1] !== "r") return null;
   const resource: QueryResource = parts[1] === "t" ? "task" : "reminder";
   if (parts[2] === "f" && parts.length === 4) {
@@ -222,6 +266,14 @@ function parseNotificationInterval(value: string): NotificationIntervalMinutes |
 
 function parseNotificationScope(value: string): NotificationScope | null {
   return value === "t" ? "task" : value === "r" ? "reminder" : value === "a" ? "all" : null;
+}
+
+function savedFolderKindCode(kind: SavedFolderKind): "p" | "d" | "l" {
+  return kind === "photos" ? "p" : kind === "documents" ? "d" : "l";
+}
+
+function savedFolderKindFromCode(value: string): SavedFolderKind | null {
+  return value === "p" ? "photos" : value === "d" ? "documents" : value === "l" ? "links" : null;
 }
 
 function formatItemButton(resource: QueryResource, index: number): string {

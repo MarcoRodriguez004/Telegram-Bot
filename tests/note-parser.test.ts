@@ -18,6 +18,15 @@ describe("note parser", () => {
     });
   });
 
+  it("extracts the requested folder without hardcoding folder names", () => {
+    expect(parseIntent("guardar este link https://example.com en Documentos personales")).toEqual({
+      action: "save_note",
+      content: "https://example.com",
+      url: "https://example.com",
+      folderName: "Documentos personales",
+    });
+  });
+
   it("saves a text note", () => {
     expect(parseIntent("nota recordar renovar seguro")).toEqual({
       action: "save_note",

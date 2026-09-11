@@ -11,6 +11,7 @@ const MAX_AI_OUTPUT_LENGTH = 8_000;
 const MAX_EXPENSE_CATEGORY_LENGTH = 200;
 const MAX_EXPENSE_DESCRIPTION_LENGTH = 1_000;
 const MAX_NOTE_CONTENT_LENGTH = 1_000;
+const MAX_FOLDER_NAME_LENGTH = 80;
 const MAX_REPLY_LENGTH = 3_000;
 
 const AI_INTENT_SCHEMA = {
@@ -28,6 +29,8 @@ const AI_INTENT_SCHEMA = {
         "save_note",
         "list_expenses",
         "list_notes",
+        "create_folder",
+        "list_folders",
         "get_note",
         "summary",
         "reply",
@@ -41,11 +44,14 @@ const AI_INTENT_SCHEMA = {
     category: { type: ["string", "null"] },
     description: { type: ["string", "null"] },
     content: { type: ["string", "null"] },
+    name: { type: ["string", "null"] },
     url: { type: ["string", "null"] },
+    folderName: { type: ["string", "null"] },
     beforeId: { type: ["integer", "null"] },
     noteId: { type: ["integer", "null"] },
     range: { type: ["string", "null"], enum: ["today", "week", "month", null] },
     filter: { type: ["string", "null"], enum: ["pending", "completed", "cancelled", "all", null] },
+    kind: { type: ["string", "null"], enum: ["all", "photos", "documents", "links", null] },
     message: { type: ["string", "null"] },
     question: { type: ["string", "null"] },
     suggestion: { type: ["string", "null"] },
@@ -60,11 +66,14 @@ const AI_INTENT_SCHEMA = {
     "category",
     "description",
     "content",
+    "name",
     "url",
+    "folderName",
     "beforeId",
     "noteId",
     "range",
     "filter",
+    "kind",
     "message",
     "question",
     "suggestion",
@@ -84,6 +93,8 @@ Reglas:
 - Para gastos, amount debe conservar el número que escribió el usuario como texto; no conviertas moneda ni adivines un monto.
 - Usa reply para conversación, saludos y ayuda. Esa respuesta debe ser breve y describir solo capacidades reales del bot; no afirmes que guardaste o creaste algo.
 - Para consultar tareas o recordatorios, usa list_tasks o list_reminders. Si el usuario no indica estado, deja filter en null para que el Worker muestre botones de selección.
+- Para organizar guardados, usa create_folder solo cuando el usuario pida crear una carpeta explícitamente. Usa list_folders para «mis carpetas» o para mostrar las carpetas de un tipo. Usa list_notes para consultar guardados; kind puede ser photos, documents, links o all. Si el usuario menciona una carpeta, devuelve su nombre exacto en folderName; nunca inventes ni crees carpetas.
+- El bloque links representa enlaces y notas de texto.
 - Usa clarify cuando falte información o la petición sea ambigua. Pon la pregunta para el usuario en question e incluye en missing los campos que faltan.
 - Si puedes interpretar la intención con una corrección o reformulación probable, coloca en suggestion una frase breve y accionable que el Worker pueda procesar después de que el usuario confirme con «sí»; si no existe una interpretación segura, usa null.
 `;
@@ -186,6 +197,16 @@ function normalizeCandidate(value: unknown, options: ParseOptions): Intent | nul
       return normalizeExpense(value, options);
     case "save_note":
       return normalizeNote(value);
+    case "create_folder": {
+      const name = getString(value, "name");
+      if (!name) return { action: "unknown", reason: "missing_folder_name" };
+      if (name.length > MAX_FOLDER_NAME_LENGTH) return { action: "unknown", reason: "folder_name_too_long" };
+      return { action: "create_folder", name };
+    }
+    case "list_folders": {
+      const kind = getSavedKind(value);
+      return kind === null ? { action: "list_folders" } : { action: "list_folders", kind };
+    }
     case "list_expenses": {
       const category = getString(value, "category") || undefined;
       return { action: "list_expenses", category, range: "all" };
@@ -196,7 +217,14 @@ function normalizeCandidate(value: unknown, options: ParseOptions): Intent | nul
       if (rawBeforeId !== null && rawBeforeId !== undefined && beforeId === null) {
         return { action: "unknown", reason: "invalid_saved_id" };
       }
-      return beforeId === null ? { action: "list_notes" } : { action: "list_notes", beforeId };
+      const kind = getSavedKind(value);
+      const folderName = getString(value, "folderName");
+      return {
+        action: "list_notes",
+        ...(beforeId === null ? {} : { beforeId }),
+        ...(kind === null ? {} : { kind }),
+        ...(folderName ? { folderName } : {}),
+      };
     }
     case "get_note": {
       const noteId = getPositiveInteger(value, "noteId");
@@ -264,9 +292,16 @@ function normalizeNote(value: Record<string, unknown>): Intent {
   if (content.length > MAX_NOTE_CONTENT_LENGTH) return { action: "unknown", reason: "note_content_too_long" };
 
   const rawUrl = getString(value, "url");
-  if (!rawUrl) return { action: "save_note", content };
+  const folderName = getString(value, "folderName");
+  if (folderName && folderName.length > MAX_FOLDER_NAME_LENGTH) return { action: "unknown", reason: "folder_name_too_long" };
+  if (!rawUrl) return { action: "save_note", content, ...(folderName ? { folderName } : {}) };
   const url = normalizeHttpUrl(rawUrl);
-  return url ? { action: "save_note", content, url } : { action: "unknown", reason: "invalid_note_url" };
+  return url ? { action: "save_note", content, url, ...(folderName ? { folderName } : {}) } : { action: "unknown", reason: "invalid_note_url" };
+}
+
+function getSavedKind(value: Record<string, unknown>): "all" | "photos" | "documents" | "links" | null {
+  const kind = value.kind;
+  return kind === "all" || kind === "photos" || kind === "documents" || kind === "links" ? kind : null;
 }
 
 function getPositiveInteger(value: Record<string, unknown>, key: string): number | null {

@@ -10,6 +10,7 @@ const MAX_REMINDER_TITLE_LENGTH = 500;
 const MAX_EXPENSE_CATEGORY_LENGTH = 200;
 const MAX_EXPENSE_DESCRIPTION_LENGTH = 1_000;
 const MAX_NOTE_CONTENT_LENGTH = 1_000;
+const MAX_FOLDER_NAME_LENGTH = 80;
 const TASK_COMMAND = /^(?:\/)?(?:tarea|pendiente)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const REMINDER_COMMAND = /^(?:\/)?(?:recordar|recordatorio)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const NATURAL_REMINDER = /^(?:recu[eé]rdame|quiero\s+que\s+me\s+recuerdes?|me\s+(?:puedes|podrías)\s+recordar|av[ií]same)(?:\s+que)?\s+(.+)$/iu;
@@ -22,7 +23,9 @@ const ADD_EXPENSE = /^agrega(?:r)?\s+(?:a\s+)?(?:los?\s+)?gastos?(?:\s+de)?\s+(.
 const EXPENSE_HISTORY = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:el\s+)?historial\s+de\s+gastos?(?:\s+de\s+(.+))?$/iu;
 const NATURAL_EXPENSE_HISTORY = /^(?:mis\s+gastos?|gastos?)\s+(?:de|en)\s+(.+)$/iu;
 const NOTE_COMMAND = /^(?:\/)?(?:nota|apunte)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
-const SAVED_MEDIA_LIST = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:(?:mis\s+)?(?:las?\s+)?(?:im[aá]genes?|fotos?|fotograf[ií]as?)\s+guardad(?:as|os)|mis\s+(?:im[aá]genes?|fotos?|fotograf[ií]as?))$/iu;
+const FOLDER_CREATE = /^(?:\/)?(?:crea(?:r)?|nueva?)\s+(?:la\s+)?carpeta(?:\s+(.+))?$/iu;
+const FOLDER_LIST = /^¿?(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:cu[aá]les?\s+son\s+)?mis\s+carpetas[?!.]*$/iu;
+const SAVED_TYPED_LIST = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:(?:mis|las?|los?)\s+)?(im[aá]genes?|fotos?|fotograf[ií]as?|archivos?|documentos?|enlaces?(?:\s+y\s+notas?)?|links?|notas?)(?:\s+guardad(?:as|os))?(?:\s+(?:de|en)\s+(?:(?:la|una)\s+)?(?:carpeta\s+)?(.+))?$/iu;
 const SAVED_MEDIA_FOLLOW_UP = /^(?:mu[eé]stra(?:me)?|ens[eé]ña(?:me)?|dame)\s*(?:las|los|esas|esos)?$/iu;
 const SAVED_MEDIA_MORE = /^(?:mu[eé]stra(?:me)?|ens[eé]ña(?:me)?|dame)\s+(?:m[aá]s|otras?|siguientes?)$/iu;
 const SAVED_LIST = /^(?:(?:mu[eé]strame\s+)?mis\s+guardados|\/?guardados)(?:_(\d+)|\s+antes\s+(\d+))?(?:@[a-z0-9_]+)?$/iu;
@@ -52,8 +55,25 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
     return { action: "unknown", reason: "unsupported_message" };
   }
 
-  if (SAVED_MEDIA_LIST.test(normalized)) {
-    return { action: "list_notes", kind: "photos" };
+  const folderCreate = FOLDER_CREATE.exec(normalized);
+  if (folderCreate) {
+    return parseCreateFolder(folderCreate[1] ?? "");
+  }
+
+  if (FOLDER_LIST.test(normalized)) {
+    return { action: "list_folders" };
+  }
+
+  const typedSavedList = SAVED_TYPED_LIST.exec(normalized);
+  if (typedSavedList) {
+    const kind = savedKindFromLabel(typedSavedList[1]);
+    if (kind) {
+      const folderName = typedSavedList[2]?.trim();
+      if (folderName && folderName.length > MAX_FOLDER_NAME_LENGTH) {
+        return { action: "unknown", reason: "folder_name_too_long" };
+      }
+      return folderName ? { action: "list_notes", kind, folderName } : { action: "list_folders", kind };
+    }
   }
 
   if (options.savedNotesContext && SAVED_MEDIA_MORE.test(normalized)) {
@@ -61,13 +81,22 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
       ? {
           action: "list_notes",
           kind: options.savedNotesContext.kind,
+          ...(options.savedNotesContext.folderId === undefined ? {} : { folderId: options.savedNotesContext.folderId }),
           beforeId: options.savedNotesContext.nextBeforeId,
         }
-      : { action: "list_notes", kind: options.savedNotesContext.kind };
+      : {
+          action: "list_notes",
+          kind: options.savedNotesContext.kind,
+          ...(options.savedNotesContext.folderId === undefined ? {} : { folderId: options.savedNotesContext.folderId }),
+        };
   }
 
   if (options.savedNotesContext && SAVED_MEDIA_FOLLOW_UP.test(normalized)) {
-    return { action: "list_notes", kind: options.savedNotesContext.kind };
+    return {
+      action: "list_notes",
+      kind: options.savedNotesContext.kind,
+      ...(options.savedNotesContext.folderId === undefined ? {} : { folderId: options.savedNotesContext.folderId }),
+    };
   }
 
   const savedList = SAVED_LIST.exec(normalized);
@@ -214,8 +243,24 @@ function parseListIntent(action: "list_tasks" | "list_reminders", payload?: stri
   return { action: "unknown", reason: action === "list_tasks" ? "invalid_task_filter" : "invalid_reminder_filter" };
 }
 
+function parseCreateFolder(name: string): Intent {
+  const normalizedName = name.trim().replace(/\s+/g, " ");
+  if (!normalizedName) return { action: "unknown", reason: "missing_folder_name" };
+  if (normalizedName.length > MAX_FOLDER_NAME_LENGTH) return { action: "unknown", reason: "folder_name_too_long" };
+  return { action: "create_folder", name: normalizedName };
+}
+
+function savedKindFromLabel(label: string): "photos" | "documents" | "links" | null {
+  if (/^(?:im[aá]genes?|fotos?|fotograf[ií]as?)$/iu.test(label)) return "photos";
+  if (/^(?:archivos?|documentos?)$/iu.test(label)) return "documents";
+  if (/^(?:enlaces?(?:\s+y\s+notas?)?|links?|notas?)$/iu.test(label)) return "links";
+  return null;
+}
+
 function parseNote(payload: string, requiresUrl: boolean): Intent {
-  const value = payload.trim();
+  const extracted = extractFolderInstruction(payload.trim());
+  const value = extracted.value;
+  const folderName = extracted.folderName;
   if (!value) {
     return { action: "unknown", reason: requiresUrl ? "missing_note_url" : "missing_note_content" };
   }
@@ -229,7 +274,7 @@ function parseNote(payload: string, requiresUrl: boolean): Intent {
       return { action: "unknown", reason: "missing_note_url" };
     }
     return value.length <= MAX_NOTE_CONTENT_LENGTH
-      ? { action: "save_note", content: value }
+      ? { action: "save_note", content: value, ...(folderName ? { folderName } : {}) }
       : { action: "unknown", reason: "note_content_too_long" };
   }
 
@@ -247,7 +292,16 @@ function parseNote(payload: string, requiresUrl: boolean): Intent {
     return { action: "unknown", reason: "note_content_too_long" };
   }
 
-  return { action: "save_note", content, url };
+  return { action: "save_note", content, url, ...(folderName ? { folderName } : {}) };
+}
+
+export function extractFolderInstruction(value: string): { value: string; folderName?: string } {
+  const match = /\s+(?:en|dentro de)\s+(?:(?:la|una)\s+)?(?:carpeta\s+)?(.+)$/iu.exec(value);
+  if (!match || match.index === undefined) return { value };
+  const folderName = match[1].trim().replace(/\s+/g, " ");
+  const base = value.slice(0, match.index).trim();
+  if (!folderName || folderName.length > MAX_FOLDER_NAME_LENGTH) return { value };
+  return { value: base, folderName };
 }
 
 function parseExpense(payload: string, options: ParseOptions): Intent {

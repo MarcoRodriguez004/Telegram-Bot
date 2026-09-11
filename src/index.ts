@@ -25,7 +25,8 @@ import {
 import type { NotificationIntervalMinutes, NotificationScope } from "./modules/notifications/repository";
 import { createExpense, getExpenseHistory } from "./modules/expenses/repository";
 import type { ExpenseHistoryResult } from "./modules/expenses/repository";
-import { createNote, getNote, listNotes } from "./modules/notes/repository";
+import { createFolder, createNote, getFolderByName, getNote, listFolders, listNotes } from "./modules/notes/repository";
+import type { SavedNote, SavedNoteKind } from "./modules/notes/repository";
 import { saveMedia } from "./modules/notes/media";
 import { getSummary } from "./modules/summary/repository";
 import type { SummaryResult } from "./modules/summary/repository";
@@ -59,6 +60,8 @@ import type { InlineKeyboardMarkup } from "./telegram/client";
 import {
   buildEditCancelKeyboard,
   buildFilterKeyboard,
+  buildFolderKeyboard,
+  buildFolderPageKeyboard,
   buildItemKeyboard,
   buildListKeyboard,
   buildGlobalNotificationIntervalKeyboard,
@@ -67,7 +70,7 @@ import {
   buildStopConfirmationKeyboard,
   parseCallbackData,
 } from "./telegram/keyboards";
-import type { QueryFilter, QueryResource } from "./telegram/keyboards";
+import type { QueryFilter, QueryResource, SavedFolderKind } from "./telegram/keyboards";
 import { parseTelegramUpdate } from "./telegram/types";
 import type { TelegramCallbackQuery, TelegramUpdate } from "./telegram/types";
 import type { Env } from "./types";
@@ -303,6 +306,8 @@ async function getReply(
     intent.action === "list_reminders" ||
     intent.action === "list_expenses" ||
     intent.action === "list_notes" ||
+    intent.action === "list_folders" ||
+    intent.action === "create_folder" ||
     intent.action === "get_note" ||
     intent.action === "create_task" ||
     intent.action === "create_reminder" ||
@@ -339,26 +344,53 @@ async function getReply(
     }
     if (intent.action === "list_notes") {
       const kind = intent.kind ?? "all";
-      const { notes, nextBeforeId } = await listNotes(env.PERSONAL_ASSISTANT_DB, userId, intent.beforeId, kind);
+      let folderId = intent.folderId;
+      let folderName = intent.folderName;
+      if (folderName !== undefined) {
+        const folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, folderName);
+        if (!folder) return `No existe la carpeta «${folderName}». Créala con «Crea la carpeta ${folderName}» y vuelve a intentarlo.`;
+        folderId = folder.id;
+        folderName = folder.name;
+      }
+      const selectedFolderId = folderId === 0 ? null : folderId;
+      let result: Awaited<ReturnType<typeof listNotes>>;
+      try {
+        result = await listNotes(env.PERSONAL_ASSISTANT_DB, userId, intent.beforeId, kind, selectedFolderId);
+      } catch {
+        return "Esta carpeta ya no está disponible. Consulta «mis carpetas» para ver las actuales.";
+      }
+      const { notes, nextBeforeId } = result;
       await saveSavedNotesContext(env.PERSONAL_ASSISTANT_DB, {
         userId,
         chatId: message.chat.id,
         kind,
+        folderId: folderId === undefined ? undefined : folderId === null ? 0 : folderId,
         nextBeforeId,
       });
       if (!notes.length) {
-        if (intent.beforeId) return kind === "photos" ? "No hay más imágenes guardadas." : kind === "documents" ? "No hay más documentos guardados." : "No hay más guardados. Volver: /guardados";
-        return kind === "photos" ? "No tienes imágenes guardadas. Envía una foto con la descripción «Guarda»." : kind === "documents" ? "No tienes documentos guardados. Envía un documento con la descripción «Guarda»." : "No tienes guardados. Envía una foto o documento con la descripción «Guarda».";
+        if (intent.beforeId) return savedNotesEmptyPageMessage(kind);
+        return savedNotesEmptyMessage(kind);
       }
-      const lines = notes.map((note) => {
-        const kind = note.file_kind === "photo" ? "Foto" : note.file_kind === "document" ? "Documento" : note.url ? "Enlace" : "Nota";
-        const preview = note.content.replace(/\s+/g, " ");
-        return `/guardado_${note.id} · ${kind} · ${preview.length > 160 ? preview.slice(0, 159) + "…" : preview}`;
+      return formatSavedNotesReply(notes, nextBeforeId, kind, folderName, folderId === undefined ? undefined : folderId);
+    }
+
+    if (intent.action === "list_folders") {
+      await saveSavedNotesContext(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        chatId: message.chat.id,
+        kind: intent.kind ?? "all",
       });
-      const title = kind === "photos" ? "📷 Imágenes guardadas · más recientes primero" : kind === "documents" ? "📄 Documentos guardados · más recientes primero" : "📎 Mis guardados · más recientes primero";
-      return [title, "", ...lines, "", "Toca un comando para ver el guardado.",
-        ...(nextBeforeId ? [`Más: /guardados_${nextBeforeId}`] : []),
-      ].join("\n");
+      return getSavedFoldersReply(env.PERSONAL_ASSISTANT_DB, userId, intent.kind);
+    }
+
+    if (intent.action === "create_folder") {
+      const folder = await createFolder(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        name: intent.name,
+      });
+      return folder.created
+        ? `📁 Carpeta creada: ${folder.name}`
+        : `📁 La carpeta «${folder.name}» ya existe.`;
     }
 
     if (intent.action === "get_note") {
@@ -421,13 +453,22 @@ async function getReply(
     }
 
     if (intent.action === "save_note") {
+      let folderId: number | undefined;
+      let folderLabel = "";
+      if (intent.folderName !== undefined) {
+        const folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, intent.folderName);
+        if (!folder) return `No existe la carpeta «${intent.folderName}». Créala con «Crea la carpeta ${intent.folderName}» y vuelve a enviar la nota.`;
+        folderId = folder.id;
+        folderLabel = `\nCarpeta: ${folder.name}`;
+      }
       await createNote(env.PERSONAL_ASSISTANT_DB, {
         userId,
         content: intent.content,
         url: intent.url,
+        folderId,
       });
       const savedContent = intent.url && intent.content !== intent.url ? `${intent.content}\n${intent.url}` : intent.content;
-      return `🔖 Nota guardada\n\n${savedContent}`;
+      return `🔖 Nota guardada${folderLabel}\n\n${savedContent}`;
     }
 
     const createdAt = new Date().toISOString();
@@ -496,6 +537,14 @@ async function getReply(
 
   if (intent.action === "unknown" && intent.reason === "invalid_note_url") {
     return "Solo guardo URLs http o https; no descargo ni ejecuto el contenido.";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "missing_folder_name") {
+    return "Indica el nombre de la carpeta. Ejemplo: Crea la carpeta Trabajo";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "folder_name_too_long") {
+    return "El nombre de la carpeta no puede superar 80 caracteres.";
   }
 
   if (intent.action === "unknown" && intent.reason === "invalid_summary_range") {
@@ -568,6 +617,37 @@ async function handleCallbackQuery(
       action.intervalMinutes === null
         ? `Avisos persistentes desactivados para ${notificationScopeLabel(action.scope)}. Para volver a activarlos, elige una tarea o recordatorio, o entra a /configuracion.`
         : `Avisos persistentes activados cada ${action.intervalMinutes} minutos para ${notificationScopeLabel(action.scope)}.`,
+      telegramFetch,
+    );
+    return;
+  }
+
+  if (action.kind === "folder_item" || action.kind === "folder_page") {
+    const folderId = action.folderId;
+    const repositoryFolderId = folderId === null ? null : folderId;
+    const beforeId = action.kind === "folder_page" ? action.beforeId : undefined;
+    let result: Awaited<ReturnType<typeof listNotes>>;
+    try {
+      result = await listNotes(env.PERSONAL_ASSISTANT_DB, userId, beforeId, action.noteKind, repositoryFolderId);
+    } catch {
+      await sendMessage(env, source.chat.id, "Esta carpeta ya no está disponible.", telegramFetch);
+      return;
+    }
+    await saveSavedNotesContext(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: source.chat.id,
+      kind: action.noteKind,
+      folderId: folderId === null ? 0 : folderId,
+      nextBeforeId: result.nextBeforeId,
+    });
+    if (!result.notes.length) {
+      await sendMessage(env, source.chat.id, beforeId ? savedNotesEmptyPageMessage(action.noteKind) : savedNotesEmptyMessage(action.noteKind), telegramFetch);
+      return;
+    }
+    await sendBotReply(
+      env,
+      source.chat.id,
+      formatSavedNotesReply(result.notes, result.nextBeforeId, action.noteKind, undefined, folderId === null ? 0 : folderId),
       telegramFetch,
     );
     return;
@@ -894,6 +974,86 @@ function formatExpenseHistory(history: ExpenseHistoryResult, category: string | 
   return lines.join("\n");
 }
 
+async function getSavedFoldersReply(
+  db: D1Database,
+  userId: number,
+  requestedKind: SavedNoteKind | undefined,
+): Promise<Reply> {
+  const kinds: SavedFolderKind[] = requestedKind && requestedKind !== "all"
+    ? [requestedKind]
+    : ["photos", "documents", "links"];
+  const groups = await Promise.all(kinds.map(async (kind) => ({ kind, folders: await listFolders(db, userId, kind) })));
+  const visibleGroups = groups.filter((group) => group.folders.length > 0);
+  if (visibleGroups.length === 0) {
+    return requestedKind === "photos"
+      ? "No tienes carpetas con imágenes guardadas. Crea una con «Crea la carpeta ...» y envía una foto con «Guarda ...»."
+      : requestedKind === "documents"
+        ? "No tienes carpetas con archivos guardados. Crea una con «Crea la carpeta ...» y envía un documento con «Guarda ...»."
+        : requestedKind === "links"
+          ? "No tienes carpetas con enlaces o notas guardadas. Crea una con «Crea la carpeta ...» y guarda una nota o enlace."
+          : "Todavía no tienes carpetas con guardados. Crea una con «Crea la carpeta ...».";
+  }
+
+  const lines = [requestedKind && requestedKind !== "all" ? savedFolderBlockLabel(requestedKind) : "📁 Mis carpetas", ""];
+  const keyboardRows = [];
+  for (const group of visibleGroups) {
+    if (!requestedKind || requestedKind === "all") lines.push(savedFolderBlockLabel(group.kind));
+    lines.push(...group.folders.map((folder) => `• ${folder.name} (${folder.count})`), "");
+    keyboardRows.push(...buildFolderKeyboard(group.kind, group.folders).inline_keyboard);
+  }
+  lines.push("Elige una carpeta para ver sus guardados.");
+  return { text: lines.join("\n"), replyMarkup: { inline_keyboard: keyboardRows } };
+}
+
+function formatSavedNotesReply(
+  notes: SavedNote[],
+  nextBeforeId: number | undefined,
+  kind: SavedNoteKind,
+  folderName?: string,
+  folderId?: number | null,
+): Reply {
+  const lines = notes.map((note) => {
+    const itemKind = note.file_kind === "photo" ? "Foto" : note.file_kind === "document" ? "Documento" : note.url ? "Enlace" : "Nota";
+    const preview = note.content.replace(/\s+/g, " ");
+    return `/guardado_${note.id} · ${itemKind} · ${preview.length > 160 ? preview.slice(0, 159) + "…" : preview}`;
+  });
+  const title = kind === "photos"
+    ? "📷 Imágenes guardadas · más recientes primero"
+    : kind === "documents"
+      ? "📄 Archivos guardados · más recientes primero"
+      : kind === "links"
+        ? "🔗 Enlaces y notas · más recientes primero"
+        : "📎 Mis guardados · más recientes primero";
+  const selectedFolder = folderId === 0 ? "Sin carpeta" : folderName;
+  const text = [title + (selectedFolder ? ` · ${selectedFolder}` : ""), "", ...lines, "", "Toca un comando para ver el guardado."];
+  if (nextBeforeId && kind !== "all" && folderId !== undefined) {
+    return {
+      text: text.join("\n"),
+      replyMarkup: buildFolderPageKeyboard(kind, folderId === 0 ? null : folderId ?? null, nextBeforeId),
+    };
+  }
+  if (nextBeforeId) text.push(`Más: /guardados_${nextBeforeId}`);
+  return text.join("\n");
+}
+
+function savedFolderBlockLabel(kind: SavedFolderKind): string {
+  return kind === "photos" ? "🖼️ Imágenes" : kind === "documents" ? "📄 Archivos" : "🔗 Enlaces y notas";
+}
+
+function savedNotesEmptyMessage(kind: SavedNoteKind): string {
+  return kind === "photos"
+    ? "No tienes imágenes guardadas. Envía una foto con la descripción «Guarda»."
+    : kind === "documents"
+      ? "No tienes archivos guardados. Envía un documento con la descripción «Guarda»."
+      : kind === "links"
+        ? "No tienes enlaces o notas guardadas. Usa «Guarda https://...» o «Nota ...»."
+        : "No tienes guardados. Envía una foto o documento con la descripción «Guarda».";
+}
+
+function savedNotesEmptyPageMessage(kind: SavedNoteKind): string {
+  return kind === "photos" ? "No hay más imágenes guardadas." : kind === "documents" ? "No hay más archivos guardados." : kind === "links" ? "No hay más enlaces o notas guardados." : "No hay más guardados. Volver: /guardados";
+}
+
 type PendingListIntent = Extract<Intent, { action: "list_tasks" | "list_reminders" }>;
 
 type PendingListResolution =
@@ -950,11 +1110,11 @@ function getCommandReply(text: string): Reply | null {
   const command = text.split(/\s+/, 1)[0].toLowerCase().split("@")[0];
 
   if (command === "/start") {
-    return "👋 Bienvenido a Personal Assistant.\n\nEscribe una tarea, gasto o recordatorio en lenguaje natural. También puedes enviar una foto o documento con la descripción «Guarda» y consultar /guardados.";
+    return "👋 Bienvenido a Personal Assistant.\n\nEscribe una tarea, gasto o recordatorio en lenguaje natural. También puedes guardar notas, enlaces, fotos y documentos, organizarlos en carpetas y consultar /guardados.";
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces y archivos.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /configuracion para avisos persistentes\n• guardar https://ejemplo.com\n• nota póliza pendiente\n• Envía una foto o documento con la descripción «Guarda recibo de luz» (uno por mensaje).\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
 
   if (command === "/configuracion" || command === "/config" || command === "configuracion" || command === "configuración") {

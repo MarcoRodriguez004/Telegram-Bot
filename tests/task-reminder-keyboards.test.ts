@@ -6,6 +6,7 @@ import {
   buildListKeyboard,
   buildNotificationChoiceKeyboard,
   buildPersistentAlertKeyboard,
+  buildFolderKeyboard,
   parseCallbackData,
 } from "../src/telegram/keyboards";
 
@@ -82,5 +83,22 @@ describe("task and reminder inline keyboards", () => {
   it("labels the global stop according to its scope", () => {
     expect(buildGlobalNotificationIntervalKeyboard("all").inline_keyboard[0][0].text).toBe("Parar todos los avisos");
     expect(buildGlobalNotificationIntervalKeyboard("task").inline_keyboard[0][0].text).toBe("Parar avisos de todas las tareas");
+  });
+
+  it("keeps folder names out of callbacks and supports virtual Sin carpeta", () => {
+    const keyboard = buildFolderKeyboard("photos", [
+      { id: 7, name: "Documentos personales", count: 2 },
+      { id: null, name: "Sin carpeta", count: 1 },
+    ]);
+
+    expect(keyboard.inline_keyboard.flat().map((button) => button.text)).toEqual([
+      "📁 Documentos personales (2)", "📁 Sin carpeta (1)",
+    ]);
+    expect(parseCallbackData(keyboard.inline_keyboard[0][0].callback_data)).toEqual({
+      kind: "folder_item", noteKind: "photos", folderId: 7,
+    });
+    expect(parseCallbackData(keyboard.inline_keyboard[1][0].callback_data)).toEqual({
+      kind: "folder_item", noteKind: "photos", folderId: null,
+    });
   });
 });

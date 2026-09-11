@@ -1,7 +1,8 @@
 import { ensureUser } from "../../db/users";
 import type { TelegramAttachment, TelegramMessage } from "../../telegram/types";
 import type { Env } from "../../types";
-import { createNote } from "./repository";
+import { getFolderByName, createNote } from "./repository";
+import { extractFolderInstruction } from "../../router/parser";
 
 export async function saveMedia(message: TelegramMessage, env: Env): Promise<string> {
   const caption = message.caption?.trim().replace(/\s+/g, " ") ?? "";
@@ -20,8 +21,9 @@ export async function saveMedia(message: TelegramMessage, env: Env): Promise<str
     return "Adjunta una foto o documento para guardarlo.";
   }
 
+  const folderInstruction = extractFolderInstruction(match[1]?.trim() ?? "");
   const fileName = message.document?.file_name?.trim().replace(/\s+/g, " ");
-  const content = match[1]?.trim() || fileName || (attachment.kind === "photo" ? "Foto" : "Documento");
+  const content = folderInstruction.value || fileName || (attachment.kind === "photo" ? "Foto" : "Documento");
   if (content.length > 1_000) {
     return "El nombre o la descripción es demasiado largo. Usa una descripción de hasta 1000 caracteres.";
   }
@@ -30,7 +32,16 @@ export async function saveMedia(message: TelegramMessage, env: Env): Promise<str
     telegramUserId: message.from.id, telegramChatId: message.chat.id,
     timezone: env.APP_TIMEZONE, currency: env.DEFAULT_CURRENCY,
   });
-  const id = await createNote(env.PERSONAL_ASSISTANT_DB, { userId, content, attachment });
+  let folderId: number | undefined;
+  if (folderInstruction.folderName) {
+    const folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, folderInstruction.folderName);
+    if (!folder) {
+      return `No existe la carpeta «${folderInstruction.folderName}». Créala con «Crea la carpeta ${folderInstruction.folderName}» y vuelve a enviar el archivo.`;
+    }
+    folderId = folder.id;
+  }
+  const id = await createNote(env.PERSONAL_ASSISTANT_DB, { userId, content, attachment, folderId });
   const label = attachment.kind === "photo" ? "Foto guardada" : "Documento guardado";
-  return `📎 ${label}\n\n${content}\n\nVer: /guardado_${id}\nLista: /guardados`;
+  const folderLabel = folderInstruction.folderName ? `\nCarpeta: ${folderInstruction.folderName}` : "";
+  return `📎 ${label}${folderLabel}\n\n${content}\n\nVer: /guardado_${id}\nLista: /guardados`;
 }

@@ -80,8 +80,8 @@ describe("saved attachments", () => {
     await send({ photo, caption: "Guarda logo" });
     await send({ document, caption: "Guarda recibo" });
     await send({ text: "Muestrame las imagenes guardadas" });
-    expect(sent.at(-1)?.body.text).toContain("📷 Imágenes guardadas");
-    expect(sent.at(-1)?.body.text).toContain("logo");
+    expect(sent.at(-1)?.body.text).toContain("🖼️ Imágenes");
+    expect(sent.at(-1)?.body.text).toContain("Sin carpeta (1)");
     expect(sent.at(-1)?.body.text).not.toContain("recibo");
   });
 

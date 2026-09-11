@@ -3,7 +3,7 @@ import { parseIntent } from "../src/router/parser";
 
 describe("saved item commands", () => {
   it.each(["muestrame las imagenes guardadas", "muéstrame las fotos guardadas", "imágenes guardadas", "Muestrame mis fotos", "Mis imágenes"])("lists %s as photos", (text) => {
-    expect(parseIntent(text)).toEqual({ action: "list_notes", kind: "photos" });
+    expect(parseIntent(text)).toEqual({ action: "list_folders", kind: "photos" });
   });
 
   it.each(["Mis guardados", "muéstrame mis guardados", "/guardados", "/guardados@my_bot"])("lists with %s", (text) => {
@@ -18,9 +18,21 @@ describe("saved item commands", () => {
       kind: "photos",
     });
     expect(parseIntent("muestra más", {
-      savedNotesContext: { kind: "photos", nextBeforeId: 17 },
-    })).toEqual({ action: "list_notes", kind: "photos", beforeId: 17 });
+      savedNotesContext: { kind: "photos", folderId: 4, nextBeforeId: 17 },
+    })).toEqual({ action: "list_notes", kind: "photos", folderId: 4, beforeId: 17 });
     expect(parseIntent("Muestramelas")).toEqual({ action: "unknown", reason: "unsupported_message" });
+  });
+  it("parses dynamic folder commands and folder-scoped saved lists", () => {
+    expect(parseIntent("Crea la carpeta Documentos personales")).toEqual({
+      action: "create_folder",
+      name: "Documentos personales",
+    });
+    expect(parseIntent("¿Cuáles son mis carpetas?")).toEqual({ action: "list_folders" });
+    expect(parseIntent("mis archivos de la carpeta Trabajo")).toEqual({
+      action: "list_notes",
+      kind: "documents",
+      folderName: "Trabajo",
+    });
   });
   it.each(["/guardado_123", "/guardado 123", "ver guardado 123", "/guardado_123@my_bot"])("retrieves with %s", (text) => {
     expect(parseIntent(text)).toEqual({ action: "get_note", noteId: 123 });

@@ -1,7 +1,8 @@
 const CONTEXT_TTL_MS = 15 * 60 * 1000;
 
 export type SavedNotesContext = {
-  kind: "all" | "photos" | "documents";
+  kind: "all" | "photos" | "documents" | "links";
+  folderId?: number | null;
   nextBeforeId?: number;
 };
 
@@ -24,6 +25,7 @@ type SavedNotesContextInput = SavedNotesContext & {
 
 type StoredContext = {
   note_kind: string;
+  folder_id: number | null;
   next_before_id: number | null;
   expires_at: string;
 };
@@ -130,6 +132,10 @@ export async function saveSavedNotesContext(db: D1Database, input: SavedNotesCon
   const now = input.now ?? new Date();
   if (!Number.isFinite(now.getTime())) throw new Error("Context timestamp is invalid");
   const expiresAt = new Date(now.getTime() + CONTEXT_TTL_MS).toISOString();
+  const folderId = input.folderId ?? null;
+  if (folderId !== null && (!Number.isSafeInteger(folderId) || folderId < 0)) {
+    throw new Error("Context folder id is invalid");
+  }
   const nextBeforeId = input.nextBeforeId === undefined ? null : input.nextBeforeId;
   if (nextBeforeId !== null && (!Number.isSafeInteger(nextBeforeId) || nextBeforeId <= 0)) {
     throw new Error("Context cursor is invalid");
@@ -138,17 +144,18 @@ export async function saveSavedNotesContext(db: D1Database, input: SavedNotesCon
   await db
     .prepare(
       `INSERT INTO conversation_context
-        (user_id, chat_id, context_type, note_kind, next_before_id, updated_at, expires_at)
-       VALUES (?, ?, 'saved_notes', ?, ?, ?, ?)
+        (user_id, chat_id, context_type, note_kind, folder_id, next_before_id, updated_at, expires_at)
+       VALUES (?, ?, 'saved_notes', ?, ?, ?, ?, ?)
        ON CONFLICT(user_id) DO UPDATE SET
          chat_id = excluded.chat_id,
          context_type = excluded.context_type,
          note_kind = excluded.note_kind,
+         folder_id = excluded.folder_id,
          next_before_id = excluded.next_before_id,
          updated_at = excluded.updated_at,
          expires_at = excluded.expires_at`,
     )
-    .bind(input.userId, input.chatId, input.kind, nextBeforeId, now.toISOString(), expiresAt)
+    .bind(input.userId, input.chatId, input.kind, folderId, nextBeforeId, now.toISOString(), expiresAt)
     .run();
 }
 
@@ -162,7 +169,7 @@ export async function getSavedNotesContext(
 
   const row = await db
     .prepare(
-      "SELECT note_kind, next_before_id, expires_at FROM conversation_context WHERE user_id = ? AND chat_id = ? AND context_type = 'saved_notes'",
+      "SELECT note_kind, folder_id, next_before_id, expires_at FROM conversation_context WHERE user_id = ? AND chat_id = ? AND context_type = 'saved_notes'",
     )
     .bind(input.userId, input.chatId)
     .first<StoredContext>();
@@ -180,6 +187,7 @@ export async function getSavedNotesContext(
 
   return {
     kind: row.note_kind,
+    ...(row.folder_id === null ? {} : { folderId: row.folder_id }),
     ...(row.next_before_id === null ? {} : { nextBeforeId: row.next_before_id }),
   };
 }
@@ -197,7 +205,8 @@ function assertIdentifiers(userId: number, chatId: number): void {
 function isValidContext(row: StoredContext): row is StoredContext & { note_kind: SavedNotesContext["kind"] } {
   const expiresAt = new Date(row.expires_at).getTime();
   return (
-    (row.note_kind === "all" || row.note_kind === "photos" || row.note_kind === "documents") &&
+    (row.note_kind === "all" || row.note_kind === "photos" || row.note_kind === "documents" || row.note_kind === "links") &&
+    (row.folder_id === null || row.folder_id === 0 || (Number.isSafeInteger(row.folder_id) && row.folder_id > 0)) &&
     (row.next_before_id === null || (Number.isSafeInteger(row.next_before_id) && row.next_before_id > 0)) &&
     Number.isFinite(expiresAt)
   );

@@ -108,6 +108,24 @@ describe("interpretMessage", () => {
     });
   });
 
+  it("normalizes dynamic saved-folder intents without inventing folder IDs", async () => {
+    const responses = [
+      openAiResponse(candidate({ action: "create_folder", name: "Documentos personales", message: null })),
+      openAiResponse(candidate({ action: "list_notes", kind: "documents", folderName: "Documentos personales", message: null })),
+    ];
+    const fetcher: typeof fetch = async () => responses.shift()!;
+
+    await expect(interpretMessage("crea una carpeta para mis documentos", { apiKey: "test-key", fetcher })).resolves.toEqual({
+      action: "create_folder",
+      name: "Documentos personales",
+    });
+    await expect(interpretMessage("muéstrame sus archivos", { apiKey: "test-key", fetcher })).resolves.toEqual({
+      action: "list_notes",
+      kind: "documents",
+      folderName: "Documentos personales",
+    });
+  });
+
   it("keeps a suggested interpretation when the model asks for confirmation", async () => {
     const userMessage = "Necesito consultar una lista";
     const suggestedText = "mis tareas";
