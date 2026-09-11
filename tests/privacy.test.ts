@@ -47,6 +47,7 @@ describe("deleteUserData", () => {
       { query: "DELETE FROM edit_sessions WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM conversation_context WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM pending_conversation WHERE user_id = ?", values: [7] },
+      { query: "DELETE FROM conversation_confirmations WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM users WHERE id = ?", values: [7] },
     ]);
     expect(batchedStatements.some((statement) => statement.query.includes("processed_updates"))).toBe(false);

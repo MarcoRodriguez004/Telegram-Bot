@@ -18,6 +18,7 @@ function candidate(overrides: AiCandidate): AiCandidate {
     noteId: null,
     range: null,
     message: "No entendí.",
+    suggestion: null,
     missing: [],
     ...overrides,
   };
@@ -104,6 +105,27 @@ describe("interpretMessage", () => {
     await expect(interpretMessage("mis recordatorios completados", { apiKey: "test-key", fetcher })).resolves.toEqual({
       action: "list_reminders",
       filter: "completed",
+    });
+  });
+
+  it("keeps a suggested interpretation when the model asks for confirmation", async () => {
+    const userMessage = "Necesito consultar una lista";
+    const suggestedText = "mis tareas";
+    const question = "¿Quieres consultar tu lista de pendientes?";
+
+    await expect(interpretMessage(userMessage, {
+      apiKey: "test-key",
+      fetcher: async () => openAiResponse(candidate({
+        action: "clarify",
+        question,
+        suggestion: suggestedText,
+        message: null,
+      })),
+    })).resolves.toEqual({
+      action: "clarify",
+      question,
+      missing: [],
+      suggestedText,
     });
   });
 

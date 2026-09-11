@@ -3,7 +3,7 @@ import { handleRequest } from "../src/index";
 import type { Env } from "../src/types";
 import { createSqliteDb } from "./helpers/sqlite-db";
 
-function createEnv(db: D1Database) {
+function createEnv(db: D1Database, options: { openAi?: boolean } = {}) {
   const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
   const env: Env = {
     PERSONAL_ASSISTANT_DB: db,
@@ -12,6 +12,7 @@ function createEnv(db: D1Database) {
     TELEGRAM_ALLOWED_USER_ID: "42",
     APP_TIMEZONE: "America/Mexico_City",
     DEFAULT_CURRENCY: "MXN",
+    ...(options.openAi ? { OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-5.6-luna" } : {}),
   };
   const telegramFetch: typeof fetch = async (input, init) => {
     calls.push({
@@ -56,12 +57,12 @@ function unauthorizedCallbackUpdate(updateId: number, data: string): string {
   return callbackUpdate(updateId, data).replace(/"id":42/g, '"id":99');
 }
 
-async function post(body: string, env: Env, telegramFetch: typeof fetch): Promise<Response> {
+async function post(body: string, env: Env, telegramFetch: typeof fetch, aiFetch: typeof fetch = fetch): Promise<Response> {
   return handleRequest(new Request("https://bot.test/telegram/webhook", {
     method: "POST",
     headers: { "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
     body,
-  }), env, telegramFetch);
+  }), env, telegramFetch, aiFetch);
 }
 
 describe("task and reminder query webhook flow", () => {
@@ -141,6 +142,51 @@ describe("task and reminder query webhook flow", () => {
     await post(messageUpdate(8, "No"), env, telegramFetch);
 
     expect(String(calls.at(-1)?.body.text)).toContain("No consulté tus tareas");
+  });
+
+  it("continues an AI clarification after the user confirms the suggested correction", async () => {
+    const { db, sqlite } = createSqliteDb();
+    const { env, calls, telegramFetch } = createEnv(db, { openAi: true });
+    const userMessage = "Necesito consultar una lista";
+    const suggestedText = "mis tareas";
+    const clarificationQuestion = "¿Quieres consultar tu lista de pendientes?";
+    let aiCalls = 0;
+    const aiFetch: typeof fetch = async (_input, init) => {
+      aiCalls += 1;
+      const request = JSON.parse(String(init?.body)) as { input?: string };
+      expect(request.input).toBe(userMessage);
+      return new Response(JSON.stringify({
+        status: "completed",
+        output_text: JSON.stringify({
+          action: "clarify",
+          title: null,
+          when: null,
+          amount: null,
+          currency: null,
+          category: null,
+          description: null,
+          content: null,
+          url: null,
+          beforeId: null,
+          noteId: null,
+          range: null,
+          filter: null,
+          message: null,
+          question: clarificationQuestion,
+          suggestion: suggestedText,
+          missing: [],
+        }),
+      }), { status: 200 });
+    };
+
+    await post(messageUpdate(9, userMessage), env, telegramFetch, aiFetch);
+    sqlite.prepare("INSERT INTO tasks (user_id, title, status, created_at) VALUES (?, ?, 'pending', ?)")
+      .run(1, "revisar contrato", new Date().toISOString());
+    await post(messageUpdate(10, "Sí"), env, telegramFetch, aiFetch);
+
+    expect(String(calls[0]?.body.text)).toBe(clarificationQuestion);
+    expect(String(calls.at(-1)?.body.text)).toContain("revisar contrato");
+    expect(aiCalls).toBe(1);
   });
 
   it("completes a task and edits a reminder through callback buttons", async () => {

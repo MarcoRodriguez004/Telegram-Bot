@@ -11,5 +11,5 @@ export type Intent =
   | { action: "summary"; range: "today" | "week" | "month" }
   | { action: "delete_data"; confirmation: true }
   | { action: "reply"; message: string }
-  | { action: "clarify"; question: string; missing: string[] }
+  | { action: "clarify"; question: string; missing: string[]; suggestedText?: string }
   | { action: "unknown"; reason: string };

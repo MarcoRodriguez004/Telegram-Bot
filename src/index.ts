@@ -39,13 +39,16 @@ import {
 import type { TaskListItem } from "./modules/tasks/repository";
 import { clearEditSession, getActiveEditSession, startEditSession } from "./modules/edit-sessions/repository";
 import {
+  clearPendingConfirmation,
   clearPendingListContext,
+  getPendingConfirmation,
   getPendingListContext,
   getSavedNotesContext,
+  savePendingConfirmation,
   savePendingListContext,
   saveSavedNotesContext,
 } from "./modules/conversation/repository";
-import type { PendingListContext } from "./modules/conversation/repository";
+import type { PendingConfirmationContext, PendingListContext } from "./modules/conversation/repository";
 import { parseIntent } from "./router/parser";
 import type { Intent } from "./router/intent";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
@@ -196,6 +199,7 @@ async function getReply(
   let userId: number | undefined;
   let savedNotesContext = undefined;
   let pendingListContext: PendingListContext | null = null;
+  let pendingConfirmation: PendingConfirmationContext | null = null;
   if (message && telegramUserId !== undefined) {
     userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
       telegramUserId,
@@ -211,7 +215,19 @@ async function getReply(
       userId,
       chatId: message.chat.id,
     });
+    pendingConfirmation = await getPendingConfirmation(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: message.chat.id,
+    });
   }
+
+  const pendingConfirmationResolution = pendingConfirmation
+    ? resolvePendingConfirmationResponse(text, pendingConfirmation)
+    : null;
+  if (pendingConfirmation && userId !== undefined) {
+    await clearPendingConfirmation(env.PERSONAL_ASSISTANT_DB, userId);
+  }
+  if (pendingConfirmationResolution?.kind === "reply") return pendingConfirmationResolution.text;
 
   const pendingResolution = pendingListContext
     ? resolvePendingListResponse(text, pendingListContext)
@@ -221,8 +237,17 @@ async function getReply(
   }
   if (pendingResolution?.kind === "reply") return pendingResolution.text;
 
-  let intent = pendingResolution?.kind === "intent"
-    ? pendingResolution.intent
+  const clarificationText = pendingConfirmationResolution?.kind === "intent"
+    ? pendingConfirmationResolution.suggestedText
+    : text;
+  let intent = pendingConfirmationResolution?.kind === "intent"
+    ? parseIntent(clarificationText, {
+        timezone: env.APP_TIMEZONE,
+        currency: env.DEFAULT_CURRENCY,
+        savedNotesContext: savedNotesContext ?? undefined,
+      })
+    : pendingResolution?.kind === "intent"
+      ? pendingResolution.intent
     : parseIntent(text, {
         timezone: env.APP_TIMEZONE,
         currency: env.DEFAULT_CURRENCY,
@@ -233,7 +258,7 @@ async function getReply(
       return "Para borrar tus datos escribe exactamente: /borrar_datos CONFIRMAR";
     }
 
-    const aiIntent = await interpretMessage(text, {
+    const aiIntent = await interpretMessage(clarificationText, {
       apiKey: env.OPENAI_API_KEY,
       model: env.OPENAI_MODEL,
       timezone: env.APP_TIMEZONE,
@@ -241,6 +266,10 @@ async function getReply(
       fetcher: aiFetch,
     });
     if (aiIntent) intent = aiIntent;
+  }
+
+  if (pendingConfirmationResolution?.kind === "intent") {
+    intent = applyClarificationDefaults(intent);
   }
 
   if (intent.action === "delete_data") {
@@ -254,7 +283,17 @@ async function getReply(
   }
 
   if (intent.action === "reply") return intent.message;
-  if (intent.action === "clarify") return intent.question;
+  if (intent.action === "clarify") {
+    if (intent.suggestedText && message && userId !== undefined) {
+      await savePendingConfirmation(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        chatId: message.chat.id,
+        question: intent.question,
+        suggestedText: intent.suggestedText,
+      });
+    }
+    return intent.question;
+  }
 
   if (
     intent.action === "summary" ||
@@ -859,15 +898,43 @@ type PendingListResolution =
   | { kind: "intent"; intent: PendingListIntent }
   | { kind: "reply"; text: string };
 
+type PendingConfirmationResolution =
+  | { kind: "intent"; suggestedText: string }
+  | { kind: "reply"; text: string };
+
+function resolvePendingConfirmationResponse(
+  text: string,
+  context: PendingConfirmationContext,
+): PendingConfirmationResolution | null {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (isAffirmativeResponse(normalized)) return { kind: "intent", suggestedText: context.suggestedText };
+  if (isNegativeResponse(normalized)) return { kind: "reply", text: "Entendido. No haré esa acción." };
+  return null;
+}
+
+function applyClarificationDefaults(intent: Intent): Intent {
+  if (intent.action === "list_tasks" && !intent.filter) return { ...intent, filter: "pending" };
+  if (intent.action === "list_reminders" && !intent.filter) return { ...intent, filter: "pending" };
+  return intent;
+}
+
+function isAffirmativeResponse(text: string): boolean {
+  return /^(?:s[ií]|claro|correcto|adelante|de acuerdo|s[ií]\s+quiero|s[ií],?\s+(?:hazlo|adelante|por favor))$/iu.test(text);
+}
+
+function isNegativeResponse(text: string): boolean {
+  return /^(?:no|ahora no|cancelar|salir)$/iu.test(text);
+}
+
 function resolvePendingListResponse(text: string, context: PendingListContext): PendingListResolution | null {
   const normalized = text.trim().replace(/\s+/g, " ");
   const action = context.resource === "task" ? "list_tasks" : "list_reminders";
   const resourceLabel = context.resource === "task" ? "tareas" : "recordatorios";
 
-  if (/^(?:s[ií]|claro|correcto|adelante|de acuerdo|s[ií]\s+quiero)$/iu.test(normalized)) {
+  if (isAffirmativeResponse(normalized)) {
     return { kind: "intent", intent: { action, filter: "pending" } };
   }
-  if (/^(?:no|ahora no|cancelar|salir)$/iu.test(normalized)) {
+  if (isNegativeResponse(normalized)) {
     return { kind: "reply", text: `Entendido. No consulté tus ${resourceLabel}.` };
   }
 

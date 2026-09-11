@@ -11,6 +11,11 @@ export type PendingListContext = {
   resource: PendingListResource;
 };
 
+export type PendingConfirmationContext = {
+  question: string;
+  suggestedText: string;
+};
+
 type SavedNotesContextInput = SavedNotesContext & {
   userId: number;
   chatId: number;
@@ -28,6 +33,55 @@ type StoredPendingListContext = {
   chat_id: number;
   expires_at: string;
 };
+
+type StoredPendingConfirmationContext = {
+  question: string;
+  suggested_text: string;
+  expires_at: string;
+};
+
+export async function savePendingConfirmation(
+  db: D1Database,
+  input: { userId: number; chatId: number; question: string; suggestedText: string; now?: Date },
+): Promise<void> {
+  assertIdentifiers(input.userId, input.chatId);
+  if (!input.question.trim() || input.question.length > 4_000) throw new Error("Confirmation question is invalid");
+  if (!input.suggestedText.trim() || input.suggestedText.length > 4_000) throw new Error("Confirmation suggestion is invalid");
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) throw new Error("Context timestamp is invalid");
+  const expiresAt = new Date(now.getTime() + CONTEXT_TTL_MS).toISOString();
+
+  await db.prepare(
+    "INSERT INTO conversation_confirmations (user_id, chat_id, question, suggested_text, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT(user_id) DO UPDATE SET chat_id = excluded.chat_id, question = excluded.question, suggested_text = excluded.suggested_text, created_at = excluded.created_at, expires_at = excluded.expires_at",
+  ).bind(input.userId, input.chatId, input.question.trim(), input.suggestedText.trim(), now.toISOString(), expiresAt).run();
+}
+
+export async function getPendingConfirmation(
+  db: D1Database,
+  input: { userId: number; chatId: number; now?: Date },
+): Promise<PendingConfirmationContext | null> {
+  assertIdentifiers(input.userId, input.chatId);
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) throw new Error("Context timestamp is invalid");
+
+  const row = await db.prepare(
+    "SELECT question, suggested_text, expires_at FROM conversation_confirmations WHERE user_id = ? AND chat_id = ?",
+  ).bind(input.userId, input.chatId).first<StoredPendingConfirmationContext>();
+
+  if (!row) return null;
+  if (!row.question || !row.suggested_text || !Number.isFinite(new Date(row.expires_at).getTime()) || new Date(row.expires_at).getTime() <= now.getTime()) {
+    await clearPendingConfirmation(db, input.userId);
+    return null;
+  }
+
+  return { question: row.question, suggestedText: row.suggested_text };
+}
+
+export async function clearPendingConfirmation(db: D1Database, userId: number): Promise<void> {
+  if (!Number.isInteger(userId) || userId <= 0) throw new Error("Context user id is invalid");
+  await db.prepare("DELETE FROM conversation_confirmations WHERE user_id = ?").bind(userId).run();
+}
 
 export async function savePendingListContext(
   db: D1Database,

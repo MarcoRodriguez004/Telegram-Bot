@@ -48,6 +48,7 @@ const AI_INTENT_SCHEMA = {
     filter: { type: ["string", "null"], enum: ["pending", "completed", "cancelled", "all", null] },
     message: { type: ["string", "null"] },
     question: { type: ["string", "null"] },
+    suggestion: { type: ["string", "null"] },
     missing: { type: "array", items: { type: "string" } },
   },
   required: [
@@ -66,6 +67,7 @@ const AI_INTENT_SCHEMA = {
     "filter",
     "message",
     "question",
+    "suggestion",
     "missing",
   ],
 } as const;
@@ -83,6 +85,7 @@ Reglas:
 - Usa reply para conversación, saludos y ayuda. Esa respuesta debe ser breve y describir solo capacidades reales del bot; no afirmes que guardaste o creaste algo.
 - Para consultar tareas o recordatorios, usa list_tasks o list_reminders. Si el usuario no indica estado, deja filter en null para que el Worker muestre botones de selección.
 - Usa clarify cuando falte información o la petición sea ambigua. Pon la pregunta para el usuario en question e incluye en missing los campos que faltan.
+- Si puedes interpretar la intención con una corrección o reformulación probable, coloca en suggestion una frase breve y accionable que el Worker pueda procesar después de que el usuario confirme con «sí»; si no existe una interpretación segura, usa null.
 `;
 
 export interface InterpretMessageOptions extends ParseOptions {
@@ -211,10 +214,11 @@ function normalizeCandidate(value: unknown, options: ParseOptions): Intent | nul
     case "clarify": {
       const question = getString(value, "question") ?? getString(value, "message");
       if (!question || question.length > MAX_REPLY_LENGTH) return null;
+      const suggestion = getString(value, "suggestion");
       const missing = Array.isArray(value.missing)
         ? value.missing.filter((item): item is string => typeof item === "string").slice(0, 4)
         : [];
-      return { action: "clarify", question, missing };
+      return { action: "clarify", question, missing, ...(suggestion && suggestion.length <= MAX_REPLY_LENGTH ? { suggestedText: suggestion } : {}) };
     }
     default:
       return null;
