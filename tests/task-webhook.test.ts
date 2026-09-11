@@ -103,7 +103,8 @@ describe("task webhook flow", () => {
     expect(sentMessages).toHaveLength(1);
     expect(sentMessages[0]).toMatchObject({
       chat_id: 42,
-      text: "✅ Tarea creada\n\ncomprar medicina",
+      text: "✅ Tarea creada\n\ncomprar medicina\n\n¿Deseas avisos persistentes?",
     });
+    expect((sentMessages[0] as { reply_markup?: unknown }).reply_markup).toBeDefined();
   });
 });

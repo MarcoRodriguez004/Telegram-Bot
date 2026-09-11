@@ -1,6 +1,9 @@
+import { disablePersistentNotification } from "../notifications/repository";
+
 export interface CreateTaskInput {
   userId: number;
   title: string;
+  dueAt?: string | null;
   createdAt?: string;
 }
 
@@ -52,10 +55,19 @@ export async function createTask(db: D1Database, input: CreateTaskInput): Promis
     throw new Error("Task title is too long");
   }
 
-  const result = await db
-    .prepare("INSERT INTO tasks (user_id, title, status, created_at) VALUES (?, ?, 'pending', ?)")
-    .bind(input.userId, title, input.createdAt ?? new Date().toISOString())
-    .run();
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  const dueAt = input.dueAt === undefined || input.dueAt === null ? null : new Date(input.dueAt);
+  if (dueAt && Number.isNaN(dueAt.getTime())) throw new Error("Task due date is invalid");
+
+  const result = dueAt
+    ? await db
+      .prepare("INSERT INTO tasks (user_id, title, status, due_at, created_at) VALUES (?, ?, 'pending', ?, ?)")
+      .bind(input.userId, title, dueAt.toISOString(), createdAt)
+      .run()
+    : await db
+      .prepare("INSERT INTO tasks (user_id, title, status, created_at) VALUES (?, ?, 'pending', ?)")
+      .bind(input.userId, title, createdAt)
+      .run();
 
   return result.meta.last_row_id;
 }
@@ -99,6 +111,7 @@ export async function completeTask(db: D1Database, input: CompleteTaskInput): Pr
   const result = await db.prepare(
     "UPDATE tasks SET status = 'done', completed_at = ?, cancelled_at = NULL WHERE user_id = ? AND id = ? AND status = 'pending' AND cancelled_at IS NULL",
   ).bind(input.completedAt ?? new Date().toISOString(), input.userId, input.taskId).run();
+  if (result.meta.changes === 1) await disablePersistentNotification(db, input.userId, "task", input.taskId);
   return result.meta.changes === 1;
 }
 
@@ -108,6 +121,7 @@ export async function cancelTask(db: D1Database, input: CancelTaskInput): Promis
   const result = await db.prepare(
     "UPDATE tasks SET cancelled_at = ?, completed_at = NULL WHERE user_id = ? AND id = ? AND status = 'pending' AND cancelled_at IS NULL",
   ).bind(input.cancelledAt ?? new Date().toISOString(), input.userId, input.taskId).run();
+  if (result.meta.changes === 1) await disablePersistentNotification(db, input.userId, "task", input.taskId);
   return result.meta.changes === 1;
 }
 

@@ -168,7 +168,26 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
     return { action: "unknown", reason: "task_title_too_long" };
   }
 
-  return { action: "create_task", title };
+  return parseTask(title, options);
+}
+
+function parseTask(payload: string, options: ParseOptions): Intent {
+  const titleAndTime = extractReminderTime(payload, options, false);
+  if (titleAndTime.reason && titleAndTime.reason !== "missing_reminder_time") {
+    return { action: "unknown", reason: titleAndTime.reason };
+  }
+
+  const title = titleAndTime.title.trim();
+  if (!title) {
+    return { action: "unknown", reason: "missing_task_title" };
+  }
+  if (title.length > MAX_TASK_TITLE_LENGTH) {
+    return { action: "unknown", reason: "task_title_too_long" };
+  }
+
+  return titleAndTime.remindAt
+    ? { action: "create_task", title, dueAt: titleAndTime.remindAt }
+    : { action: "create_task", title };
 }
 
 function parseSummary(payload: string): Intent {
@@ -364,7 +383,7 @@ function parseReminder(payload: string, options: ParseOptions): Intent {
   return { action: "create_reminder", title, remindAt: titleAndTime.remindAt! };
 }
 
-function extractReminderTime(payload: string, options: ParseOptions): { title: string; remindAt?: string; reason?: string } {
+function extractReminderTime(payload: string, options: ParseOptions, requireTime = true): { title: string; remindAt?: string; reason?: string } {
   const now = options.now ?? new Date();
   const timezone = options.timezone ?? "America/Mexico_City";
   const relativeMatch = RELATIVE_REMINDER.exec(payload);
@@ -387,7 +406,7 @@ function extractReminderTime(payload: string, options: ParseOptions): { title: s
     const dateMatch = REMINDER_DATE_PATTERN.exec(payload);
     const timeMatch = findExplicitReminderTime(payload);
     if (!dateMatch && !timeMatch) {
-      return { title: payload, reason: "missing_reminder_time" };
+      return requireTime ? { title: payload, reason: "missing_reminder_time" } : { title: payload };
     }
 
     const currentLocal = getZonedDateTime(now, timezone);

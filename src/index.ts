@@ -12,6 +12,16 @@ import {
 } from "./modules/reminders/repository";
 import type { ReminderListItem } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
+import { processDueNotifications } from "./modules/notifications/scheduler";
+import {
+  disablePersistentNotification,
+  initializePersistentNotification,
+  getPersistentNotification,
+  reschedulePersistentNotification,
+  setNotificationDefaults,
+  setPersistentNotification,
+} from "./modules/notifications/repository";
+import type { NotificationIntervalMinutes, NotificationScope } from "./modules/notifications/repository";
 import { createExpense, getExpenseHistory } from "./modules/expenses/repository";
 import type { ExpenseHistoryResult } from "./modules/expenses/repository";
 import { createNote, getNote, listNotes } from "./modules/notes/repository";
@@ -39,6 +49,10 @@ import {
   buildFilterKeyboard,
   buildItemKeyboard,
   buildListKeyboard,
+  buildGlobalNotificationIntervalKeyboard,
+  buildGlobalNotificationKeyboard,
+  buildNotificationChoiceKeyboard,
+  buildStopConfirmationKeyboard,
   parseCallbackData,
 } from "./telegram/keyboards";
 import type { QueryFilter, QueryResource } from "./telegram/keyboards";
@@ -60,7 +74,9 @@ const worker: ExportedHandler<Env> = {
     return handleRequest(request, env);
   },
   async scheduled(controller, env) {
-    await processDueReminders(env.PERSONAL_ASSISTANT_DB, env, new Date(controller.scheduledTime));
+    const now = new Date(controller.scheduledTime);
+    await processDueReminders(env.PERSONAL_ASSISTANT_DB, env, now);
+    await processDueNotifications(env.PERSONAL_ASSISTANT_DB, env, now);
   },
 };
 
@@ -299,8 +315,25 @@ async function getReply(
     }
 
     if (intent.action === "create_task") {
-      await createTask(env.PERSONAL_ASSISTANT_DB, { userId, title: intent.title });
-      return `✅ Tarea creada\n\n${intent.title}`;
+      const createdAt = new Date().toISOString();
+      const taskId = await createTask(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        title: intent.title,
+        dueAt: intent.dueAt,
+        createdAt,
+      });
+      await initializePersistentNotification(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        resourceType: "task",
+        resourceId: taskId,
+        firstNotifyAt: intent.dueAt ?? null,
+        createdAt,
+      });
+      const due = intent.dueAt ? `\nVence: ${formatDate(intent.dueAt, env.APP_TIMEZONE)}` : "";
+      return {
+        text: `✅ Tarea creada\n\n${intent.title}${due}\n\n¿Deseas avisos persistentes?`,
+        replyMarkup: buildNotificationChoiceKeyboard("task", taskId),
+      };
     }
 
     if (intent.action === "create_expense") {
@@ -325,12 +358,24 @@ async function getReply(
       return `🔖 Nota guardada\n\n${savedContent}`;
     }
 
-    await createReminder(env.PERSONAL_ASSISTANT_DB, {
+    const createdAt = new Date().toISOString();
+    const reminderId = await createReminder(env.PERSONAL_ASSISTANT_DB, {
       userId,
       title: intent.title,
       remindAt: intent.remindAt,
+      createdAt,
     });
-    return `⏰ Recordatorio creado\n\n${intent.title}\n${formatReminderAt(intent.remindAt, env.APP_TIMEZONE)}`;
+    await initializePersistentNotification(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      resourceType: "reminder",
+      resourceId: reminderId,
+      firstNotifyAt: intent.remindAt,
+      createdAt,
+    });
+    return {
+      text: `⏰ Recordatorio creado\n\n${intent.title}\n${formatReminderAt(intent.remindAt, env.APP_TIMEZONE)}\n\n¿Deseas avisos persistentes?`,
+      replyMarkup: buildNotificationChoiceKeyboard("reminder", reminderId),
+    };
   }
 
   if (intent.action === "unknown" && intent.reason === "missing_task_title") {
@@ -430,6 +475,32 @@ async function handleCallbackQuery(
     return;
   }
 
+  if (action.kind === "notification_scope") {
+    await sendBotReply(env, source.chat.id, {
+      text: `Selecciona el intervalo para ${notificationScopeLabel(action.scope)}. Esto afecta los elementos existentes pendientes y los nuevos.`,
+      replyMarkup: buildGlobalNotificationIntervalKeyboard(action.scope),
+    }, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "notification_global_set") {
+    await setNotificationDefaults(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      scope: action.scope,
+      enabled: action.intervalMinutes !== null,
+      intervalMinutes: action.intervalMinutes ?? undefined,
+    });
+    await sendMessage(
+      env,
+      source.chat.id,
+      action.intervalMinutes === null
+        ? `Avisos persistentes desactivados para ${notificationScopeLabel(action.scope)}. Para volver a activarlos, elige una tarea o recordatorio, o entra a /configuracion.`
+        : `Avisos persistentes activados cada ${action.intervalMinutes} minutos para ${notificationScopeLabel(action.scope)}.`,
+      telegramFetch,
+    );
+    return;
+  }
+
   if (action.kind === "filter" || action.kind === "page") {
     const reply = await getListReply(env, userId, action.resource, action.filter, action.kind === "page" ? action.beforeId : undefined);
     await sendBotReply(env, source.chat.id, reply, telegramFetch);
@@ -457,6 +528,77 @@ async function handleCallbackQuery(
     : await getReminder(env.PERSONAL_ASSISTANT_DB, userId, action.id);
   if (!item) {
     await sendMessage(env, source.chat.id, "No encontré ese elemento o ya no está disponible.", telegramFetch);
+    return;
+  }
+
+  if (action.kind === "notification_set") {
+    if (item.status !== "pending") {
+      await sendMessage(env, source.chat.id, "Solo puedes configurar avisos de elementos pendientes.", telegramFetch);
+      return;
+    }
+    const now = new Date();
+    const nextNotifyAt = action.intervalMinutes === null
+      ? undefined
+      : getFirstNotificationAt(action.resource, item, action.intervalMinutes, now);
+    await setPersistentNotification(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      resourceType: action.resource,
+      resourceId: action.id,
+      intervalMinutes: action.intervalMinutes,
+      nextNotifyAt,
+      now: now.toISOString(),
+    });
+    await sendMessage(
+      env,
+      source.chat.id,
+      action.intervalMinutes === null
+        ? "Avisos persistentes desactivados. El elemento sigue pendiente."
+        : `Avisos persistentes configurados cada ${action.intervalMinutes} minutos.`,
+      telegramFetch,
+    );
+    return;
+  }
+
+  if (action.kind === "action" && action.action === "notify") {
+    if (item.status !== "pending") {
+      await sendMessage(env, source.chat.id, "Solo puedes configurar avisos de elementos pendientes.", telegramFetch);
+      return;
+    }
+    await sendBotReply(env, source.chat.id, {
+      text: "Selecciona cada cuánto quieres recibir avisos persistentes.",
+      replyMarkup: buildNotificationChoiceKeyboard(action.resource, action.id),
+    }, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "action" && action.action === "notify_stop") {
+    if (item.status !== "pending") {
+      await sendMessage(env, source.chat.id, "Ese elemento ya no está pendiente.", telegramFetch);
+      return;
+    }
+    await disablePersistentNotification(env.PERSONAL_ASSISTANT_DB, userId, action.resource, action.id);
+    const label = action.resource === "task" ? "la tarea" : "el recordatorio";
+    await sendBotReply(env, source.chat.id, {
+      text: `Avisos detenidos definitivamente para ${label}. ¿Se completó?`,
+      replyMarkup: buildStopConfirmationKeyboard(action.resource, action.id),
+    }, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "action" && action.action === "complete_after_stop") {
+    const changed = action.resource === "task"
+      ? await completeTask(env.PERSONAL_ASSISTANT_DB, { userId, taskId: action.id })
+      : await completeReminder(env.PERSONAL_ASSISTANT_DB, { userId, reminderId: action.id });
+    if (changed) {
+      await sendMessage(env, source.chat.id, "✅ Marcado como completado. No volveré a avisar.", telegramFetch);
+    } else {
+      await sendMessage(env, source.chat.id, "Ese elemento ya no está pendiente.", telegramFetch);
+    }
+    return;
+  }
+
+  if (action.kind === "action" && action.action === "leave_pending_after_stop") {
+    await sendMessage(env, source.chat.id, "Queda pendiente y no volveré a enviar avisos.", telegramFetch);
     return;
   }
 
@@ -537,6 +679,12 @@ async function handleEditInput(text: string, userId: number, chatId: number, env
       remindAt: intent.remindAt,
     });
     await clearEditSession(env.PERSONAL_ASSISTANT_DB, userId);
+    if (changed) {
+      const notification = await getPersistentNotification(env.PERSONAL_ASSISTANT_DB, userId, "reminder", session.resourceId);
+      if (notification?.enabled) {
+        await reschedulePersistentNotification(env.PERSONAL_ASSISTANT_DB, userId, "reminder", session.resourceId, intent.remindAt);
+      }
+    }
     return changed
       ? `✅ Recordatorio actualizado\n\n${intent.title}\n${formatReminderAt(intent.remindAt, env.APP_TIMEZONE)}`
       : "El recordatorio ya no está pendiente o no existe.";
@@ -673,7 +821,7 @@ function formatExpenseHistory(history: ExpenseHistoryResult, category: string | 
   return lines.join("\n");
 }
 
-function getCommandReply(text: string): string | null {
+function getCommandReply(text: string): Reply | null {
   const command = text.split(/\s+/, 1)[0].toLowerCase().split("@")[0];
 
   if (command === "/start") {
@@ -681,10 +829,34 @@ function getCommandReply(text: string): string | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces y archivos.\n\nEjemplos:\n• tarea comprar medicina\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• guardar https://ejemplo.com\n• nota póliza pendiente\n• Envía una foto o documento con la descripción «Guarda recibo de luz» (uno por mensaje).\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces y archivos.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /configuracion para avisos persistentes\n• guardar https://ejemplo.com\n• nota póliza pendiente\n• Envía una foto o documento con la descripción «Guarda recibo de luz» (uno por mensaje).\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+  }
+
+  if (command === "/configuracion" || command === "/config" || command === "configuracion" || command === "configuración") {
+    return {
+      text: "⚙️ Configuración de avisos persistentes\n\nElige si quieres configurar tareas, recordatorios o ambos.",
+      replyMarkup: buildGlobalNotificationKeyboard(),
+    };
   }
 
   return null;
+}
+
+function notificationScopeLabel(scope: NotificationScope): string {
+  return scope === "task" ? "todas las tareas" : scope === "reminder" ? "todos los recordatorios" : "tareas y recordatorios";
+}
+
+function getFirstNotificationAt(
+  resource: QueryResource,
+  item: TaskListItem | ReminderListItem,
+  intervalMinutes: NotificationIntervalMinutes,
+  now: Date,
+): string {
+  const scheduledAt = resource === "task" ? (item as TaskListItem).dueAt : (item as ReminderListItem).remindAt;
+  const scheduled = scheduledAt ? new Date(scheduledAt) : null;
+  if (scheduled && scheduled.getTime() > now.getTime()) return scheduled.toISOString();
+  if (resource === "task" && !scheduledAt) return new Date(now.getTime() + intervalMinutes * 60_000).toISOString();
+  return now.toISOString();
 }
 
 function looksLikeDataDeletion(text: string): boolean {

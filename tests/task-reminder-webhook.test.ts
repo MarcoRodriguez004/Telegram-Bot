@@ -131,4 +131,42 @@ describe("task and reminder query webhook flow", () => {
     });
     expect(String(calls.at(-1)?.body.text)).toContain("Recordatorio actualizado");
   });
+
+  it("configures an item alert and stops it while keeping the task pending", async () => {
+    const { db, sqlite } = createSqliteDb();
+    const { env, calls, telegramFetch } = createEnv(db);
+
+    await post(messageUpdate(20, "tarea revisar contrato"), env, telegramFetch);
+    expect(JSON.stringify(calls[0].body.reply_markup)).toContain("Cada 10 minutos");
+
+    await post(callbackUpdate(21, "pa:t:n:10:1"), env, telegramFetch);
+    expect(sqlite.prepare("SELECT enabled, interval_minutes FROM persistent_notifications WHERE resource_type = 'task' AND resource_id = 1").get())
+      .toEqual({ enabled: 1, interval_minutes: 10 });
+
+    await post(callbackUpdate(22, "pa:t:a:n:1"), env, telegramFetch);
+    expect(sqlite.prepare("SELECT enabled FROM persistent_notifications WHERE resource_type = 'task' AND resource_id = 1").get())
+      .toEqual({ enabled: 0 });
+    expect(String(calls.at(-2)?.body.text)).toContain("¿Se completó?");
+
+    await post(callbackUpdate(23, "pa:t:a:z:1"), env, telegramFetch);
+    expect(sqlite.prepare("SELECT status, cancelled_at FROM tasks WHERE id = 1").get()).toEqual({ status: "pending", cancelled_at: null });
+    expect(String(calls.at(-2)?.body.text)).toContain("Queda pendiente");
+  });
+
+  it("offers global alert configuration and applies it to both resource types", async () => {
+    const { db, sqlite } = createSqliteDb();
+    const { env, calls, telegramFetch } = createEnv(db);
+
+    await post(messageUpdate(30, "/configuracion"), env, telegramFetch);
+    expect(String(calls[0].body.text)).toContain("Configuración de avisos persistentes");
+    expect(JSON.stringify(calls[0].body.reply_markup)).toContain("Tareas y recordatorios");
+
+    await post(callbackUpdate(31, "pa:g:s:a"), env, telegramFetch);
+    expect(String(calls.at(-2)?.body.text)).toContain("tareas y recordatorios");
+    expect(JSON.stringify(calls.at(-2)?.body.reply_markup)).toContain("Activar cada 20 minutos");
+
+    await post(callbackUpdate(32, "pa:g:n:a:20"), env, telegramFetch);
+    expect(sqlite.prepare("SELECT tasks_enabled, tasks_interval_minutes, reminders_enabled, reminders_interval_minutes FROM notification_preferences WHERE user_id = 1").get())
+      .toEqual({ tasks_enabled: 1, tasks_interval_minutes: 20, reminders_enabled: 1, reminders_interval_minutes: 20 });
+  });
 });

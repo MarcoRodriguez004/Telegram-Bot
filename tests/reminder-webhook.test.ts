@@ -101,5 +101,6 @@ describe("reminder webhook flow", () => {
     expect(reminders[0].status).toBe("pending");
     expect(new Date(reminders[0].remindAt).getTime()).toBeGreaterThan(Date.now());
     expect(sentMessages[0].text).toContain("pagar internet");
+    expect((sentMessages[0] as { reply_markup?: unknown }).reply_markup).toBeDefined();
   });
 });

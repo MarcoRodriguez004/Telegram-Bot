@@ -37,6 +37,22 @@ describe("task repository", () => {
     });
   });
 
+  it("stores an optional due date for a scheduled task", async () => {
+    const { db, calls } = createDb();
+
+    await createTask(db, {
+      userId: 3,
+      title: "pagar la luz",
+      dueAt: "2026-09-12T00:00:00.000Z",
+      createdAt: "2026-09-10T15:00:00.000Z",
+    });
+
+    expect(calls[0]).toEqual({
+      query: "INSERT INTO tasks (user_id, title, status, due_at, created_at) VALUES (?, ?, 'pending', ?, ?)",
+      values: [3, "pagar la luz", "2026-09-12T00:00:00.000Z", "2026-09-10T15:00:00.000Z"],
+    });
+  });
+
   it("rejects empty or oversized titles before touching the database", async () => {
     const { db, calls } = createDb();
 

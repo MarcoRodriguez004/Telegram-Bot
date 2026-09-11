@@ -16,6 +16,17 @@ describe("parseIntent", () => {
     });
   });
 
+  it("parses an optional date and time on a task", () => {
+    expect(parseIntent("tarea pagar la luz mañana a las 18:00", {
+      now: new Date("2026-09-10T16:00:00.000Z"),
+      timezone: "America/Mexico_City",
+    })).toEqual({
+      action: "create_task",
+      title: "pagar la luz",
+      dueAt: "2026-09-12T00:00:00.000Z",
+    });
+  });
+
   it("normalizes whitespace in a task title", () => {
     expect(parseIntent("  tarea\n\tcomprar   medicina  ")).toEqual({
       action: "create_task",

@@ -1,5 +1,7 @@
 import { sendMessage } from "../../telegram/client";
+import { buildPersistentAlertKeyboard } from "../../telegram/keyboards";
 import type { Env } from "../../types";
+import { advancePersistentNotification, getPersistentNotification } from "../notifications/repository";
 
 const MAX_REMINDERS_PER_RUN = 20;
 const PROCESSING_LEASE_MS = 5 * 60 * 1_000;
@@ -29,8 +31,17 @@ export async function processDueReminders(
     if (!claimed) continue;
 
     try {
-      await sendMessage(env, reminder.chatId, `⏰ Recordatorio\n\n${reminder.title}`, telegramFetch);
-      await markReminderSent(db, reminder.id, nowIso);
+      const persistentNotification = await getPersistentNotification(db, reminder.userId, "reminder", reminder.id);
+      const usePersistentKeyboard = persistentNotification?.enabled === true &&
+        persistentNotification.nextNotifyAt !== null &&
+        new Date(persistentNotification.nextNotifyAt).getTime() <= now.getTime();
+      await sendMessage(env, reminder.chatId, `⏰ Recordatorio\n\n${reminder.title}`, telegramFetch, usePersistentKeyboard
+        ? { replyMarkup: buildPersistentAlertKeyboard("reminder", reminder.id) }
+        : undefined);
+      await markReminderSent(db, reminder.id, nowIso, usePersistentKeyboard);
+      if (usePersistentKeyboard) {
+        await advancePersistentNotification(db, reminder.userId, "reminder", reminder.id, nowIso);
+      }
       sent += 1;
     } catch (error) {
       console.error("Reminder delivery failed", error instanceof Error ? error.message : "unknown error");
@@ -47,7 +58,7 @@ async function findDueReminder(db: D1Database, nowIso: string): Promise<DueRemin
     .prepare(
       "SELECT reminders.id, reminders.user_id AS userId, users.telegram_chat_id AS chatId, reminders.title " +
         "FROM reminders INNER JOIN users ON users.id = reminders.user_id " +
-        "WHERE reminders.cancelled_at IS NULL AND reminders.remind_at <= ? AND (reminders.status = 'pending' OR " +
+      "WHERE reminders.cancelled_at IS NULL AND reminders.remind_at <= ? AND reminders.sent_at IS NULL AND (reminders.status = 'pending' OR " +
         "(reminders.status = 'processing' AND reminders.processing_until <= ?)) " +
         "ORDER BY reminders.remind_at ASC, reminders.id ASC LIMIT 1",
     )
@@ -61,7 +72,7 @@ async function claimReminder(db: D1Database, id: number, nowIso: string, leaseUn
   const result = await db
     .prepare(
       "UPDATE reminders SET status = 'processing', processing_until = ? " +
-        "WHERE id = ? AND cancelled_at IS NULL AND remind_at <= ? AND (status = 'pending' OR " +
+        "WHERE id = ? AND cancelled_at IS NULL AND sent_at IS NULL AND remind_at <= ? AND (status = 'pending' OR " +
         "(status = 'processing' AND processing_until <= ?))",
     )
     .bind(leaseUntil, id, nowIso, nowIso)
@@ -70,9 +81,9 @@ async function claimReminder(db: D1Database, id: number, nowIso: string, leaseUn
   return result.meta.changes === 1;
 }
 
-async function markReminderSent(db: D1Database, id: number, sentAt: string): Promise<void> {
+async function markReminderSent(db: D1Database, id: number, sentAt: string, keepPending: boolean): Promise<void> {
   await db
-    .prepare("UPDATE reminders SET status = 'sent', sent_at = ?, processing_until = NULL WHERE id = ? AND status = 'processing' AND cancelled_at IS NULL")
+    .prepare(`UPDATE reminders SET status = '${keepPending ? "pending" : "sent"}', sent_at = ?, processing_until = NULL WHERE id = ? AND status = 'processing' AND cancelled_at IS NULL`)
     .bind(sentAt, id)
     .run();
 }

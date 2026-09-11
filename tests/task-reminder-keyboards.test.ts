@@ -3,6 +3,8 @@ import {
   buildFilterKeyboard,
   buildItemKeyboard,
   buildListKeyboard,
+  buildNotificationChoiceKeyboard,
+  buildPersistentAlertKeyboard,
   parseCallbackData,
 } from "../src/telegram/keyboards";
 
@@ -39,6 +41,8 @@ describe("task and reminder inline keyboards", () => {
 
   it("parses item actions and rejects malformed callbacks", () => {
     expect(parseCallbackData("pa:r:a:e:9")).toEqual({ kind: "action", resource: "reminder", action: "edit", id: 9 });
+    expect(parseCallbackData("pa:t:a:n:9")).toEqual({ kind: "action", resource: "task", action: "notify_stop", id: 9 });
+    expect(parseCallbackData("pa:t:n:10:9")).toEqual({ kind: "notification_set", resource: "task", intervalMinutes: 10, id: 9 });
     expect(parseCallbackData("pa:t:f:x")).toEqual({ kind: "filter", resource: "task", filter: "cancelled" });
     expect(parseCallbackData("pa:t:a:c:0")).toBeNull();
     expect(parseCallbackData("other:task:1")).toBeNull();
@@ -46,7 +50,17 @@ describe("task and reminder inline keyboards", () => {
 
   it("builds an action menu for a selected item", () => {
     expect(buildItemKeyboard("task", 17, "pending", "pending").inline_keyboard.flat().map((button) => button.text)).toEqual([
-      "✅ Completar", "✏️ Editar", "❌ Cancelar", "↩️ Volver",
+      "✅ Completar", "✏️ Editar", "❌ Cancelar", "⚙️ Configurar avisos", "↩️ Volver",
+    ]);
+  });
+
+  it("builds the creation choices and alert action buttons", () => {
+    const choiceKeyboard = buildNotificationChoiceKeyboard("task", 17);
+    expect(choiceKeyboard.inline_keyboard.flat().map((button) => button.text)).toEqual([
+      "Sin avisos", "Cada 5 minutos", "Cada 10 minutos", "Cada 20 minutos", "Cada 30 minutos", "Cada 60 minutos",
+    ]);
+    expect(buildPersistentAlertKeyboard("reminder", 9).inline_keyboard.flat().map((button) => button.text)).toEqual([
+      "Parar avisos de este recordatorio", "✅ Completar", "❌ Cancelar",
     ]);
   });
 });

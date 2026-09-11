@@ -140,7 +140,7 @@ describe("AI webhook fallback", () => {
     expect(response.status).toBe(200);
     expect(aiCalls).toBe(1);
     expect(tasks).toEqual([{ userId: 1, title: "comprar medicina" }]);
-    expect(sentMessages[0].text).toBe("✅ Tarea creada\n\ncomprar medicina");
+    expect(sentMessages[0].text).toBe("✅ Tarea creada\n\ncomprar medicina\n\n¿Deseas avisos persistentes?");
   });
 
   it("keeps the deterministic deletion confirmation outside the model", async () => {

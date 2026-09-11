@@ -1,3 +1,5 @@
+import { disablePersistentNotification } from "../notifications/repository";
+
 export interface CreateReminderInput {
   userId: number;
   title: string;
@@ -107,6 +109,7 @@ export async function completeReminder(db: D1Database, input: CompleteReminderIn
   const result = await db.prepare(
     "UPDATE reminders SET status = 'sent', sent_at = ?, processing_until = NULL WHERE user_id = ? AND id = ? AND status IN ('pending', 'processing', 'failed') AND cancelled_at IS NULL",
   ).bind(completedAt, input.userId, input.reminderId).run();
+  if (result.meta.changes === 1) await disablePersistentNotification(db, input.userId, "reminder", input.reminderId);
   return result.meta.changes === 1;
 }
 
@@ -116,6 +119,7 @@ export async function cancelReminder(db: D1Database, input: CancelReminderInput)
   const result = await db.prepare(
     "UPDATE reminders SET cancelled_at = ?, processing_until = NULL WHERE user_id = ? AND id = ? AND status IN ('pending', 'processing', 'failed') AND cancelled_at IS NULL",
   ).bind(input.cancelledAt ?? new Date().toISOString(), input.userId, input.reminderId).run();
+  if (result.meta.changes === 1) await disablePersistentNotification(db, input.userId, "reminder", input.reminderId);
   return result.meta.changes === 1;
 }
 
