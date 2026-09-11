@@ -38,8 +38,16 @@ import {
 } from "./modules/tasks/repository";
 import type { TaskListItem } from "./modules/tasks/repository";
 import { clearEditSession, getActiveEditSession, startEditSession } from "./modules/edit-sessions/repository";
-import { getSavedNotesContext, saveSavedNotesContext } from "./modules/conversation/repository";
+import {
+  clearPendingListContext,
+  getPendingListContext,
+  getSavedNotesContext,
+  savePendingListContext,
+  saveSavedNotesContext,
+} from "./modules/conversation/repository";
+import type { PendingListContext } from "./modules/conversation/repository";
 import { parseIntent } from "./router/parser";
+import type { Intent } from "./router/intent";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
 import { answerCallbackQuery, sendAttachment, sendMessage } from "./telegram/client";
@@ -181,14 +189,13 @@ async function getReply(
   aiFetch: typeof fetch,
 ): Promise<Reply | null> {
   const commandReply = getCommandReply(text);
-  if (commandReply) {
-    return commandReply;
-  }
+  if (commandReply) return commandReply;
 
   const message = update.message;
   const telegramUserId = message?.from?.id;
   let userId: number | undefined;
   let savedNotesContext = undefined;
+  let pendingListContext: PendingListContext | null = null;
   if (message && telegramUserId !== undefined) {
     userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
       telegramUserId,
@@ -200,13 +207,27 @@ async function getReply(
       userId,
       chatId: message.chat.id,
     });
+    pendingListContext = await getPendingListContext(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: message.chat.id,
+    });
   }
 
-  let intent = parseIntent(text, {
-    timezone: env.APP_TIMEZONE,
-    currency: env.DEFAULT_CURRENCY,
-    savedNotesContext: savedNotesContext ?? undefined,
-  });
+  const pendingResolution = pendingListContext
+    ? resolvePendingListResponse(text, pendingListContext)
+    : null;
+  if (pendingListContext && userId !== undefined) {
+    await clearPendingListContext(env.PERSONAL_ASSISTANT_DB, userId);
+  }
+  if (pendingResolution?.kind === "reply") return pendingResolution.text;
+
+  let intent = pendingResolution?.kind === "intent"
+    ? pendingResolution.intent
+    : parseIntent(text, {
+        timezone: env.APP_TIMEZONE,
+        currency: env.DEFAULT_CURRENCY,
+        savedNotesContext: savedNotesContext ?? undefined,
+      });
   if (intent.action === "unknown" && intent.reason === "unsupported_message") {
     if (looksLikeDataDeletion(text)) {
       return "Para borrar tus datos escribe exactamente: /borrar_datos CONFIRMAR";
@@ -253,6 +274,11 @@ async function getReply(
 
     if (intent.action === "list_tasks") {
       if (!intent.filter) {
+        await savePendingListContext(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          chatId: message.chat.id,
+          resource: "task",
+        });
         return { text: "¿Qué tareas quieres consultar?", replyMarkup: buildFilterKeyboard("task") };
       }
       const result = await listTasks(env.PERSONAL_ASSISTANT_DB, { userId, filter: intent.filter, limit: 10 });
@@ -260,6 +286,11 @@ async function getReply(
     }
     if (intent.action === "list_reminders") {
       if (!intent.filter) {
+        await savePendingListContext(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          chatId: message.chat.id,
+          resource: "reminder",
+        });
         return { text: "¿Qué recordatorios quieres consultar?", replyMarkup: buildFilterKeyboard("reminder") };
       }
       const result = await listReminders(env.PERSONAL_ASSISTANT_DB, { userId, filter: intent.filter, limit: 10 });
@@ -502,6 +533,7 @@ async function handleCallbackQuery(
   }
 
   if (action.kind === "filter" || action.kind === "page") {
+    await clearPendingListContext(env.PERSONAL_ASSISTANT_DB, userId);
     const reply = await getListReply(env, userId, action.resource, action.filter, action.kind === "page" ? action.beforeId : undefined);
     await sendBotReply(env, source.chat.id, reply, telegramFetch);
     return;
@@ -819,6 +851,30 @@ function formatExpenseHistory(history: ExpenseHistoryResult, category: string | 
     }),
   );
   return lines.join("\n");
+}
+
+type PendingListIntent = Extract<Intent, { action: "list_tasks" | "list_reminders" }>;
+
+type PendingListResolution =
+  | { kind: "intent"; intent: PendingListIntent }
+  | { kind: "reply"; text: string };
+
+function resolvePendingListResponse(text: string, context: PendingListContext): PendingListResolution | null {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  const action = context.resource === "task" ? "list_tasks" : "list_reminders";
+  const resourceLabel = context.resource === "task" ? "tareas" : "recordatorios";
+
+  if (/^(?:s[ií]|claro|correcto|adelante|de acuerdo|s[ií]\s+quiero)$/iu.test(normalized)) {
+    return { kind: "intent", intent: { action, filter: "pending" } };
+  }
+  if (/^(?:no|ahora no|cancelar|salir)$/iu.test(normalized)) {
+    return { kind: "reply", text: `Entendido. No consulté tus ${resourceLabel}.` };
+  }
+
+  const candidate = parseIntent(`${resourceLabel} ${normalized}`);
+  return candidate.action === action && candidate.filter
+    ? { kind: "intent", intent: candidate }
+    : null;
 }
 
 function getCommandReply(text: string): Reply | null {

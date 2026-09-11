@@ -105,6 +105,44 @@ describe("task and reminder query webhook flow", () => {
     expect(calls.some((call) => call.method === "answerCallbackQuery")).toBe(true);
   });
 
+  it("continues a task query when the user confirms with yes", async () => {
+    const { db, sqlite } = createSqliteDb();
+    const { env, calls, telegramFetch } = createEnv(db);
+
+    await post(messageUpdate(3, "Mis tareas"), env, telegramFetch);
+    sqlite.prepare("INSERT INTO tasks (user_id, title, status, created_at) VALUES (?, ?, 'pending', ?)")
+      .run(1, "revisar contrato", new Date().toISOString());
+
+    await post(messageUpdate(4, "Sí"), env, telegramFetch);
+
+    expect(String(calls.at(-1)?.body.text)).toContain("Tareas");
+    expect(String(calls.at(-1)?.body.text)).toContain("revisar contrato");
+  });
+
+  it("continues a reminder query when the user confirms with yes", async () => {
+    const { db, sqlite } = createSqliteDb();
+    const { env, calls, telegramFetch } = createEnv(db);
+
+    await post(messageUpdate(5, "Mis recordatorios"), env, telegramFetch);
+    sqlite.prepare("INSERT INTO reminders (user_id, title, remind_at, status, created_at) VALUES (?, ?, ?, 'pending', ?)")
+      .run(1, "renovar póliza", new Date(Date.now() + 86_400_000).toISOString(), new Date().toISOString());
+
+    await post(messageUpdate(6, "sí"), env, telegramFetch);
+
+    expect(String(calls.at(-1)?.body.text)).toContain("Recordatorios");
+    expect(String(calls.at(-1)?.body.text)).toContain("renovar póliza");
+  });
+
+  it("clears a pending list query when the user declines", async () => {
+    const database = createSqliteDb();
+    const { calls, env, telegramFetch } = createEnv(database.db);
+
+    await post(messageUpdate(7, "Mis tareas"), env, telegramFetch);
+    await post(messageUpdate(8, "No"), env, telegramFetch);
+
+    expect(String(calls.at(-1)?.body.text)).toContain("No consulté tus tareas");
+  });
+
   it("completes a task and edits a reminder through callback buttons", async () => {
     const { db, sqlite } = createSqliteDb();
     const { env, calls, telegramFetch } = createEnv(db);

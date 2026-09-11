@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ensureUser } from "../src/db/users";
 import { deleteUserData } from "../src/modules/privacy/repository";
 import {
+  clearPendingListContext,
+  getPendingListContext,
   getSavedNotesContext,
+  savePendingListContext,
   saveSavedNotesContext,
 } from "../src/modules/conversation/repository";
 import { createSqliteDb } from "./helpers/sqlite-db";
@@ -24,6 +27,36 @@ async function setup() {
 }
 
 describe("conversation context", () => {
+  it("keeps a pending task list query for the same chat and expires it", async () => {
+    const { db, userId } = await setup();
+
+    await savePendingListContext(db, {
+      userId,
+      chatId: 42,
+      resource: "task",
+      now: new Date("2026-09-09T00:00:00.000Z"),
+    });
+
+    await expect(getPendingListContext(db, {
+      userId,
+      chatId: 42,
+      now: new Date("2026-09-09T00:05:00.000Z"),
+    })).resolves.toEqual({ resource: "task" });
+    await expect(getPendingListContext(db, {
+      userId,
+      chatId: 42,
+      now: new Date("2026-09-09T00:16:00.000Z"),
+    })).resolves.toBeNull();
+  });
+
+  it("does not leak a pending query across chats", async () => {
+    const { db, userId } = await setup();
+    await savePendingListContext(db, { userId, chatId: 42, resource: "reminder" });
+
+    await expect(getPendingListContext(db, { userId, chatId: 99 })).resolves.toBeNull();
+    await clearPendingListContext(db, userId);
+  });
+
   it("keeps the latest saved-notes query for the same chat", async () => {
     const { db, userId } = await setup();
 
@@ -66,10 +99,12 @@ describe("conversation context", () => {
   it("removes the context with the rest of the user's data", async () => {
     const { db, userId, sqlite } = await setup();
     await saveSavedNotesContext(db, { userId, chatId: 42, kind: "photos" });
+    await savePendingListContext(db, { userId, chatId: 42, resource: "task" });
 
     await deleteUserData(db, 42);
 
     expect(sqlite.prepare("SELECT * FROM conversation_context").all()).toHaveLength(0);
+    expect(sqlite.prepare("SELECT * FROM pending_conversation").all()).toHaveLength(0);
     await expect(getSavedNotesContext(db, { userId, chatId: 42 })).resolves.toBeNull();
   });
 });
