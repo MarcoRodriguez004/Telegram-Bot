@@ -787,9 +787,9 @@ function formatTaskListReply(
 ): BotReply {
   const label = filterLabel("task", filter);
   const text = tasks.length
-    ? [`📋 Tareas · ${label}`, "", ...tasks.map((task) => `${statusBullet(task.status)} ${task.title}\n  ${formatTaskDate(task, timezone)}`)].join("\n")
+    ? [`📋 Tareas · ${label}`, "", ...tasks.map((task, index) => `${index + 1}.- ${statusBullet(task.status)} ${task.title}\n  ${formatTaskDate(task, timezone)}`)].join("\n")
     : `📋 Tareas · ${label}\n\nNo hay tareas en este estado.`;
-  return { text, replyMarkup: tasks.length ? buildListKeyboard("task", tasks, nextBeforeId, filter, timezone) : buildFilterKeyboard("task") };
+  return { text, replyMarkup: tasks.length ? buildListKeyboard("task", tasks, nextBeforeId, filter) : buildFilterKeyboard("task") };
 }
 
 function formatReminderListReply(
@@ -800,9 +800,9 @@ function formatReminderListReply(
 ): BotReply {
   const label = filterLabel("reminder", filter);
   const text = reminders.length
-    ? [`⏰ Recordatorios · ${label}`, "", ...reminders.map((reminder) => `${statusBullet(reminder.status)} ${reminder.title}\n  ${formatDate(reminder.remindAt, timezone)}`)].join("\n")
+    ? [`⏰ Recordatorios · ${label}`, "", ...reminders.map((reminder, index) => `${index + 1}.- ${statusBullet(reminder.status)} ${reminder.title}\n  ${formatDate(reminder.remindAt, timezone)}`)].join("\n")
     : `⏰ Recordatorios · ${label}\n\nNo hay recordatorios en este estado.`;
-  return { text, replyMarkup: reminders.length ? buildListKeyboard("reminder", reminders, nextBeforeId, filter, timezone) : buildFilterKeyboard("reminder") };
+  return { text, replyMarkup: reminders.length ? buildListKeyboard("reminder", reminders, nextBeforeId, filter) : buildFilterKeyboard("reminder") };
 }
 
 function formatItemDetail(resource: QueryResource, item: TaskListItem | ReminderListItem, timezone: string): string {

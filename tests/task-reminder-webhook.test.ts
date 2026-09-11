@@ -99,9 +99,12 @@ describe("task and reminder query webhook flow", () => {
     await post(callbackUpdate(2, "pa:t:f:p"), env, telegramFetch);
     const firstList = calls.find((call) => call.method === "sendMessage" && String(call.body.text).includes("tarea 11"));
     expect(firstList).toBeDefined();
-    expect(String(firstList?.body.text)).toContain("🟡 tarea 11");
+    expect(String(firstList?.body.text)).toContain("1.- 🟡 tarea 11");
+    expect(String(firstList?.body.text)).toContain("2.- 🟡 tarea 10");
     expect(String(firstList?.body.text)).toContain("tarea 2");
     expect(String(firstList?.body.text)).not.toContain("tarea 1\n");
+    expect(JSON.stringify(firstList?.body.reply_markup)).toContain("Tarea 1");
+    expect(JSON.stringify(firstList?.body.reply_markup)).toContain("Tarea 10");
     expect(JSON.stringify(firstList?.body.reply_markup)).toContain("Consultar más");
     expect(calls.some((call) => call.method === "answerCallbackQuery")).toBe(true);
   });

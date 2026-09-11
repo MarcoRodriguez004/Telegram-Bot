@@ -1,4 +1,3 @@
-import { getZonedDateTime } from "../shared/dates";
 import type { InlineKeyboardButton, InlineKeyboardMarkup } from "./client";
 import type { ReminderListItem } from "../modules/reminders/repository";
 import type { TaskFilter, TaskListItem } from "../modules/tasks/repository";
@@ -60,10 +59,9 @@ export function buildListKeyboard(
   items: ListedItem[],
   nextBeforeId: number | undefined,
   filter: QueryFilter,
-  timezone: string,
 ): InlineKeyboardMarkup {
-  const rows: InlineKeyboardButton[][] = items.map((item) => [{
-    text: formatItemButton(resource, item, timezone),
+  const rows: InlineKeyboardButton[][] = items.map((item, index) => [{
+    text: formatItemButton(resource, index),
     callback_data: `pa:${resourceCode(resource)}:i:${item.id}`,
   }]);
   if (nextBeforeId !== undefined) {
@@ -226,21 +224,8 @@ function parseNotificationScope(value: string): NotificationScope | null {
   return value === "t" ? "task" : value === "r" ? "reminder" : value === "a" ? "all" : null;
 }
 
-function formatItemButton(resource: QueryResource, item: ListedItem, timezone: string): string {
-  const date = resource === "task"
-    ? formatDate((item as TaskListItem).dueAt ?? item.createdAt, timezone)
-    : formatDate((item as ReminderListItem).remindAt, timezone);
-  return `${truncate(item.title, 44)} · ${date}`;
-}
-
-function formatDate(value: string, timezone: string): string {
-  const local = getZonedDateTime(new Date(value), timezone);
-  const pad = (number: number) => String(number).padStart(2, "0");
-  return `${local.year}-${pad(local.month)}-${pad(local.day)} ${pad(local.hour)}:${pad(local.minute)}`;
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
+function formatItemButton(resource: QueryResource, index: number): string {
+  return `${resource === "task" ? "Tarea" : "Recordatorio"} ${index + 1}`;
 }
 
 function resourceCode(resource: QueryResource): "t" | "r" {

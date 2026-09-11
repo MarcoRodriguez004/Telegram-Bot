@@ -19,18 +19,24 @@ describe("task and reminder inline keyboards", () => {
     ]);
   });
 
-  it("builds hidden item and pagination callbacks with visible names and dates", () => {
+  it("builds numbered item buttons while keeping hidden item callbacks", () => {
     const keyboard = buildListKeyboard("task", [{
       id: 17,
       title: "comprar medicina",
       status: "pending",
       dueAt: null,
       createdAt: "2026-09-09T18:00:00.000Z",
-    }], 17, "pending", "America/Mexico_City");
+    }, {
+      id: 18,
+      title: "pagar tarjeta",
+      status: "pending",
+      dueAt: null,
+      createdAt: "2026-09-09T19:00:00.000Z",
+    }], 17, "pending");
 
-    expect(keyboard.inline_keyboard[0][0].text).toContain("comprar medicina");
-    expect(keyboard.inline_keyboard[0][0].text).toContain("2026-09-09");
-    expect(keyboard.inline_keyboard[0][0].text).not.toContain("17");
+    expect(keyboard.inline_keyboard.slice(0, 2).map((row) => row[0].text)).toEqual(["Tarea 1", "Tarea 2"]);
+    expect(keyboard.inline_keyboard[0][0].text).not.toContain("comprar medicina");
+    expect(keyboard.inline_keyboard[0][0].text).not.toContain("2026-09-09");
     expect(keyboard.inline_keyboard.at(-1)?.[0].text).toBe("Consultar más");
     expect(parseCallbackData(keyboard.inline_keyboard[0][0].callback_data)).toEqual({
       kind: "item", resource: "task", id: 17,
@@ -38,6 +44,14 @@ describe("task and reminder inline keyboards", () => {
     expect(parseCallbackData(keyboard.inline_keyboard.at(-1)![0].callback_data)).toEqual({
       kind: "page", resource: "task", filter: "pending", beforeId: 17,
     });
+
+    expect(buildListKeyboard("reminder", [{
+      id: 9,
+      title: "renovar póliza",
+      status: "pending",
+      remindAt: "2026-09-10T19:00:00.000Z",
+      createdAt: "2026-09-09T18:00:00.000Z",
+    }], undefined, "pending").inline_keyboard[0][0].text).toBe("Recordatorio 1");
   });
 
   it("parses item actions and rejects malformed callbacks", () => {
