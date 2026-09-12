@@ -72,6 +72,7 @@ export async function deleteAllData(db: D1Database): Promise<void> {
     db.prepare("DELETE FROM edit_sessions"),
     db.prepare("DELETE FROM conversation_context"),
     db.prepare("DELETE FROM pending_conversation"),
+    db.prepare("DELETE FROM conversation_drafts"),
     db.prepare("DELETE FROM conversation_confirmations"),
     db.prepare("DELETE FROM notes"),
     db.prepare("DELETE FROM saved_folders"),

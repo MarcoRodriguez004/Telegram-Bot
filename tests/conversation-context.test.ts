@@ -3,13 +3,16 @@ import { ensureUser } from "../src/db/users";
 import { deleteUserData } from "../src/modules/privacy/repository";
 import {
   clearPendingConfirmation,
+  clearConversationDraft,
   clearPendingFolderSave,
   clearPendingListContext,
+  getConversationDraft,
   getPendingFolderSave,
   getPendingConfirmation,
   getPendingListContext,
   getSavedNotesContext,
   savePendingConfirmation,
+  saveConversationDraft,
   savePendingFolderSave,
   savePendingListContext,
   saveSavedNotesContext,
@@ -33,6 +36,40 @@ async function setup() {
 }
 
 describe("conversation context", () => {
+  it("keeps a general draft for the same chat and expires it", async () => {
+    const { db, userId } = await setup();
+
+    await saveConversationDraft(db, {
+      userId,
+      chatId: 42,
+      flow: "expense",
+      missing: "amount",
+      baseText: "Gasté en carro por gasolina",
+      now: new Date("2026-09-09T00:00:00.000Z"),
+    });
+
+    await expect(getConversationDraft(db, {
+      userId,
+      chatId: 42,
+      now: new Date("2026-09-09T00:05:00.000Z"),
+    })).resolves.toEqual({
+      flow: "expense",
+      missing: "amount",
+      baseText: "Gasté en carro por gasolina",
+    });
+    await expect(getConversationDraft(db, {
+      userId,
+      chatId: 99,
+      now: new Date("2026-09-09T00:05:00.000Z"),
+    })).resolves.toBeNull();
+    await expect(getConversationDraft(db, {
+      userId,
+      chatId: 42,
+      now: new Date("2026-09-09T00:16:00.000Z"),
+    })).resolves.toBeNull();
+    await clearConversationDraft(db, userId);
+  });
+
   it("keeps a confirmation suggestion for the same chat and expires it", async () => {
     const { db, userId } = await setup();
     const question = "¿Quieres consultar tu lista de pendientes?";
@@ -188,6 +225,13 @@ describe("conversation context", () => {
     const { db, userId, sqlite } = await setup();
     await saveSavedNotesContext(db, { userId, chatId: 42, kind: "photos" });
     await savePendingListContext(db, { userId, chatId: 42, resource: "task" });
+    await saveConversationDraft(db, {
+      userId,
+      chatId: 42,
+      flow: "task",
+      missing: "title",
+      baseText: "tarea",
+    });
     await savePendingConfirmation(db, {
       userId,
       chatId: 42,
@@ -212,6 +256,7 @@ describe("conversation context", () => {
 
     expect(sqlite.prepare("SELECT * FROM conversation_context").all()).toHaveLength(0);
     expect(sqlite.prepare("SELECT * FROM pending_conversation").all()).toHaveLength(0);
+    expect(sqlite.prepare("SELECT * FROM conversation_drafts").all()).toHaveLength(0);
     expect(sqlite.prepare("SELECT * FROM conversation_confirmations").all()).toHaveLength(0);
     expect(sqlite.prepare("SELECT * FROM pending_folder_saves").all()).toHaveLength(0);
     await expect(getSavedNotesContext(db, { userId, chatId: 42 })).resolves.toBeNull();

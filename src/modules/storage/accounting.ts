@@ -89,6 +89,15 @@ WITH owned_bytes AS (
   FROM pending_conversation
   UNION ALL
   SELECT user_id,
+    64 + 24
+      + length(CAST(COALESCE(flow, '') AS BLOB))
+      + length(CAST(COALESCE(missing, '') AS BLOB))
+      + length(CAST(COALESCE(base_text, '') AS BLOB))
+      + length(CAST(COALESCE(updated_at, '') AS BLOB))
+      + length(CAST(COALESCE(expires_at, '') AS BLOB)) AS logical_bytes
+  FROM conversation_drafts
+  UNION ALL
+  SELECT user_id,
     64 + 16
       + length(CAST(COALESCE(question, '') AS BLOB))
       + length(CAST(COALESCE(suggested_text, '') AS BLOB))

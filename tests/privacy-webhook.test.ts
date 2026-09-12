@@ -82,7 +82,7 @@ describe("privacy webhook flow", () => {
 
     expect(response.status).toBe(200);
     expect(sentMessages[0].text).toContain("eliminados");
-    expect(batchedStatements).toHaveLength(13);
+    expect(batchedStatements).toHaveLength(14);
   });
 
   it("does not delete anything without exact confirmation", async () => {

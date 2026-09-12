@@ -125,6 +125,17 @@ describe("saved attachments", () => {
     expect(sqlite.prepare("SELECT * FROM notes").all()).toHaveLength(1);
   });
 
+  it("keeps an unfiled saved item in the virtual Sin carpeta category", async () => {
+    const { send, sent, sqlite } = setup();
+    await send({ document, caption: "Guarda recibo de luz" });
+
+    expect(sqlite.prepare("SELECT folder_id FROM notes WHERE id = 1").get()).toMatchObject({
+      folder_id: null,
+    });
+    await send({ text: "mis archivos" });
+    expect(sent.at(-1)?.body.text).toContain("Sin carpeta (1)");
+  });
+
   it("removes saved attachments with the existing privacy command", async () => {
     const { send, sent, sqlite } = setup();
     await send({ document, caption: "Guarda" });

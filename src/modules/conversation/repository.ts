@@ -16,6 +16,15 @@ export type PendingListContext = {
   resource: PendingListResource;
 };
 
+export type ConversationDraftFlow = "task" | "reminder" | "expense";
+export type ConversationDraftMissing = "title" | "time" | "amount" | "category";
+
+export type ConversationDraft = {
+  flow: ConversationDraftFlow;
+  missing: ConversationDraftMissing;
+  baseText: string;
+};
+
 export type PendingConfirmationContext = {
   question: string;
   suggestedText: string;
@@ -46,6 +55,14 @@ type StoredContext = {
 type StoredPendingListContext = {
   resource_type: string;
   chat_id: number;
+  expires_at: string;
+};
+
+type StoredConversationDraft = {
+  chat_id: number;
+  flow: string;
+  missing: string;
+  base_text: string;
   expires_at: string;
 };
 
@@ -232,6 +249,70 @@ export async function clearPendingListContext(db: D1Database, userId: number): P
   await db.prepare("DELETE FROM pending_conversation WHERE user_id = ?").bind(userId).run();
 }
 
+export async function saveConversationDraft(
+  db: D1Database,
+  input: {
+    userId: number;
+    chatId: number;
+    flow: ConversationDraftFlow;
+    missing: ConversationDraftMissing;
+    baseText: string;
+    now?: Date;
+  },
+): Promise<void> {
+  assertIdentifiers(input.userId, input.chatId);
+  if (!isConversationDraftFlow(input.flow) || !isConversationDraftMissing(input.missing)) {
+    throw new Error("Conversation draft type is invalid");
+  }
+  const baseText = input.baseText.trim().replace(/\s+/g, " ");
+  if (!baseText || baseText.length > 4_000) throw new Error("Conversation draft text is invalid");
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) throw new Error("Context timestamp is invalid");
+  const expiresAt = new Date(now.getTime() + CONTEXT_TTL_MS).toISOString();
+
+  await db.prepare(
+    "INSERT INTO conversation_drafts (user_id, chat_id, flow, missing, base_text, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT(user_id, chat_id) DO UPDATE SET flow = excluded.flow, missing = excluded.missing, base_text = excluded.base_text, updated_at = excluded.updated_at, expires_at = excluded.expires_at",
+  ).bind(
+    input.userId,
+    input.chatId,
+    input.flow,
+    input.missing,
+    baseText,
+    now.toISOString(),
+    expiresAt,
+  ).run();
+}
+
+export async function getConversationDraft(
+  db: D1Database,
+  input: { userId: number; chatId: number; now?: Date },
+): Promise<ConversationDraft | null> {
+  assertIdentifiers(input.userId, input.chatId);
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) throw new Error("Context timestamp is invalid");
+  const row = await db.prepare(
+    "SELECT chat_id, flow, missing, base_text, expires_at FROM conversation_drafts WHERE user_id = ? AND chat_id = ?",
+  ).bind(input.userId, input.chatId).first<StoredConversationDraft>();
+
+  if (!row) return null;
+  if (!isValidConversationDraft(row) || new Date(row.expires_at).getTime() <= now.getTime()) {
+    await clearConversationDraft(db, input.userId);
+    return null;
+  }
+
+  return {
+    flow: row.flow,
+    missing: row.missing,
+    baseText: row.base_text,
+  };
+}
+
+export async function clearConversationDraft(db: D1Database, userId: number): Promise<void> {
+  if (!Number.isInteger(userId) || userId <= 0) throw new Error("Context user id is invalid");
+  await db.prepare("DELETE FROM conversation_drafts WHERE user_id = ?").bind(userId).run();
+}
+
 export async function saveSavedNotesContext(db: D1Database, input: SavedNotesContextInput): Promise<void> {
   assertIdentifiers(input.userId, input.chatId);
   const now = input.now ?? new Date();
@@ -345,4 +426,26 @@ function isValidPendingFolderSave(row: StoredPendingFolderSave): row is StoredPe
 function isValidPendingListContext(row: StoredPendingListContext): row is StoredPendingListContext & { resource_type: PendingListResource } {
   const expiresAt = new Date(row.expires_at).getTime();
   return (row.resource_type === "task" || row.resource_type === "reminder") && Number.isInteger(row.chat_id) && Number.isFinite(expiresAt);
+}
+
+function isConversationDraftFlow(value: string): value is ConversationDraftFlow {
+  return value === "task" || value === "reminder" || value === "expense";
+}
+
+function isConversationDraftMissing(value: string): value is ConversationDraftMissing {
+  return value === "title" || value === "time" || value === "amount" || value === "category";
+}
+
+function isValidConversationDraft(row: StoredConversationDraft): row is StoredConversationDraft & {
+  flow: ConversationDraftFlow;
+  missing: ConversationDraftMissing;
+} {
+  return (
+    Number.isInteger(row.chat_id) &&
+    isConversationDraftFlow(row.flow) &&
+    isConversationDraftMissing(row.missing) &&
+    Boolean(row.base_text) &&
+    row.base_text.length <= 4_000 &&
+    Number.isFinite(new Date(row.expires_at).getTime())
+  );
 }

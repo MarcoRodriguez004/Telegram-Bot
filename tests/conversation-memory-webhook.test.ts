@@ -49,4 +49,43 @@ describe("conversation memory", () => {
     expect(sent.at(-1)?.body.text).toContain("📷 Imágenes guardadas");
     expect(sent.at(-1)?.body.text).toContain("logo");
   });
+
+  it("continues a task creation after asking for its title", async () => {
+    const { send, sent } = setup();
+    await send({ text: "tarea" });
+    expect(sent.at(-1)?.body.text).toContain("título de la tarea");
+
+    await send({ text: "comprar medicina" });
+    expect(sent.at(-1)?.body.text).toContain("Tarea creada");
+    expect(sent.at(-1)?.body.text).toContain("comprar medicina");
+  });
+
+  it("does not treat a yes/no reply as a missing task title", async () => {
+    const { send, sent } = setup();
+    await send({ text: "tarea" });
+    await send({ text: "sí" });
+
+    expect(sent.at(-1)?.body.text).toContain("título de la tarea");
+  });
+
+  it("continues a reminder creation after asking for its time", async () => {
+    const { send, sent } = setup();
+    await send({ text: "recuérdame pagar internet" });
+    expect(sent.at(-1)?.body.text).toContain("cuándo recordarlo");
+
+    await send({ text: "mañana a las 18:00" });
+    expect(sent.at(-1)?.body.text).toContain("Recordatorio creado");
+    expect(sent.at(-1)?.body.text).toContain("pagar internet");
+  });
+
+  it("continues an expense after asking for its amount", async () => {
+    const { send, sent, env } = setup();
+    await send({ text: "Gasté en carro por gasolina" });
+    expect(sent.at(-1)?.body.text).toContain("necesito el monto");
+
+    await send({ text: "450" });
+    expect(sent.at(-1)?.body.text).toContain("Gasto registrado");
+    expect(sent.at(-1)?.body.text).toContain("$450 MXN");
+    expect(env.PERSONAL_ASSISTANT_DB).toBeDefined();
+  });
 });

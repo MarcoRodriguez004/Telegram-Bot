@@ -58,7 +58,7 @@ describe("global database reset", () => {
 
     await send("CONFIRMO BORRADO GLOBAL 3/3");
     expect(sent.at(-1)?.body.text).toContain("base de datos fue vaciada");
-    for (const table of ["users", "tasks", "reminders", "expenses", "notes", "saved_folders", "persistent_notifications", "notification_preferences", "edit_sessions", "conversation_context", "pending_conversation", "conversation_confirmations", "pending_folder_saves", "storage_status", "processed_updates", "database_reset_confirmations"]) {
+    for (const table of ["users", "tasks", "reminders", "expenses", "notes", "saved_folders", "persistent_notifications", "notification_preferences", "edit_sessions", "conversation_context", "pending_conversation", "conversation_drafts", "conversation_confirmations", "pending_folder_saves", "storage_status", "processed_updates", "database_reset_confirmations"]) {
       expect(database.sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get(), table).toMatchObject({ count: 0 });
     }
   });

@@ -61,9 +61,11 @@ import {
 import type { TaskListItem } from "./modules/tasks/repository";
 import { clearEditSession, getActiveEditSession, startEditSession } from "./modules/edit-sessions/repository";
 import {
+  clearConversationDraft,
   clearPendingConfirmation,
   clearPendingFolderSave,
   clearPendingListContext,
+  getConversationDraft,
   getPendingConfirmation,
   getPendingFolderSave,
   getPendingListContext,
@@ -71,9 +73,14 @@ import {
   savePendingConfirmation,
   savePendingFolderSave,
   savePendingListContext,
+  saveConversationDraft,
   saveSavedNotesContext,
 } from "./modules/conversation/repository";
-import type { PendingConfirmationContext, PendingListContext } from "./modules/conversation/repository";
+import type {
+  ConversationDraft,
+  PendingConfirmationContext,
+  PendingListContext,
+} from "./modules/conversation/repository";
 import { buildFolderConflictReply } from "./modules/notes/folder-conflict";
 import { parseIntent } from "./router/parser";
 import type { Intent } from "./router/intent";
@@ -233,6 +240,7 @@ async function getReply(
   let savedNotesContext = undefined;
   let pendingListContext: PendingListContext | null = null;
   let pendingConfirmation: PendingConfirmationContext | null = null;
+  let conversationDraft: ConversationDraft | null = null;
   if (message && telegramUserId !== undefined) {
     userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
       telegramUserId,
@@ -249,6 +257,10 @@ async function getReply(
       chatId: message.chat.id,
     });
     pendingConfirmation = await getPendingConfirmation(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: message.chat.id,
+    });
+    conversationDraft = await getConversationDraft(env.PERSONAL_ASSISTANT_DB, {
       userId,
       chatId: message.chat.id,
     });
@@ -270,28 +282,56 @@ async function getReply(
   }
   if (pendingResolution?.kind === "reply") return pendingResolution.text;
 
+  const parseOptions = {
+    timezone: env.APP_TIMEZONE,
+    currency: env.DEFAULT_CURRENCY,
+    savedNotesContext: savedNotesContext ?? undefined,
+  };
+  const directIntent = parseIntent(text, parseOptions);
+  let conversationText = text;
+  let conversationDraftConsumed = false;
+  let draftIntent: Intent | null = null;
+  if (conversationDraft) {
+    if (/^(?:cancelar|salir|ahora no)$/iu.test(text.trim())) {
+      await clearConversationDraft(env.PERSONAL_ASSISTANT_DB, userId!);
+      return "Entendido. Cancelé esa captura.";
+    }
+    if (isAffirmativeResponse(text.trim()) || isNegativeResponse(text.trim())) {
+      return conversationDraftPrompt(conversationDraft);
+    }
+    if (directIntent.action === "unknown") {
+      conversationText = mergeConversationDraft(conversationDraft, text);
+      draftIntent = parseIntent(conversationText, parseOptions);
+      if (draftIntent.action !== "unknown") {
+        conversationDraftConsumed = true;
+      }
+    } else {
+      conversationDraftConsumed = true;
+    }
+  }
+
+  if (conversationDraftConsumed && userId !== undefined) {
+    await clearConversationDraft(env.PERSONAL_ASSISTANT_DB, userId);
+  }
+
   const clarificationText = pendingConfirmationResolution?.kind === "intent"
     ? pendingConfirmationResolution.suggestedText
     : text;
   let intent = pendingConfirmationResolution?.kind === "intent"
-    ? parseIntent(clarificationText, {
-        timezone: env.APP_TIMEZONE,
-        currency: env.DEFAULT_CURRENCY,
-        savedNotesContext: savedNotesContext ?? undefined,
-      })
+    ? parseIntent(clarificationText, parseOptions)
     : pendingResolution?.kind === "intent"
       ? pendingResolution.intent
-    : parseIntent(text, {
-        timezone: env.APP_TIMEZONE,
-        currency: env.DEFAULT_CURRENCY,
-        savedNotesContext: savedNotesContext ?? undefined,
-      });
+      : draftIntent ?? directIntent;
+  const resolvedText = conversationDraft && conversationText !== text ? conversationText : clarificationText;
+  if (draftIntent && conversationDraftConsumed) {
+    intent = draftIntent;
+  }
   if (intent.action === "unknown" && intent.reason === "unsupported_message") {
     if (looksLikeDataDeletion(text)) {
       return "Para borrar tus datos escribe exactamente: /borrar_datos CONFIRMAR";
     }
 
-    const aiIntent = await interpretMessage(clarificationText, {
+    const aiIntent = await interpretMessage(resolvedText, {
       apiKey: env.OPENAI_API_KEY,
       model: env.OPENAI_MODEL,
       timezone: env.APP_TIMEZONE,
@@ -603,12 +643,26 @@ async function getReply(
     };
   }
 
+  const missingDraft = getConversationDraftSpec(intent);
+  if (missingDraft && message && userId !== undefined) {
+    await saveConversationDraft(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: message.chat.id,
+      ...missingDraft,
+      baseText: resolvedText,
+    });
+  }
+
   if (intent.action === "unknown" && intent.reason === "missing_task_title") {
     return "Me falta el título de la tarea. Ejemplo: /tarea comprar medicina";
   }
 
   if (intent.action === "unknown" && intent.reason === "missing_reminder_time") {
     return "Indica cuándo recordarlo. Ejemplo: /recordar pagar internet mañana a las 18:00";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "missing_reminder_title") {
+    return "Me falta qué quieres que te recuerde. Ejemplo: /recordar pagar internet mañana a las 18:00";
   }
 
   if (intent.action === "unknown" && intent.reason === "reminder_time_in_past") {
@@ -1332,6 +1386,39 @@ type PendingListResolution =
 type PendingConfirmationResolution =
   | { kind: "intent"; suggestedText: string }
   | { kind: "reply"; text: string };
+
+function getConversationDraftSpec(
+  intent: Intent,
+): Pick<ConversationDraft, "flow" | "missing"> | null {
+  if (intent.action !== "unknown") return null;
+  if (intent.reason === "missing_task_title") return { flow: "task", missing: "title" };
+  if (intent.reason === "missing_reminder_title") return { flow: "reminder", missing: "title" };
+  if (intent.reason === "missing_reminder_time") return { flow: "reminder", missing: "time" };
+  if (intent.reason === "missing_expense_amount") return { flow: "expense", missing: "amount" };
+  if (intent.reason === "missing_expense_category") return { flow: "expense", missing: "category" };
+  return null;
+}
+
+function mergeConversationDraft(draft: ConversationDraft, response: string): string {
+  const answer = response.trim().replace(/\s+/g, " ");
+  if (draft.missing !== "amount") return `${draft.baseText} ${answer}`.trim();
+
+  const details = draft.baseText
+    .replace(/^(?:\/?gasto(?:@[a-z0-9_]+)?|gast[eé]|anota(?:me)?|apunta(?:me)?)\s*/iu, "")
+    .replace(/^agrega(?:r)?\s+(?:a\s+)?(?:los?\s+)?gastos?(?:\s+de)?\s*/iu, "")
+    .trim();
+  return `Gasté ${answer}${details ? ` ${details}` : ""}`.trim();
+}
+
+function conversationDraftPrompt(draft: ConversationDraft): string {
+  if (draft.flow === "task") return "Me falta el título de la tarea. Ejemplo: comprar medicina";
+  if (draft.flow === "reminder" && draft.missing === "time") {
+    return "Indica cuándo recordarlo. Ejemplo: mañana a las 18:00";
+  }
+  if (draft.flow === "reminder") return "Me falta qué quieres que te recuerde. Ejemplo: pagar internet";
+  if (draft.missing === "amount") return "Para registrarlo necesito el monto. Ejemplo: 450";
+  return "Indica qué fue el gasto. Ejemplo: gasolina";
+}
 
 function resolvePendingConfirmationResponse(
   text: string,
