@@ -193,3 +193,34 @@ La especificación aprobada está en [`docs/SPEC-TASK-REMINDER-QUERIES.md`](../d
 ### Decisión de seguridad
 
 Eliminar una carpeta no elimina los guardados: la operación usa `folder_id = NULL` y después borra la carpeta. Esto evita pérdida de datos y conserva la categoría virtual `Sin carpeta`. El movimiento y el renombrado requieren que el origen y el destino pertenezcan al mismo usuario.
+
+## Incremento actual: productividad y operación del bot
+
+### Objetivo
+
+Completar las mejoras prioritarias de uso diario sin almacenar archivos binarios en D1 ni cambiar el comportamiento seguro de los avisos persistentes. Cada aviso puntual de posponer será una notificación independiente de una sola ejecución; no activará avisos persistentes.
+
+### Orden de implementación
+
+1. **Avisos puntuales:** migración y repositorio para posponer una tarea o recordatorio una vez; teclado compacto con 5, 10, 20, 30 y 60 minutos; scheduler con reclamación y envío seguro.
+2. **Repetición:** regla explícita diaria, semanal o mensual para tareas y recordatorios, con siguiente ocurrencia calculada en la zona horaria del usuario.
+3. **Estado:** `/estado` con conteos aislados por usuario, próximos recordatorios, avisos persistentes activos y estimación lógica de almacenamiento.
+4. **Edición:** conservar el flujo existente y permitir actualizar también la fecha de tarea cuando se proporcione.
+5. **Búsqueda:** consulta global paginada y acotada por usuario para tareas, recordatorios, gastos y guardados.
+6. **Exportación:** `/exportar` genera un JSON de los datos propios y lo envía como documento; no descarga ni duplica archivos almacenados en Telegram.
+7. **Entrega:** reintentos limitados con backoff para Telegram, tratamiento de `429`/errores transitorios y logs estructurados sin texto sensible.
+
+### Criterios de aceptación
+
+- [ ] Posponer un aviso crea solo una nueva entrega puntual y no modifica ni activa la configuración persistente.
+- [ ] Una tarea o recordatorio repetitivo genera exactamente la siguiente ocurrencia al completarse o entregarse.
+- [ ] `/estado`, búsqueda y exportación no pueden leer datos de otro usuario.
+- [ ] La exportación no incluye tokens ni secretos y los archivos se representan solo mediante sus referencias de Telegram.
+- [ ] Un error transitorio de Telegram se reintenta pocas veces; un error permanente no queda en bucle.
+- [ ] Las respuestas largas se paginan o se dividen respetando el límite del Bot API.
+
+### Fuera de alcance
+
+- Copiar fotos o documentos a R2.
+- Historial completo de conversaciones.
+- Cuotas duras de uso para usuarios normales.

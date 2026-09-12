@@ -36,6 +36,14 @@ export interface SetNotificationDefaultsInput {
   now?: string;
 }
 
+export interface ScheduleNotificationSnoozeInput {
+  userId: number;
+  resourceType: NotificationResource;
+  resourceId: number;
+  delayMinutes: NotificationIntervalMinutes;
+  now?: string;
+}
+
 interface RawPersistentNotification {
   enabled: number;
   intervalMinutes: NotificationIntervalMinutes;
@@ -67,6 +75,34 @@ export async function getPersistentNotification(
   ).bind(userId, resourceType, resourceId).first<RawPersistentNotification>();
 
   return row ? normalizeNotification(row) : null;
+}
+
+export async function scheduleNotificationSnooze(
+  db: D1Database,
+  input: ScheduleNotificationSnoozeInput,
+): Promise<number> {
+  validateUserId(input.userId);
+  validateResource(input.resourceType);
+  validateRecordId(input.resourceId);
+  validateInterval(input.delayMinutes);
+  const now = parseIso(input.now ?? new Date().toISOString(), "Snooze timestamp");
+  const table = input.resourceType === "task" ? "tasks" : "reminders";
+  const statusCondition = input.resourceType === "task" ? "status = 'pending'" : "status IN ('pending', 'processing', 'sent', 'failed')";
+  const resource = await db.prepare(
+    `SELECT id FROM ${table} WHERE id = ? AND user_id = ? AND cancelled_at IS NULL AND ${statusCondition}`,
+  ).bind(input.resourceId, input.userId).first<{ id: number }>();
+  if (!resource) throw new Error("Notification resource is not available or does not belong to the user");
+
+  const result = await db.prepare(
+    "INSERT INTO notification_snoozes (user_id, resource_type, resource_id, status, notify_at, created_at) VALUES (?, ?, ?, 'pending', ?, ?)",
+  ).bind(
+    input.userId,
+    input.resourceType,
+    input.resourceId,
+    new Date(now.getTime() + input.delayMinutes * 60_000).toISOString(),
+    now.toISOString(),
+  ).run();
+  return result.meta.last_row_id;
 }
 
 export async function setPersistentNotification(db: D1Database, input: SetPersistentNotificationInput): Promise<void> {

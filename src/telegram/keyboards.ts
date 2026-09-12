@@ -20,6 +20,7 @@ export type CallbackAction =
   | { kind: "item"; resource: QueryResource; id: number }
   | { kind: "action"; resource: QueryResource; action: "complete" | "edit" | "cancel" | "notify" | "notify_stop" | "complete_after_stop" | "leave_pending_after_stop"; id: number }
   | { kind: "notification_set"; resource: QueryResource; id: number; intervalMinutes: NotificationIntervalMinutes | null }
+  | { kind: "snooze_set"; resource: QueryResource; id: number; delayMinutes: NotificationIntervalMinutes }
   | { kind: "notification_scope"; scope: NotificationScope }
   | { kind: "notification_global_set"; scope: NotificationScope; intervalMinutes: NotificationIntervalMinutes | null }
   | { kind: "edit_cancel"; resource: QueryResource }
@@ -154,12 +155,29 @@ export function buildNotificationChoiceKeyboard(resource: QueryResource, id: num
 export function buildPersistentAlertKeyboard(resource: QueryResource, id: number): InlineKeyboardMarkup {
   const label = resource === "task" ? "Parar avisos de esta tarea" : "Parar avisos de este recordatorio";
   return {
-    inline_keyboard: [[
-      { text: label, callback_data: `pa:${resourceCode(resource)}:a:n:${id}` },
-      { text: "✅ Completar", callback_data: `pa:${resourceCode(resource)}:a:c:${id}` },
-      { text: "❌ Cancelar", callback_data: `pa:${resourceCode(resource)}:a:x:${id}` },
-    ]],
+    inline_keyboard: [
+      ...buildOneTimeSnoozeRows(resource, id),
+      [
+        { text: label, callback_data: `pa:${resourceCode(resource)}:a:n:${id}` },
+        { text: "✅ Completar", callback_data: `pa:${resourceCode(resource)}:a:c:${id}` },
+        { text: "❌ Cancelar", callback_data: `pa:${resourceCode(resource)}:a:x:${id}` },
+      ],
+    ],
   };
+}
+
+export function buildOneTimeAlertKeyboard(resource: QueryResource, id: number): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: buildOneTimeSnoozeRows(resource, id),
+  };
+}
+
+function buildOneTimeSnoozeRows(resource: QueryResource, id: number): InlineKeyboardButton[][] {
+  const buttons = [5, 10, 20, 30, 60].map((minutes) => ({
+    text: `⏱ ${minutes} min`,
+    callback_data: `pa:${resourceCode(resource)}:s:${minutes}:${id}`,
+  }));
+  return [buttons.slice(0, 3), buttons.slice(3)];
 }
 
 export function buildStopConfirmationKeyboard(resource: QueryResource, id: number): InlineKeyboardMarkup {
@@ -281,6 +299,13 @@ export function parseCallbackData(data: string | undefined): CallbackAction | nu
     const id = Number(parts[4]);
     return intervalMinutes !== undefined && Number.isSafeInteger(id) && id > 0
       ? { kind: "notification_set", resource, intervalMinutes, id }
+      : null;
+  }
+  if (parts[2] === "s" && parts.length === 5) {
+    const delayMinutes = parseNotificationInterval(parts[3]);
+    const id = Number(parts[4]);
+    return delayMinutes !== undefined && delayMinutes !== null && Number.isSafeInteger(id) && id > 0
+      ? { kind: "snooze_set", resource, delayMinutes, id }
       : null;
   }
   if (parts[2] === "e" && parts.length === 4 && parts[3] === "x") {

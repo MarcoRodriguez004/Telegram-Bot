@@ -45,6 +45,7 @@ describe("deleteUserData", () => {
       { query: "DELETE FROM saved_folders WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM pending_folder_saves WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM persistent_notifications WHERE user_id = ?", values: [7] },
+      { query: "DELETE FROM notification_snoozes WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM notification_preferences WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM edit_sessions WHERE user_id = ?", values: [7] },
       { query: "DELETE FROM conversation_context WHERE user_id = ?", values: [7] },

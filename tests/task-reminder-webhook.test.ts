@@ -240,6 +240,25 @@ describe("task and reminder query webhook flow", () => {
     expect(String(calls.at(-2)?.body.text)).toContain("Queda pendiente");
   });
 
+  it("schedules a one-time reminder from a delivered reminder button", async () => {
+    const { db, sqlite } = createSqliteDb();
+    const { env, calls, telegramFetch } = createEnv(db);
+    sqlite.prepare("INSERT INTO users (telegram_user_id, telegram_chat_id, timezone, currency, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(42, 42, env.APP_TIMEZONE, env.DEFAULT_CURRENCY, new Date().toISOString());
+    sqlite.prepare("INSERT INTO reminders (user_id, title, remind_at, status, sent_at, created_at) VALUES (?, ?, ?, 'sent', ?, ?)")
+      .run(1, "llamar al banco", new Date().toISOString(), new Date().toISOString(), new Date().toISOString());
+
+    await post(callbackUpdate(24, "pa:r:s:10:1"), env, telegramFetch);
+
+    expect(sqlite.prepare("SELECT status, resource_type, resource_id FROM notification_snoozes").get()).toEqual({
+      status: "pending",
+      resource_type: "reminder",
+      resource_id: 1,
+    });
+    expect(String(calls.at(-2)?.body.text)).toContain("una vez más en 10 minutos");
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM persistent_notifications").get()).toEqual({ count: 0 });
+  });
+
   it("offers global alert configuration and applies it to both resource types", async () => {
     const { db, sqlite } = createSqliteDb();
     const { env, calls, telegramFetch } = createEnv(db);

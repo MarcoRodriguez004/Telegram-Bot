@@ -82,6 +82,15 @@ WITH owned_bytes AS (
   FROM persistent_notifications
   UNION ALL
   SELECT user_id,
+    64 + 24
+      + length(CAST(COALESCE(resource_type, '') AS BLOB))
+      + length(CAST(COALESCE(notify_at, '') AS BLOB))
+      + length(CAST(COALESCE(processing_until, '') AS BLOB))
+      + length(CAST(COALESCE(sent_at, '') AS BLOB))
+      + length(CAST(COALESCE(created_at, '') AS BLOB)) AS logical_bytes
+  FROM notification_snoozes
+  UNION ALL
+  SELECT user_id,
     48 + 16
       + length(CAST(COALESCE(resource_type, '') AS BLOB))
       + length(CAST(COALESCE(updated_at, '') AS BLOB))

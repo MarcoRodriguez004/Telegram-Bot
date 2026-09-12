@@ -68,6 +68,7 @@ export async function deleteAllData(db: D1Database): Promise<void> {
   await db.batch([
     db.prepare("DELETE FROM pending_folder_saves"),
     db.prepare("DELETE FROM persistent_notifications"),
+    db.prepare("DELETE FROM notification_snoozes"),
     db.prepare("DELETE FROM notification_preferences"),
     db.prepare("DELETE FROM edit_sessions"),
     db.prepare("DELETE FROM conversation_context"),

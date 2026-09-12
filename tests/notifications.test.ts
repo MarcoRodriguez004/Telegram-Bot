@@ -2,12 +2,40 @@ import { describe, expect, it } from "vitest";
 import {
   getNotificationPreferences,
   getPersistentNotification,
+  scheduleNotificationSnooze,
   setNotificationDefaults,
   setPersistentNotification,
 } from "../src/modules/notifications/repository";
 import { createSqliteDb } from "./helpers/sqlite-db";
 
 describe("persistent notification repository", () => {
+  it("schedules a one-time snooze without enabling persistent notifications", async () => {
+    const { db, sqlite } = createSqliteDb();
+    sqlite.prepare(
+      "INSERT INTO users (telegram_user_id, telegram_chat_id, timezone, currency, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(42, 42, "America/Mexico_City", "MXN", "2026-09-10T15:00:00.000Z");
+    sqlite.prepare("INSERT INTO reminders (user_id, title, remind_at, status, sent_at, created_at) VALUES (?, ?, ?, 'sent', ?, ?)")
+      .run(1, "llamar al banco", "2026-09-10T15:00:00.000Z", "2026-09-10T15:01:00.000Z", "2026-09-10T15:00:00.000Z");
+
+    const snoozeId = await scheduleNotificationSnooze(db, {
+      userId: 1,
+      resourceType: "reminder",
+      resourceId: 1,
+      delayMinutes: 10,
+      now: "2026-09-10T15:05:00.000Z",
+    });
+
+    expect(snoozeId).toBe(1);
+    expect(sqlite.prepare("SELECT user_id, resource_type, resource_id, status, notify_at FROM notification_snoozes").get()).toEqual({
+      user_id: 1,
+      resource_type: "reminder",
+      resource_id: 1,
+      status: "pending",
+      notify_at: "2026-09-10T15:15:00.000Z",
+    });
+    expect(await getPersistentNotification(db, 1, "reminder", 1)).toBeNull();
+  });
+
   it("stores an interval, disables it without losing the interval, and reactivates it", async () => {
     const { db, sqlite } = createSqliteDb();
     sqlite.prepare(

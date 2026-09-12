@@ -106,7 +106,23 @@ describe("reminder scheduler", () => {
 
     expect(sent).toBe(1);
     expect(reminders[0].status).toBe("sent");
-    expect(sentMessages).toEqual([{ chat_id: 42, text: "⏰ Recordatorio\n\npagar internet" }]);
+    expect(sentMessages).toEqual([{
+      chat_id: 42,
+      text: "⏰ Recordatorio\n\npagar internet",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "⏱ 5 min", callback_data: "pa:r:s:5:1" },
+            { text: "⏱ 10 min", callback_data: "pa:r:s:10:1" },
+            { text: "⏱ 20 min", callback_data: "pa:r:s:20:1" },
+          ],
+          [
+            { text: "⏱ 30 min", callback_data: "pa:r:s:30:1" },
+            { text: "⏱ 60 min", callback_data: "pa:r:s:60:1" },
+          ],
+        ],
+      },
+    }]);
   });
 
   it("releases a reminder for a later retry when Telegram fails", async () => {

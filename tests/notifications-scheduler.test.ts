@@ -19,6 +19,28 @@ function createEnv(db: D1Database) {
 }
 
 describe("persistent notification scheduler", () => {
+  it("sends a due one-time snooze and does not turn it into a persistent alert", async () => {
+    const { db, sqlite } = createSqliteDb();
+    sqlite.prepare(
+      "INSERT INTO users (telegram_user_id, telegram_chat_id, timezone, currency, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(42, 42, "America/Mexico_City", "MXN", "2026-09-10T15:00:00.000Z");
+    sqlite.prepare("INSERT INTO reminders (user_id, title, remind_at, status, sent_at, created_at) VALUES (?, ?, ?, 'sent', ?, ?)")
+      .run(1, "llamar al banco", "2026-09-10T15:00:00.000Z", "2026-09-10T15:01:00.000Z", "2026-09-10T15:00:00.000Z");
+    sqlite.prepare("INSERT INTO notification_snoozes (user_id, resource_type, resource_id, status, notify_at, created_at) VALUES (?, 'reminder', ?, 'pending', ?, ?)")
+      .run(1, 1, "2026-09-10T15:10:00.000Z", "2026-09-10T15:05:00.000Z");
+    const calls: Array<{ text: string; reply_markup?: { inline_keyboard: Array<Array<{ text: string }>> } }> = [];
+    const telegramFetch: typeof fetch = async (_input, init) => {
+      calls.push(JSON.parse(String(init?.body)) as (typeof calls)[number]);
+      return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+    };
+
+    expect(await processDueNotifications(db, createEnv(db), new Date("2026-09-10T15:11:00.000Z"), telegramFetch)).toBe(1);
+    expect(calls[0].text).toBe("⏰ Recordatorio\n\nllamar al banco");
+    expect(calls[0].reply_markup?.inline_keyboard.flat().map((button) => button.text)).toContain("⏱ 5 min");
+    expect(sqlite.prepare("SELECT status, processing_until FROM notification_snoozes WHERE id = 1").get()).toEqual({ status: "sent", processing_until: null });
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM persistent_notifications").get()).toEqual({ count: 0 });
+  });
+
   it("sends a due task with dynamic actions and advances its next notification", async () => {
     const { db, sqlite } = createSqliteDb();
     sqlite.prepare(
@@ -45,6 +67,7 @@ describe("persistent notification scheduler", () => {
     expect(sent).toBe(1);
     expect(calls[0].text).toBe("📋 Tarea pendiente\n\npagar la luz");
     expect(calls[0].reply_markup?.inline_keyboard.flat().map((button) => button.text)).toEqual([
+      "⏱ 5 min", "⏱ 10 min", "⏱ 20 min", "⏱ 30 min", "⏱ 60 min",
       "Parar avisos de esta tarea", "✅ Completar", "❌ Cancelar",
     ]);
     expect(sqlite.prepare("SELECT enabled, next_notify_at, processing_until, last_notified_at FROM persistent_notifications WHERE id = 1").get())
@@ -89,6 +112,7 @@ describe("persistent notification scheduler", () => {
 
     expect(await processDueReminders(db, createEnv(db), new Date("2026-09-10T15:10:00.000Z"), telegramFetch)).toBe(1);
     expect(calls[0].reply_markup?.inline_keyboard.flat().map((button) => button.text)).toEqual([
+      "⏱ 5 min", "⏱ 10 min", "⏱ 20 min", "⏱ 30 min", "⏱ 60 min",
       "Parar avisos de este recordatorio", "✅ Completar", "❌ Cancelar",
     ]);
     expect(sqlite.prepare("SELECT status, next_notify_at FROM reminders INNER JOIN persistent_notifications ON persistent_notifications.resource_id = reminders.id AND persistent_notifications.resource_type = 'reminder'").get())

@@ -72,3 +72,18 @@ Decisiones pendientes para otro día:
 - [x] Contabilizar los borradores en la estimación lógica de almacenamiento.
 - [x] Verificar con prueba automatizada que los guardados sin carpeta aparecen en `Sin carpeta`.
 - [x] Actualizar la especificación de memoria y el estado del plan para no reportar como pendiente lo ya implementado.
+
+## Incremento actual: productividad y operación del bot
+
+- [ ] Añadir posponer de una sola vez desde cada aviso, con intervalos de 5, 10, 20, 30 y 60 minutos.
+- [ ] Añadir repetición configurable para tareas y recordatorios.
+- [ ] Añadir `/estado` con resumen de pendientes, avisos activos y almacenamiento lógico.
+- [x] Mantener y ampliar la edición existente de tareas y recordatorios.
+- [ ] Añadir búsqueda global aislada por usuario.
+- [ ] Añadir exportación de datos propios en JSON.
+- [ ] Añadir reintentos limitados, backoff y control de errores de Telegram.
+
+Checkpoint:
+
+- [ ] Cada corte tiene pruebas enfocadas y no rompe el flujo actual.
+- [ ] `npm test`, lint, typecheck y build pasan antes de desplegar.

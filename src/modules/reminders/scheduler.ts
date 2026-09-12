@@ -1,5 +1,5 @@
 import { sendMessage } from "../../telegram/client";
-import { buildPersistentAlertKeyboard } from "../../telegram/keyboards";
+import { buildOneTimeAlertKeyboard, buildPersistentAlertKeyboard } from "../../telegram/keyboards";
 import type { Env } from "../../types";
 import { advancePersistentNotification, getPersistentNotification } from "../notifications/repository";
 
@@ -35,9 +35,11 @@ export async function processDueReminders(
       const usePersistentKeyboard = persistentNotification?.enabled === true &&
         persistentNotification.nextNotifyAt !== null &&
         new Date(persistentNotification.nextNotifyAt).getTime() <= now.getTime();
-      await sendMessage(env, reminder.chatId, `⏰ Recordatorio\n\n${reminder.title}`, telegramFetch, usePersistentKeyboard
-        ? { replyMarkup: buildPersistentAlertKeyboard("reminder", reminder.id) }
-        : undefined);
+      await sendMessage(env, reminder.chatId, `⏰ Recordatorio\n\n${reminder.title}`, telegramFetch, {
+        replyMarkup: usePersistentKeyboard
+          ? buildPersistentAlertKeyboard("reminder", reminder.id)
+          : buildOneTimeAlertKeyboard("reminder", reminder.id),
+      });
       await markReminderSent(db, reminder.id, nowIso, usePersistentKeyboard);
       if (usePersistentKeyboard) {
         await advancePersistentNotification(db, reminder.userId, "reminder", reminder.id, nowIso);

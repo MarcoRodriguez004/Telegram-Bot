@@ -1,5 +1,5 @@
 import { sendMessage } from "../../telegram/client";
-import { buildPersistentAlertKeyboard } from "../../telegram/keyboards";
+import { buildOneTimeAlertKeyboard, buildPersistentAlertKeyboard } from "../../telegram/keyboards";
 import type { Env } from "../../types";
 import type { NotificationResource } from "./repository";
 
@@ -23,12 +23,93 @@ export async function processDueNotifications(
   now = new Date(),
   telegramFetch: typeof fetch = fetch,
 ): Promise<number> {
-  let sent = 0;
+  let sent = await processDueSnoozes(db, env, now, telegramFetch);
+  if (sent >= MAX_NOTIFICATIONS_PER_RUN) return sent;
   sent += await processResourceNotifications(db, env, "task", now, telegramFetch, MAX_NOTIFICATIONS_PER_RUN - sent);
   if (sent < MAX_NOTIFICATIONS_PER_RUN) {
     sent += await processResourceNotifications(db, env, "reminder", now, telegramFetch, MAX_NOTIFICATIONS_PER_RUN - sent);
   }
   return sent;
+}
+
+interface DueSnooze {
+  id: number;
+  userId: number;
+  chatId: number;
+  resourceId: number;
+  title: string;
+  resourceType: NotificationResource;
+}
+
+async function processDueSnoozes(
+  db: D1Database,
+  env: Env,
+  now: Date,
+  telegramFetch: typeof fetch,
+): Promise<number> {
+  let sent = 0;
+  const nowIso = now.toISOString();
+  for (let attempt = 0; attempt < MAX_NOTIFICATIONS_PER_RUN; attempt += 1) {
+    const snooze = await findDueSnooze(db, nowIso);
+    if (!snooze) break;
+    const leaseUntil = new Date(now.getTime() + PROCESSING_LEASE_MS).toISOString();
+    const claimed = await claimSnooze(db, snooze, nowIso, leaseUntil);
+    if (!claimed) continue;
+    try {
+      const heading = snooze.resourceType === "task" ? "📋 Tarea pendiente" : "⏰ Recordatorio";
+      await sendMessage(env, snooze.chatId, `${heading}\n\n${snooze.title}`, telegramFetch, {
+        replyMarkup: buildOneTimeAlertKeyboard(snooze.resourceType, snooze.resourceId),
+      });
+      await markSnoozeSent(db, snooze.id, nowIso, leaseUntil);
+      sent += 1;
+    } catch (error) {
+      console.error(JSON.stringify({ event: "telegram_snooze_delivery_failed", error: error instanceof Error ? error.message : "unknown_error" }));
+      await releaseSnooze(db, snooze.id, leaseUntil);
+      break;
+    }
+  }
+  return sent;
+}
+
+async function findDueSnooze(db: D1Database, nowIso: string): Promise<DueSnooze | null> {
+  const task = await db.prepare(
+    "SELECT snoozes.id, snoozes.user_id AS userId, users.telegram_chat_id AS chatId, snoozes.resource_id AS resourceId, " +
+      "'task' AS resourceType, resource.title FROM notification_snoozes snoozes " +
+      "INNER JOIN users ON users.id = snoozes.user_id " +
+      "INNER JOIN tasks resource ON snoozes.resource_type = 'task' AND resource.id = snoozes.resource_id AND resource.user_id = snoozes.user_id " +
+      "WHERE snoozes.status IN ('pending', 'failed') AND snoozes.notify_at <= ? AND " +
+      "(snoozes.processing_until IS NULL OR snoozes.processing_until <= ?) " +
+      "AND resource.cancelled_at IS NULL AND resource.status = 'pending' " +
+      "ORDER BY snoozes.notify_at ASC, snoozes.id ASC LIMIT 1",
+  ).bind(nowIso, nowIso).first<DueSnooze>();
+  if (task) return task;
+  return db.prepare(
+    "SELECT snoozes.id, snoozes.user_id AS userId, users.telegram_chat_id AS chatId, snoozes.resource_id AS resourceId, " +
+      "'reminder' AS resourceType, resource.title FROM notification_snoozes snoozes " +
+      "INNER JOIN users ON users.id = snoozes.user_id " +
+      "INNER JOIN reminders resource ON snoozes.resource_type = 'reminder' AND resource.id = snoozes.resource_id AND resource.user_id = snoozes.user_id " +
+      "WHERE snoozes.status IN ('pending', 'failed') AND snoozes.notify_at <= ? AND " +
+      "(snoozes.processing_until IS NULL OR snoozes.processing_until <= ?) " +
+      "AND resource.cancelled_at IS NULL AND resource.status IN ('pending', 'processing', 'sent', 'failed') " +
+      "ORDER BY snoozes.notify_at ASC, snoozes.id ASC LIMIT 1",
+  ).bind(nowIso, nowIso).first<DueSnooze>();
+}
+
+async function claimSnooze(db: D1Database, snooze: DueSnooze, nowIso: string, leaseUntil: string): Promise<boolean> {
+  const result = await db.prepare(
+    "UPDATE notification_snoozes SET status = 'processing', processing_until = ? WHERE id = ? AND user_id = ? AND status IN ('pending', 'failed') AND notify_at <= ? AND (processing_until IS NULL OR processing_until <= ?)",
+  ).bind(leaseUntil, snooze.id, snooze.userId, nowIso, nowIso).run();
+  return result.meta.changes === 1;
+}
+
+async function markSnoozeSent(db: D1Database, id: number, sentAt: string, leaseUntil: string): Promise<void> {
+  await db.prepare("UPDATE notification_snoozes SET status = 'sent', sent_at = ?, processing_until = NULL WHERE id = ? AND status = 'processing' AND processing_until = ?")
+    .bind(sentAt, id, leaseUntil).run();
+}
+
+async function releaseSnooze(db: D1Database, id: number, leaseUntil: string): Promise<void> {
+  await db.prepare("UPDATE notification_snoozes SET status = 'pending', processing_until = NULL WHERE id = ? AND status = 'processing' AND processing_until = ?")
+    .bind(id, leaseUntil).run();
 }
 
 async function processResourceNotifications(

@@ -61,6 +61,7 @@ describe("task and reminder inline keyboards", () => {
     expect(parseCallbackData("pa:r:a:e:9")).toEqual({ kind: "action", resource: "reminder", action: "edit", id: 9 });
     expect(parseCallbackData("pa:t:a:n:9")).toEqual({ kind: "action", resource: "task", action: "notify_stop", id: 9 });
     expect(parseCallbackData("pa:t:n:10:9")).toEqual({ kind: "notification_set", resource: "task", intervalMinutes: 10, id: 9 });
+    expect(parseCallbackData("pa:r:s:20:9")).toEqual({ kind: "snooze_set", resource: "reminder", delayMinutes: 20, id: 9 });
     expect(parseCallbackData("pa:t:f:x")).toEqual({ kind: "filter", resource: "task", filter: "cancelled" });
     expect(parseCallbackData("pa:t:a:c:0")).toBeNull();
     expect(parseCallbackData("other:task:1")).toBeNull();
@@ -78,6 +79,7 @@ describe("task and reminder inline keyboards", () => {
       "Sin avisos", "Cada 5 minutos", "Cada 10 minutos", "Cada 20 minutos", "Cada 30 minutos", "Cada 60 minutos",
     ]);
     expect(buildPersistentAlertKeyboard("reminder", 9).inline_keyboard.flat().map((button) => button.text)).toEqual([
+      "⏱ 5 min", "⏱ 10 min", "⏱ 20 min", "⏱ 30 min", "⏱ 60 min",
       "Parar avisos de este recordatorio", "✅ Completar", "❌ Cancelar",
     ]);
   });

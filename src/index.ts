@@ -26,6 +26,7 @@ import {
   initializePersistentNotification,
   getPersistentNotification,
   reschedulePersistentNotification,
+  scheduleNotificationSnooze,
   setNotificationDefaults,
   setPersistentNotification,
 } from "./modules/notifications/repository";
@@ -940,6 +941,26 @@ async function handleCallbackQuery(
         : `Avisos persistentes configurados cada ${action.intervalMinutes} minutos.`,
       telegramFetch,
     );
+    return;
+  }
+
+  if (action.kind === "snooze_set") {
+    try {
+      await scheduleNotificationSnooze(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        resourceType: action.resource,
+        resourceId: action.id,
+        delayMinutes: action.delayMinutes,
+      });
+      await sendMessage(
+        env,
+        source.chat.id,
+        `⏱ Te recordaré una vez más en ${action.delayMinutes} minutos. No activé avisos persistentes.`,
+        telegramFetch,
+      );
+    } catch {
+      await sendMessage(env, source.chat.id, "Ese aviso ya no está disponible para posponer.", telegramFetch);
+    }
     return;
   }
 
