@@ -36,6 +36,9 @@ const SAVED_LIST = /^(?:(?:mu[eé]strame\s+)?mis\s+guardados|\/?guardados)(?:_(\
 const SAVED_ITEM = /^(?:ver\s+guardado\s+|\/?guardado(?:_|\s+))(\d+)(?:@[a-z0-9_]+)?$/iu;
 const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const STATUS_COMMAND = /^(?:\/)?estado(?:@[a-z0-9_]+)?$/iu;
+const SEARCH_COMMAND = /^(?:\/)?(?:buscar|busca)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const EXPORT_COMMAND = /^(?:\/)?(?:exportar|exporta)(?:@[a-z0-9_]+)?$/iu;
 const RECURRENCE_COMMAND = /^(?:\/)?repite\s+(tarea|recordatorio)\s+(\d+)\s+(?:(?:cada)\s+)?(d[ií]a|diario|diaria|semana|semanal|semanalmente|mes|mensual|mensualmente|nunca|no)$/iu;
 const DELETE_DATA_COMMAND = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?\s+CONFIRMAR$/u;
 const DELETE_DATA_PREFIX = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?(?:\s+.*)?$/iu;
@@ -163,6 +166,16 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   if (summaryMatch) {
     return parseSummary(summaryMatch[1] ?? "");
   }
+
+  if (STATUS_COMMAND.test(normalized)) return { action: "status" };
+
+  const searchMatch = SEARCH_COMMAND.exec(normalized);
+  if (searchMatch) {
+    const query = searchMatch[1]?.trim();
+    return query ? { action: "search", query } : { action: "unknown", reason: "missing_search_query" };
+  }
+
+  if (EXPORT_COMMAND.test(normalized)) return { action: "export_data" };
 
   const recurrenceMatch = RECURRENCE_COMMAND.exec(normalized);
   if (recurrenceMatch) {

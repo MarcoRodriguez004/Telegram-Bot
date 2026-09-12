@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSqliteDb } from "./helpers/sqlite-db";
-import { cancelTask, completeTask, listTasks, updateTaskTitle } from "../src/modules/tasks/repository";
+import { cancelTask, completeTask, listTasks, updateTask, updateTaskTitle } from "../src/modules/tasks/repository";
 
 function seedTasks() {
   const { db, sqlite } = createSqliteDb();
@@ -29,12 +29,18 @@ describe("task queries and actions", () => {
     const { db } = seedTasks();
 
     expect(await completeTask(db, { userId: 1, taskId: 1, completedAt: "2026-09-09T11:00:00.000Z" })).toBe(true);
+    expect(await updateTask(db, {
+      userId: 1,
+      taskId: 4,
+      title: "comprar refacciones",
+      dueAt: "2026-09-10T12:00:00.000Z",
+    })).toBe(true);
     expect(await cancelTask(db, { userId: 1, taskId: 4, cancelledAt: "2026-09-09T11:01:00.000Z" })).toBe(true);
     expect(await updateTaskTitle(db, { userId: 1, taskId: 2, title: "no debe cambiar" })).toBe(false);
 
     const all = await listTasks(db, { userId: 1, filter: "all", limit: 10 });
     expect(all.tasks).toMatchObject([
-      { id: 4, status: "cancelled" },
+      { id: 4, status: "cancelled", title: "comprar refacciones", dueAt: "2026-09-10T12:00:00.000Z" },
       { id: 3, status: "cancelled" },
       { id: 2, status: "completed", title: "terminada" },
       { id: 1, status: "completed" },

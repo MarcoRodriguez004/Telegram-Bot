@@ -224,10 +224,15 @@ export async function disablePersistentNotification(
   validateUserId(userId);
   validateResource(resourceType);
   validateRecordId(resourceId);
-  await db.prepare(
-    "UPDATE persistent_notifications SET enabled = 0, next_notify_at = NULL, processing_until = NULL " +
-      "WHERE user_id = ? AND resource_type = ? AND resource_id = ?",
-  ).bind(userId, resourceType, resourceId).run();
+  await db.batch([
+    db.prepare(
+      "UPDATE persistent_notifications SET enabled = 0, next_notify_at = NULL, processing_until = NULL " +
+        "WHERE user_id = ? AND resource_type = ? AND resource_id = ?",
+    ).bind(userId, resourceType, resourceId),
+    db.prepare(
+      "DELETE FROM notification_snoozes WHERE user_id = ? AND resource_type = ? AND resource_id = ?",
+    ).bind(userId, resourceType, resourceId),
+  ]);
 }
 
 export async function advancePersistentNotification(

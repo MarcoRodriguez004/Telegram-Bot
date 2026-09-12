@@ -212,15 +212,25 @@ Completar las mejoras prioritarias de uso diario sin almacenar archivos binarios
 
 ### Criterios de aceptación
 
-- [ ] Posponer un aviso crea solo una nueva entrega puntual y no modifica ni activa la configuración persistente.
-- [ ] Una tarea o recordatorio repetitivo genera exactamente la siguiente ocurrencia al completarse o entregarse.
-- [ ] `/estado`, búsqueda y exportación no pueden leer datos de otro usuario.
-- [ ] La exportación no incluye tokens ni secretos y los archivos se representan solo mediante sus referencias de Telegram.
-- [ ] Un error transitorio de Telegram se reintenta pocas veces; un error permanente no queda en bucle.
-- [ ] Las respuestas largas se paginan o se dividen respetando el límite del Bot API.
+- [x] Posponer un aviso crea solo una nueva entrega puntual y no modifica ni activa la configuración persistente.
+- [x] Una tarea o recordatorio repetitivo genera exactamente la siguiente ocurrencia al completarse o entregarse.
+- [x] `/estado`, búsqueda y exportación no pueden leer datos de otro usuario.
+- [x] La exportación no incluye tokens ni secretos y los archivos se representan solo mediante sus referencias de Telegram.
+- [x] Un error transitorio de Telegram se reintenta pocas veces; un error permanente no queda en bucle.
+- [x] Las respuestas largas se paginan o se dividen respetando el límite del Bot API.
 
 ### Fuera de alcance
 
 - Copiar fotos o documentos a R2.
 - Historial completo de conversaciones.
 - Cuotas duras de uso para usuarios normales.
+
+### Estado de implementación
+
+- [x] Avisos puntuales de una sola ejecución: 5, 10, 20, 30 y 60 minutos.
+- [x] Repetición diaria, semanal y mensual.
+- [x] `/estado` con conteos aislados por usuario.
+- [x] Búsqueda global acotada a tareas, recordatorios, gastos y guardados del usuario.
+- [x] `/exportar` con JSON propio y referencias de Telegram para archivos.
+- [x] Reintentos limitados, backoff y logs estructurados para errores transitorios de Telegram.
+- [x] Tests enfocados, suite completa, lint, typecheck y build ejecutados antes del siguiente despliegue.

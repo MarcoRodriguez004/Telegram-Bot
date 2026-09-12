@@ -56,6 +56,13 @@ WITH owned_bytes AS (
   UNION ALL
   SELECT user_id,
     48 + 16
+      + length(CAST(COALESCE(name, '') AS BLOB))
+      + length(CAST(COALESCE(normalized_name, '') AS BLOB))
+      + length(CAST(COALESCE(created_at, '') AS BLOB)) AS logical_bytes
+  FROM saved_folders
+  UNION ALL
+  SELECT user_id,
+    48 + 16
       + length(CAST(COALESCE(resource_type, '') AS BLOB))
       + length(CAST(COALESCE(expires_at, '') AS BLOB))
       + length(CAST(COALESCE(created_at, '') AS BLOB)) AS logical_bytes

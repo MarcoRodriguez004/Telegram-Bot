@@ -48,7 +48,7 @@ Especificación: [`docs/SPEC-SAVED-FOLDERS.md`](../docs/SPEC-SAVED-FOLDERS.md). 
 - [x] Validar propiedad de usuario en consultas, callbacks, guardado y paginación.
 - [x] Eliminar carpetas junto con los datos mediante `/borrar_datos CONFIRMAR`.
 - [x] Añadir `/borrar_bd` para el administrador con tres confirmaciones exactas antes de vaciar todos los datos de la base.
-- [x] Aplicar y probar localmente las migraciones de carpetas, confirmaciones globales y memoria conversacional hasta `0013_conversation_drafts.sql`.
+- [x] Aplicar y probar localmente las migraciones de carpetas, confirmaciones globales, memoria conversacional, pospuestos y repetición hasta `0015_recurring_items.sql`.
 
 Decisiones pendientes para otro día:
 
@@ -75,15 +75,15 @@ Decisiones pendientes para otro día:
 
 ## Incremento actual: productividad y operación del bot
 
-- [ ] Añadir posponer de una sola vez desde cada aviso, con intervalos de 5, 10, 20, 30 y 60 minutos.
-- [ ] Añadir repetición configurable para tareas y recordatorios.
-- [ ] Añadir `/estado` con resumen de pendientes, avisos activos y almacenamiento lógico.
+- [x] Añadir posponer de una sola vez desde cada aviso, con intervalos de 5, 10, 20, 30 y 60 minutos.
+- [x] Añadir repetición configurable para tareas y recordatorios.
+- [x] Añadir `/estado` con resumen de pendientes, avisos activos y almacenamiento lógico.
 - [x] Mantener y ampliar la edición existente de tareas y recordatorios.
-- [ ] Añadir búsqueda global aislada por usuario.
-- [ ] Añadir exportación de datos propios en JSON.
-- [ ] Añadir reintentos limitados, backoff y control de errores de Telegram.
+- [x] Añadir búsqueda global aislada por usuario.
+- [x] Añadir exportación de datos propios en JSON.
+- [x] Añadir reintentos limitados, backoff y control de errores de Telegram.
 
 Checkpoint:
 
-- [ ] Cada corte tiene pruebas enfocadas y no rompe el flujo actual.
-- [ ] `npm test`, lint, typecheck y build pasan antes de desplegar.
+- [x] Cada corte tiene pruebas enfocadas y no rompe el flujo actual.
+- [x] `npm test`, lint, typecheck y build pasan antes de desplegar.

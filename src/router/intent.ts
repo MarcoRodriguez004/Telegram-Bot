@@ -15,6 +15,9 @@ export type Intent =
   | { action: "list_notes"; beforeId?: number; kind?: "all" | "photos" | "documents" | "links"; folderId?: number | null; folderName?: string }
   | { action: "get_note"; noteId: number }
   | { action: "summary"; range: "today" | "week" | "month" }
+  | { action: "status" }
+  | { action: "search"; query: string }
+  | { action: "export_data" }
   | { action: "delete_data"; confirmation: true }
   | { action: "reply"; message: string }
   | { action: "clarify"; question: string; missing: string[]; suggestedText?: string }

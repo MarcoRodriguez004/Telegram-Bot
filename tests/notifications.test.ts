@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getNotificationPreferences,
   getPersistentNotification,
+  disablePersistentNotification,
   scheduleNotificationSnooze,
   setNotificationDefaults,
   setPersistentNotification,
@@ -84,6 +85,25 @@ describe("persistent notification repository", () => {
       intervalMinutes: 10,
       nextNotifyAt: "2026-09-10T15:15:00.000Z",
     });
+  });
+
+  it("clears one-time deliveries when their resource is finished", async () => {
+    const { db, sqlite } = createSqliteDb();
+    sqlite.prepare("INSERT INTO users (telegram_user_id, telegram_chat_id, timezone, currency, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(42, 42, "America/Mexico_City", "MXN", "2026-09-10T15:00:00.000Z");
+    sqlite.prepare("INSERT INTO tasks (user_id, title, status, created_at) VALUES (?, ?, 'pending', ?)")
+      .run(1, "revisar contrato", "2026-09-10T15:00:00.000Z");
+    await scheduleNotificationSnooze(db, {
+      userId: 1,
+      resourceType: "task",
+      resourceId: 1,
+      delayMinutes: 5,
+      now: "2026-09-10T15:00:00.000Z",
+    });
+
+    await disablePersistentNotification(db, 1, "task", 1);
+
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM notification_snoozes").get()).toEqual({ count: 0 });
   });
 
   it("applies a global setting to pending existing items and future defaults", async () => {

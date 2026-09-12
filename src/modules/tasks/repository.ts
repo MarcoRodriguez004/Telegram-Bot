@@ -46,6 +46,10 @@ export interface UpdateTaskTitleInput {
   title: string;
 }
 
+export interface UpdateTaskInput extends UpdateTaskTitleInput {
+  dueAt?: string | null;
+}
+
 export async function createTask(db: D1Database, input: CreateTaskInput): Promise<number> {
   if (!Number.isInteger(input.userId) || input.userId < 1) {
     throw new Error("User id is invalid");
@@ -140,19 +144,32 @@ export async function cancelTask(db: D1Database, input: CancelTaskInput): Promis
   const result = await db.prepare(
     "UPDATE tasks SET cancelled_at = ?, completed_at = NULL WHERE user_id = ? AND id = ? AND status = 'pending' AND cancelled_at IS NULL",
   ).bind(input.cancelledAt ?? new Date().toISOString(), input.userId, input.taskId).run();
-  if (result.meta.changes === 1) await disablePersistentNotification(db, input.userId, "task", input.taskId);
+  if (result.meta.changes === 1) {
+    await disablePersistentNotification(db, input.userId, "task", input.taskId);
+  }
   return result.meta.changes === 1;
 }
 
 export async function updateTaskTitle(db: D1Database, input: UpdateTaskTitleInput): Promise<boolean> {
+  return updateTask(db, input);
+}
+
+export async function updateTask(db: D1Database, input: UpdateTaskInput): Promise<boolean> {
   validateUserId(input.userId);
   validateRecordId(input.taskId, "Task");
   const title = input.title.trim().replace(/\s+/g, " ");
   if (!title) throw new Error("Task title is required");
   if (title.length > 500) throw new Error("Task title is too long");
-  const result = await db.prepare(
-    "UPDATE tasks SET title = ? WHERE user_id = ? AND id = ? AND status = 'pending' AND cancelled_at IS NULL",
-  ).bind(title, input.userId, input.taskId).run();
+  if (input.dueAt !== undefined && input.dueAt !== null && Number.isNaN(new Date(input.dueAt).getTime())) {
+    throw new Error("Task due date is invalid");
+  }
+  const result = input.dueAt === undefined
+    ? await db.prepare(
+      "UPDATE tasks SET title = ? WHERE user_id = ? AND id = ? AND status = 'pending' AND cancelled_at IS NULL",
+    ).bind(title, input.userId, input.taskId).run()
+    : await db.prepare(
+      "UPDATE tasks SET title = ?, due_at = ? WHERE user_id = ? AND id = ? AND status = 'pending' AND cancelled_at IS NULL",
+    ).bind(title, input.dueAt === null ? null : new Date(input.dueAt).toISOString(), input.userId, input.taskId).run();
   return result.meta.changes === 1;
 }
 

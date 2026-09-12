@@ -52,6 +52,8 @@ import type { SavedNote, SavedNoteKind } from "./modules/notes/repository";
 import { saveMedia } from "./modules/notes/media";
 import { getSummary } from "./modules/summary/repository";
 import type { SummaryResult } from "./modules/summary/repository";
+import { exportUserData } from "./modules/export/repository";
+import { getBotStatus, searchUserData } from "./modules/status/repository";
 import {
   cancelTask,
   completeTask,
@@ -59,7 +61,7 @@ import {
   getTask,
   listTasks,
   setTaskRecurrence,
-  updateTaskTitle,
+  updateTask,
 } from "./modules/tasks/repository";
 import type { TaskListItem } from "./modules/tasks/repository";
 import { clearEditSession, getActiveEditSession, startEditSession } from "./modules/edit-sessions/repository";
@@ -89,7 +91,7 @@ import { parseIntent } from "./router/parser";
 import type { Intent } from "./router/intent";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
-import { answerCallbackQuery, sendAttachment, sendMessage } from "./telegram/client";
+import { answerCallbackQuery, sendAttachment, sendDocumentContent, sendMessage } from "./telegram/client";
 import type { InlineKeyboardMarkup } from "./telegram/client";
 import {
   buildEditCancelKeyboard,
@@ -384,6 +386,9 @@ async function getReply(
     intent.action === "delete_folder" ||
     intent.action === "move_note" ||
     intent.action === "get_note" ||
+    intent.action === "status" ||
+    intent.action === "search" ||
+    intent.action === "export_data" ||
     intent.action === "create_task" ||
     intent.action === "set_recurrence" ||
     intent.action === "create_reminder" ||
@@ -408,6 +413,36 @@ async function getReply(
       return intent.recurrenceRule
         ? `🔁 Repetición ${recurrenceLabel(intent.recurrenceRule)} configurada para ${intent.resource === "task" ? "la tarea" : "el recordatorio"} ${intent.resourceId}.`
         : `🔁 Repetición desactivada para ${intent.resource === "task" ? "la tarea" : "el recordatorio"} ${intent.resourceId}.`;
+    }
+
+    if (intent.action === "status") {
+      const status = await getBotStatus(env.PERSONAL_ASSISTANT_DB, { userId });
+      return formatBotStatus(status, env.APP_TIMEZONE);
+    }
+
+    if (intent.action === "search") {
+      try {
+        const results = await searchUserData(env.PERSONAL_ASSISTANT_DB, { userId, query: intent.query });
+        return formatSearchResults(results, env.APP_TIMEZONE);
+      } catch (error) {
+        if (error instanceof Error && error.message === "Search query is too long") {
+          return "La búsqueda no puede superar 200 caracteres.";
+        }
+        return "Escribe qué quieres buscar. Ejemplo: /buscar tornillos";
+      }
+    }
+
+    if (intent.action === "export_data") {
+      try {
+        const exported = await exportUserData(env.PERSONAL_ASSISTANT_DB, { userId });
+        const content = JSON.stringify(exported, null, 2);
+        const date = new Date().toISOString().slice(0, 10);
+        await sendDocumentContent(env, message.chat.id, `mis-datos-${date}.json`, content, telegramFetch);
+        return null;
+      } catch (error) {
+        console.error(JSON.stringify({ event: "data_export_failed", userId, reason: error instanceof Error ? error.message : "unknown" }));
+        return "No pude preparar la exportación. Inténtalo de nuevo más tarde.";
+      }
     }
 
     if (intent.action === "list_tasks") {
@@ -736,6 +771,10 @@ async function getReply(
 
   if (intent.action === "unknown" && intent.reason === "invalid_summary_range") {
     return "El resumen acepta: hoy, semana o mes. Ejemplo: /resumen semana";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "missing_search_query") {
+    return "Indica qué quieres buscar. Ejemplo: /buscar tornillos";
   }
 
   if (intent.action === "unknown" && intent.reason === "delete_confirmation_required") {
@@ -1075,14 +1114,23 @@ async function handleEditInput(text: string, userId: number, chatId: number, env
   }
 
   if (session.resourceType === "task") {
+    const intent = parseIntent(`tarea ${text}`, {
+      timezone: env.APP_TIMEZONE,
+      currency: env.DEFAULT_CURRENCY,
+    });
+    if (intent.action !== "create_task") {
+      return "Indica el nuevo nombre y, si quieres cambiarla, una fecha. Ejemplo: comprar medicina mañana a las 18:00";
+    }
     try {
-      const changed = await updateTaskTitle(env.PERSONAL_ASSISTANT_DB, {
+      const changed = await updateTask(env.PERSONAL_ASSISTANT_DB, {
         userId,
         taskId: session.resourceId,
-        title: text,
+        title: intent.title,
+        ...(intent.dueAt === undefined ? {} : { dueAt: intent.dueAt }),
       });
       await clearEditSession(env.PERSONAL_ASSISTANT_DB, userId);
-      return changed ? `✅ Tarea actualizada\n\n${text.trim().replace(/\s+/g, " ")}` : "La tarea ya no está pendiente o no existe.";
+      const due = intent.dueAt ? `\nVence: ${formatDate(intent.dueAt, env.APP_TIMEZONE)}` : "";
+      return changed ? `✅ Tarea actualizada\n\n${intent.title}${due}` : "La tarea ya no está pendiente o no existe.";
     } catch {
       return "No pude usar ese nombre. Escribe un nombre de tarea de hasta 500 caracteres.";
     }
@@ -1244,6 +1292,47 @@ function formatExpenseHistory(history: ExpenseHistoryResult, category: string | 
     }),
   );
   return lines.join("\n");
+}
+
+function formatBotStatus(status: Awaited<ReturnType<typeof getBotStatus>>, timezone: string): string {
+  const lines = [
+    "📊 Estado del bot",
+    "",
+    `📋 Tareas pendientes: ${status.pendingTaskCount}`,
+    `⏰ Recordatorios próximos: ${status.upcomingReminderCount}`,
+    `🔔 Avisos persistentes activos: ${status.activePersistentNotificationCount}`,
+    `⏱ Avisos únicos pendientes: ${status.pendingSnoozeCount}`,
+    `💾 Almacenamiento lógico estimado: ${formatStorageBytes(status.logicalStorageBytes)}`,
+    "",
+    "Próximos recordatorios:",
+  ];
+
+  if (!status.upcomingReminders.length) {
+    lines.push("Ninguno");
+  } else {
+    lines.push(...status.upcomingReminders.map((reminder) => `• ${formatReminderAt(reminder.remindAt, timezone)} · ${reminder.title}`));
+  }
+  return lines.join("\n");
+}
+
+function formatSearchResults(results: Awaited<ReturnType<typeof searchUserData>>, timezone: string): string {
+  if (!results.length) return "🔎 No encontré coincidencias en tus datos.";
+  const lines = ["🔎 Resultados de búsqueda", "", ...results.map((result, index) => {
+    const label = result.kind === "task" ? `Tarea ${result.id}`
+      : result.kind === "reminder" ? `Recordatorio ${result.id}`
+        : result.kind === "expense" ? `Gasto ${result.id}`
+          : `Guardado ${result.id}`;
+    const date = formatDate(result.createdAt, timezone);
+    return `${index + 1}.- ${label} · ${result.preview.replace(/\s+/g, " ")}\n   ${result.status} · ${date}`;
+  })];
+  lines.push("", "Para abrir un guardado usa /guardado_ID.");
+  return lines.join("\n");
+}
+
+function formatStorageBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 type GlobalResetAction = "start" | 1 | 2 | 3;
@@ -1511,7 +1600,7 @@ function getCommandReply(text: string): Reply | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
 
   if (command === "/configuracion" || command === "/config" || command === "configuracion" || command === "configuración") {
