@@ -87,6 +87,20 @@ describe("saved folders webhook flow", () => {
     expect(sent.at(-2)).toMatchObject({ method: "sendPhoto", body: { photo: "photo_large", caption: "logo" } });
   });
 
+  it("shows photo folders before photos for the accented natural-language query", async () => {
+    const { send, sent } = setup();
+    await send({ text: "Crea la carpeta Familia" });
+    await send({ photo: [{ file_id: "photo_large", file_unique_id: "unique", width: 100, height: 100 }], caption: "Guarda logo en Familia" });
+    await send({ text: "Muéstrame mis fotos" });
+
+    const reply = sent.at(-1)?.body;
+    expect(reply?.text).toContain("🖼️ Imágenes");
+    expect(reply?.text).toContain("• Familia (1)");
+    expect(reply?.text).not.toContain("1.- Foto");
+    expect((reply?.reply_markup as { inline_keyboard: Array<Array<{ callback_data: string }>> }).inline_keyboard.flat())
+      .toContainEqual({ text: "📁 Familia (1)", callback_data: "pa:f:i:p:1" });
+  });
+
   it("creates a missing folder while saving and blocks another user's callback", async () => {
     const { send, callback, sent, database } = setup();
     await send({ text: "Nota una nota en Errata" });

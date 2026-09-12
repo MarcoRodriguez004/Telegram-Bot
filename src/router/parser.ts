@@ -25,7 +25,8 @@ const NATURAL_EXPENSE_HISTORY = /^(?:mis\s+gastos?|gastos?)\s+(?:de|en)\s+(.+)$/
 const NOTE_COMMAND = /^(?:\/)?(?:nota|apunte)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const FOLDER_CREATE = /^(?:\/)?(?:crea(?:r)?|nueva?)\s+(?:la\s+)?carpeta(?:\s+(.+))?$/iu;
 const FOLDER_LIST = /^¿?(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:cu[aá]les?\s+son\s+)?mis\s+carpetas[?!.]*$/iu;
-const SAVED_TYPED_LIST = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:(?:mis|las?|los?)\s+)?(im[aá]genes?|fotos?|fotograf[ií]as?|archivos?|documentos?|enlaces?(?:\s+y\s+notas?)?|links?|notas?)(?:\s+guardad(?:as|os))?(?:\s+(?:de|en)\s+(?:(?:la|una)\s+)?(?:carpeta\s+)?(.+))?$/iu;
+const SAVED_FOLDER_LIST = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:(?:mis|las?|los?)\s+)?(im[aá]genes?|fotos?|fotograf[ií]as?|archivos?|documentos?|enlaces?(?:\s+y\s+notas?)?|links?|notas?)(?:\s+guardad(?:as|os))?$/iu;
+const SAVED_TYPED_LIST = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:(?:mis|las?|los?)\s+)?(im[aá]genes?|fotos?|fotograf[ií]as?|archivos?|documentos?|enlaces?(?:\s+y\s+notas?)?|links?|notas?)(?:\s+guardad(?:as|os))?\s+(?:de|en)\s+(?:(?:la|una)\s+)?(?:carpeta\s+)?(.+)$/iu;
 const SAVED_MEDIA_FOLLOW_UP = /^(?:mu[eé]stra(?:me)?|ens[eé]ña(?:me)?|dame)\s*(?:las|los|esas|esos)?$/iu;
 const SAVED_MEDIA_MORE = /^(?:mu[eé]stra(?:me)?|ens[eé]ña(?:me)?|dame)\s+(?:m[aá]s|otras?|siguientes?)$/iu;
 const SAVED_LIST = /^(?:(?:mu[eé]strame\s+)?mis\s+guardados|\/?guardados)(?:_(\d+)|\s+antes\s+(\d+))?(?:@[a-z0-9_]+)?$/iu;
@@ -64,6 +65,12 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
     return { action: "list_folders" };
   }
 
+  const savedFolderList = SAVED_FOLDER_LIST.exec(normalized);
+  if (savedFolderList) {
+    const kind = savedKindFromLabel(savedFolderList[1]);
+    if (kind) return { action: "list_folders", kind };
+  }
+
   const typedSavedList = SAVED_TYPED_LIST.exec(normalized);
   if (typedSavedList) {
     const kind = savedKindFromLabel(typedSavedList[1]);
@@ -72,7 +79,7 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
       if (folderName && folderName.length > MAX_FOLDER_NAME_LENGTH) {
         return { action: "unknown", reason: "folder_name_too_long" };
       }
-      return folderName ? { action: "list_notes", kind, folderName } : { action: "list_folders", kind };
+      return { action: "list_notes", kind, folderName };
     }
   }
 

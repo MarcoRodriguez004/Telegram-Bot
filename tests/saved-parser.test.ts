@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseIntent } from "../src/router/parser";
 
 describe("saved item commands", () => {
-  it.each(["muestrame las imagenes guardadas", "muéstrame las fotos guardadas", "imágenes guardadas", "Muestrame mis fotos", "Mis imágenes"])("lists %s as photos", (text) => {
+  it.each(["muestrame las imagenes guardadas", "muéstrame las fotos guardadas", "imágenes guardadas", "Muestrame mis fotos", "Muéstrame mis fotos", "Mis imágenes"])("lists %s as photos", (text) => {
     expect(parseIntent(text)).toEqual({ action: "list_folders", kind: "photos" });
   });
 
