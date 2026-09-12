@@ -1,6 +1,6 @@
 # Especificación: interpretación conversacional asistida por IA
 
-**Estado:** capacidades iniciales implementadas; memoria de guardados en revisión
+**Estado:** capacidades iniciales y memoria conversacional acotada implementadas
 **Ramas:** `feature/ai-conversation` y `feature/conversation-memory`
 **Base de la memoria:** `Dev`
 
@@ -21,12 +21,12 @@ La IA no tendrá acceso directo a D1, Telegram ni a herramientas arbitrarias. So
 | Consultar | “¿Qué tengo pendiente?”, “mis guardados”, “resumen de esta semana” | Ejecuta la consulta existente | Sí |
 | Conversación de ayuda | “¿Qué puedes hacer?” | Respuesta breve con capacidades reales | Sí |
 | Consultar imágenes guardadas | “Mis fotos”, “muéstrame las imágenes guardadas” | Lista solo fotos almacenadas | Sí |
-| Memoria de varios turnos | “muestramelas” después de “mis fotos” | Mantener la última consulta de guardados en D1 durante 15 minutos | En `feature/conversation-memory`; no incluye todavía borradores generales |
+| Memoria de varios turnos | “muestramelas” después de “mis fotos”, o responder “450” después de pedir un gasto | Mantener contexto de guardados y un borrador incompleto por usuario/chat durante 15 minutos | Sí, con alcance acotado |
 | Acciones destructivas | Borrar datos | Solo flujo determinista con confirmación exacta | No se delega a la IA |
 
 La primera versión no permitirá que el modelo invente consultas, ejecute SQL, descargue enlaces, envíe mensajes a terceros ni realice acciones fuera de este catálogo.
 
-Las frases de seguimiento de guardados, como «muestramelas» o «muestra más» después de «mis fotos», se resuelven usando contexto temporal por usuario y chat. Los borradores generales y el contexto de tareas o recordatorios siguen fuera de alcance.
+Las frases de seguimiento de guardados, como «muestramelas» o «muestra más» después de «mis fotos», se resuelven usando contexto temporal por usuario y chat. Cuando falta un dato obligatorio para crear una tarea, recordatorio o gasto, el bot guarda solo la solicitud incompleta y el campo faltante durante 15 minutos; la siguiente respuesta se combina, valida y ejecuta mediante el parser existente. No se guarda un historial completo de la conversación.
 
 ## Flujo de decisión
 
@@ -74,6 +74,8 @@ El código no confiará en que el modelo respete tipos: validará enums, longitu
 - Una respuesta con JSON inválido, acción desconocida o campos incompatibles no cambia D1.
 - Un gasto sin monto solicita el monto y no inserta un gasto.
 - Un recordatorio sin fecha/hora suficiente solicita la información faltante o usa únicamente la regla de fecha ya definida; nunca adivina silenciosamente.
+- Una tarea, recordatorio o gasto incompleto continúa cuando el usuario responde el dato faltante en el mismo chat y dentro de 15 minutos.
+- El borrador no se comparte entre chats, expira y se elimina con `/borrar_datos CONFIRMAR` o `/borrar_bd`.
 - Si falta `OPENAI_API_KEY`, el bot responde con ayuda y no falla el webhook.
 - Un intento de borrar datos mediante texto natural no omite la confirmación determinista.
 - El token no aparece en logs ni respuestas de error.
@@ -81,7 +83,7 @@ El código no confiará en que el modelo respete tipos: validará enums, longitu
 
 ## Entrega y ramas
 
-La rama `feature/ai-conversation` implementó el adaptador de interpretación y su integración con el router. La rama `feature/conversation-memory` añade únicamente el contexto temporal de consultas de guardados: no almacena el texto completo, expira a los 15 minutos y se elimina con los datos del usuario. El contexto general de tareas, recordatorios y borradores requiere una especificación posterior.
+La rama `feature/ai-conversation` implementó el adaptador de interpretación y su integración con el router. La memoria temporal conserva consultas de guardados y un único borrador incompleto de tarea, recordatorio o gasto por usuario durante 15 minutos; no almacena un historial completo y se elimina con los datos del usuario.
 
 El flujo de entrega será: `feature/ai-conversation` → PR a `Dev` → PR de `Dev` a `main`, con los checks de CI obligatorios y sin hacer push directo a ramas protegidas.
 

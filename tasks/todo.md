@@ -48,7 +48,7 @@ Especificación: [`docs/SPEC-SAVED-FOLDERS.md`](../docs/SPEC-SAVED-FOLDERS.md). 
 - [x] Validar propiedad de usuario en consultas, callbacks, guardado y paginación.
 - [x] Eliminar carpetas junto con los datos mediante `/borrar_datos CONFIRMAR`.
 - [x] Añadir `/borrar_bd` para el administrador con tres confirmaciones exactas antes de vaciar todos los datos de la base.
-- [x] Aplicar y probar localmente las migraciones de carpetas y confirmaciones globales hasta `0012_global_reset_confirmations.sql`.
+- [x] Aplicar y probar localmente las migraciones de carpetas, confirmaciones globales y memoria conversacional hasta `0013_conversation_drafts.sql`.
 
 Decisiones pendientes para otro día:
 
@@ -64,3 +64,11 @@ Decisiones pendientes para otro día:
 - [x] Implementar movimiento de guardados entre carpetas, incluyendo `Sin carpeta`.
 - [x] Mostrar carpetas vacías en un bloque separado.
 - [x] Ejecutar smoke test de producción para avisos persistentes individuales y acciones de detener/completar/cancelar; verificado manualmente en Telegram.
+
+## Memoria conversacional y cierre de backlog
+
+- [x] Continuar tareas, recordatorios y gastos cuando falta un dato y el usuario responde en el mismo chat.
+- [x] Expirar los borradores conversacionales a los 15 minutos, aislarlos por usuario/chat y eliminarlos con los comandos de borrado.
+- [x] Contabilizar los borradores en la estimación lógica de almacenamiento.
+- [x] Verificar con prueba automatizada que los guardados sin carpeta aparecen en `Sin carpeta`.
+- [x] Actualizar la especificación de memoria y el estado del plan para no reportar como pendiente lo ya implementado.

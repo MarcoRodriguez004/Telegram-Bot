@@ -1,5 +1,7 @@
 # Plan de implementación: Personal Assistant Bot
 
+> Estado actualizado: 2026-09-12. Las fases base, Telegram seguro, núcleo de productividad, memoria personal, lenguaje natural inicial, IA opcional, consultas con botones, carpetas y avisos persistentes están implementadas y desplegadas. Las casillas que permanecen abiertas corresponden a mejoras reales todavía no entregadas; `tasks/todo.md` mantiene el checklist operativo.
+
 ## Dirección
 
 Migrar el prototipo actual a un Worker TypeScript modular con D1, webhook de Telegram y despliegue automático desde GitHub. Se construirá una capacidad vertical a la vez y se mantendrá el producto usable en cada checkpoint.
@@ -8,51 +10,51 @@ Migrar el prototipo actual a un Worker TypeScript modular con D1, webhook de Tel
 
 ### Fase 0 — Base ejecutable
 
-- [ ] Crear `package.json`, `wrangler.jsonc`, `tsconfig.json`, Vitest y configuración de CI.
-- [ ] Definir `Env`, tipos compartidos, router HTTP y endpoint `/health`.
-- [ ] Crear D1 local, migración inicial y repositorios parametrizados.
+- [x] Crear `package.json`, `wrangler.jsonc`, `tsconfig.json`, Vitest y configuración de CI.
+- [x] Definir `Env`, tipos compartidos, router HTTP y endpoint `/health`.
+- [x] Crear D1 local, migración inicial y repositorios parametrizados.
 
 Checkpoint: Worker local arranca, `/health` responde y la migración se ejecuta en D1 local.
 
 ### Fase 1 — Telegram seguro
 
-- [ ] Implementar `/telegram/webhook` con verificación del secret token.
-- [ ] Validar chat privado y `TELEGRAM_ALLOWED_USER_ID`.
-- [ ] Persistir `update_id` y hacer procesamiento idempotente.
-- [ ] Añadir cliente Telegram mínimo para `sendMessage` y comandos `/start`, `/help`.
+- [x] Implementar `/telegram/webhook` con verificación del secret token.
+- [x] Validar chat privado y `TELEGRAM_ALLOWED_USER_ID`.
+- [x] Persistir `update_id` y hacer procesamiento idempotente.
+- [x] Añadir cliente Telegram mínimo para `sendMessage` y comandos `/start`, `/help`.
 
 Checkpoint: una actualización autorizada recibe respuesta; una no autorizada no cambia D1.
 
 ### Fase 2 — Núcleo de productividad
 
-- [ ] Implementar parser por reglas y el contrato `Intent`.
-- [ ] Añadir módulo de tareas: crear, listar pendientes, completar.
-- [ ] Añadir módulo de recordatorios: crear y listar próximos.
-- [ ] Añadir Cron Trigger cada minuto para entregar recordatorios.
+- [x] Implementar parser por reglas y el contrato `Intent`.
+- [x] Añadir módulo de tareas: crear, listar pendientes, completar.
+- [x] Añadir módulo de recordatorios: crear y listar próximos.
+- [x] Añadir Cron Trigger cada minuto para entregar recordatorios.
 
 Checkpoint: `tarea comprar detergente` y `recuérdame pagar internet mañana` funcionan de punta a punta.
 
 ### Fase 3 — Memoria personal
 
-- [ ] Añadir gastos con importe en centavos, moneda, categoría y descripción.
-- [ ] Añadir enlaces/notas sin descargarlos.
-- [ ] Añadir `/resumen` para hoy, semana y mes.
-- [ ] Añadir `/borrar_datos CONFIRMAR`.
+- [x] Añadir gastos con importe en centavos, moneda, categoría y descripción.
+- [x] Añadir enlaces/notas sin descargarlos.
+- [x] Añadir `/resumen` para hoy, semana y mes.
+- [x] Añadir `/borrar_datos CONFIRMAR`.
 
 Checkpoint: el usuario puede registrar y consultar lo esencial desde Telegram.
 
 ### Fase 4 — Lenguaje natural ampliado
 
-- [ ] Ampliar el parser para fechas, cantidades y variantes en español.
-- [ ] Añadir adaptador LLM opcional detrás de `IntentRouter`.
-- [ ] Validar toda salida del modelo y usar reglas como fallback.
+- [x] Ampliar el parser para fechas, cantidades y variantes en español.
+- [x] Añadir adaptador LLM opcional detrás de `IntentRouter`.
+- [x] Validar toda salida del modelo y usar reglas como fallback.
 - [ ] Medir errores de interpretación antes de activar el modelo por defecto.
 
 Checkpoint: se entiende lenguaje natural adicional sin romper comandos ni aumentar el radio de permisos.
 
 ### Fase 5 — Operación y extensiones
 
-- [ ] Configurar webhook de producción y Workers Builds.
+- [x] Configurar webhook de producción y Workers Builds.
 - [ ] Añadir logs estructurados sin texto sensible, métricas básicas y alertas de errores.
 - [ ] Preparar módulos independientes para compras, calendario e integraciones futuras.
 
@@ -96,21 +98,37 @@ Permitir frases naturales acotadas para crear recordatorios con hora, registrar 
 
 ### Tareas
 
-- [ ] Ampliar el parser de recordatorios para horas de 12/24 horas y próxima ocurrencia.
-- [ ] Ampliar el parser de gastos para reconocer verbos naturales, monto en distintas posiciones, categoría y descripción.
-- [ ] Añadir una intención y consulta parametrizada para historial de gastos por categoría.
-- [ ] Añadir pruebas unitarias y de webhook para los tres flujos.
+- [x] Ampliar el parser de recordatorios para horas de 12/24 horas y próxima ocurrencia.
+- [x] Ampliar el parser de gastos para reconocer verbos naturales, monto en distintas posiciones, categoría y descripción.
+- [x] Añadir una intención y consulta parametrizada para historial de gastos por categoría.
+- [x] Añadir pruebas unitarias y de webhook para los tres flujos.
 
 ### Criterios de aceptación
 
-- [ ] `Quiero que me recuerdes a las 2pm tomarme mi medicamento` crea un recordatorio futuro en la zona horaria configurada.
-- [ ] `Gasté 450 en carro por compra de radiador` persiste monto, categoría y descripción.
-- [ ] `Muéstrame el historial de gastos de carro` devuelve total y detalle únicamente del usuario autorizado y de la categoría solicitada.
-- [ ] Un gasto sin monto pide el monto y no inserta un registro incompleto.
+- [x] `Quiero que me recuerdes a las 2pm tomarme mi medicamento` crea un recordatorio futuro en la zona horaria configurada.
+- [x] `Gasté 450 en carro por compra de radiador` persiste monto, categoría y descripción.
+- [x] `Muéstrame el historial de gastos de carro` devuelve total y detalle únicamente del usuario autorizado y de la categoría solicitada.
+- [x] Un gasto sin monto pide el monto y no inserta un registro incompleto.
 
 ### Decisión de seguridad
 
-No se persisten gastos sin monto ni se adivina un valor. El seguimiento conversacional para responder el monto en un mensaje posterior queda como una siguiente migración de D1, porque requiere estado persistente y expiración del borrador.
+No se persisten gastos sin monto ni se adivina un valor. El seguimiento conversacional para responder el monto en un mensaje posterior usa un borrador persistente por usuario/chat, con expiración de 15 minutos y sin guardar un historial completo.
+
+## Incremento actual: memoria conversacional acotada
+
+### Tareas completadas
+
+- [x] Persistir temporalmente una solicitud incompleta de tarea, recordatorio o gasto y el dato que falta.
+- [x] Reanudar la captura con la siguiente respuesta del mismo chat y validar el resultado con el parser determinista.
+- [x] Expirar el borrador a los 15 minutos y aislarlo por usuario/chat.
+- [x] Eliminar borradores con el borrado individual y el borrado global, e incluirlos en la contabilidad lógica.
+- [x] Cubrir los flujos con pruebas de repositorio y webhook.
+
+### Fuera de alcance
+
+- Historial completo de conversación.
+- Inferir datos que el usuario no proporcionó.
+- Compartir contexto entre chats o usuarios.
 
 ## Incremento actual: interpretación conversacional asistida por IA
 

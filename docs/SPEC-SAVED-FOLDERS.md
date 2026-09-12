@@ -127,7 +127,7 @@ No se ejecutará una migración remota hasta que la migración local, las prueba
 
 ## Criterios de aceptación
 
-- [ ] Un guardado sin carpeta sigue funcionando y queda en `Sin carpeta`.
+- [x] Un guardado sin carpeta sigue funcionando y queda en `Sin carpeta`.
 - [x] `Guarda este INE en Documentos personales` crea la carpeta si no existe y guarda el elemento en ella.
 - [x] Un nombre de carpeta con similitud de 70% o más muestra comparación y permite reutilizar o crear; fotos y documentos conservan la operación pendiente mientras se decide.
 - [x] Un usuario puede crear y listar carpetas con nombres arbitrarios dentro de los límites.
