@@ -24,6 +24,9 @@ const EXPENSE_HISTORY = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:el\s+)?
 const NATURAL_EXPENSE_HISTORY = /^(?:mis\s+gastos?|gastos?)\s+(?:de|en)\s+(.+)$/iu;
 const NOTE_COMMAND = /^(?:\/)?(?:nota|apunte)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const FOLDER_CREATE = /^(?:\/)?(?:crea(?:r)?|nueva?)\s+(?:la\s+)?carpeta(?:\s+(.+))?$/iu;
+const FOLDER_RENAME = /^(?:\/)?(?:renombra(?:r)?|cambia(?:r)?\s+el\s+nombre\s+de)\s+(?:la\s+)?carpeta\s+(.+?)\s+(?:a|como)\s+(.+)$/iu;
+const FOLDER_DELETE = /^(?:\/)?(?:elimina(?:r)?|borra(?:r)?)\s+(?:la\s+)?carpeta\s+(.+)$/iu;
+const NOTE_MOVE = /^(?:\/)?(?:mueve|mover)\s+(?:el\s+)?guardado\s+(\d+)\s+(?:a|en|dentro\s+de)\s+(?:(?:la|una)\s+)?(?:carpeta\s+)?(.+)$/iu;
 const FOLDER_LIST = /^¿?(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:cu[aá]les?\s+son\s+)?mis\s+carpetas[?!.]*$/iu;
 const SAVED_FOLDER_LIST = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:(?:mis|las?|los?)\s+)?(im[aá]genes?|fotos?|fotograf[ií]as?|archivos?|documentos?|enlaces?(?:\s+y\s+notas?)?|links?|notas?)(?:\s+guardad(?:as|os))?$/iu;
 const SAVED_TYPED_LIST = /^(?:(?:mu[eé]strame|ens[eé]ñame|dame)\s+)?(?:(?:mis|las?|los?)\s+)?(im[aá]genes?|fotos?|fotograf[ií]as?|archivos?|documentos?|enlaces?(?:\s+y\s+notas?)?|links?|notas?)(?:\s+guardad(?:as|os))?\s+(?:de|en)\s+(?:(?:la|una)\s+)?(?:carpeta\s+)?(.+)$/iu;
@@ -54,6 +57,30 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
 
   if (!normalized || normalized.length > MAX_MESSAGE_LENGTH) {
     return { action: "unknown", reason: "unsupported_message" };
+  }
+
+  const folderRename = FOLDER_RENAME.exec(normalized);
+  if (folderRename) {
+    return parseRenameFolder(folderRename[1] ?? "", folderRename[2] ?? "");
+  }
+
+  const folderDelete = FOLDER_DELETE.exec(normalized);
+  if (folderDelete) {
+    const name = normalizeFolderInput(folderDelete[1] ?? "");
+    return name ? { action: "delete_folder", name } : { action: "unknown", reason: "missing_folder_name" };
+  }
+
+  const noteMove = NOTE_MOVE.exec(normalized);
+  if (noteMove) {
+    const noteId = Number(noteMove[1]);
+    if (!Number.isSafeInteger(noteId) || noteId < 1) return { action: "unknown", reason: "invalid_saved_id" };
+    const folderName = normalizeFolderInput(noteMove[2] ?? "");
+    if (!folderName) return { action: "unknown", reason: "missing_folder_name" };
+    return {
+      action: "move_note",
+      noteId,
+      folderName: /^sin\s+carpeta$/iu.test(folderName) ? null : folderName,
+    };
   }
 
   const folderCreate = FOLDER_CREATE.exec(normalized);
@@ -251,10 +278,24 @@ function parseListIntent(action: "list_tasks" | "list_reminders", payload?: stri
 }
 
 function parseCreateFolder(name: string): Intent {
-  const normalizedName = name.trim().replace(/\s+/g, " ");
+  const normalizedName = normalizeFolderInput(name);
   if (!normalizedName) return { action: "unknown", reason: "missing_folder_name" };
   if (normalizedName.length > MAX_FOLDER_NAME_LENGTH) return { action: "unknown", reason: "folder_name_too_long" };
   return { action: "create_folder", name: normalizedName };
+}
+
+function parseRenameFolder(currentName: string, newName: string): Intent {
+  const normalizedCurrentName = normalizeFolderInput(currentName);
+  const normalizedNewName = normalizeFolderInput(newName);
+  if (!normalizedCurrentName || !normalizedNewName) return { action: "unknown", reason: "missing_folder_name" };
+  if (normalizedCurrentName.length > MAX_FOLDER_NAME_LENGTH || normalizedNewName.length > MAX_FOLDER_NAME_LENGTH) {
+    return { action: "unknown", reason: "folder_name_too_long" };
+  }
+  return { action: "rename_folder", currentName: normalizedCurrentName, newName: normalizedNewName };
+}
+
+function normalizeFolderInput(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
 }
 
 function savedKindFromLabel(label: string): "photos" | "documents" | "links" | null {

@@ -101,6 +101,39 @@ describe("saved folders webhook flow", () => {
       .toContainEqual({ text: "📁 Familia (1)", callback_data: "pa:f:i:p:1" });
   });
 
+  it("shows empty folders in a separate block", async () => {
+    const { send, sent } = setup();
+    await send({ text: "Crea la carpeta Vacía" });
+    await send({ text: "Crea la carpeta Usada" });
+    await send({ text: "Nota contenido en Usada" });
+    await send({ text: "Mis carpetas" });
+
+    expect(sent.at(-1)?.body.text).toContain("📂 Carpetas vacías");
+    expect(sent.at(-1)?.body.text).toContain("• Vacía (0)");
+    expect(sent.at(-1)?.body.text).toContain("• Usada (1)");
+  });
+
+  it("renames, confirms deletion, and moves saved notes between folders", async () => {
+    const { send, sent, database } = setup();
+    await send({ text: "Crea la carpeta Familia" });
+    await send({ text: "Nota documento en Familia" });
+    await send({ text: "Renombra la carpeta Familia a Personal" });
+    expect(sent.at(-1)?.body.text).toContain("Carpeta renombrada: Familia → Personal");
+
+    await send({ text: "Crea la carpeta Archivo" });
+    const noteId = (database.sqlite.prepare("SELECT id FROM notes WHERE user_id = 1").get() as { id: number }).id;
+    await send({ text: `Mueve el guardado ${noteId} a la carpeta Archivo` });
+    expect(sent.at(-1)?.body.text).toContain("Guardado movido a Archivo");
+    const archiveId = (database.sqlite.prepare("SELECT id FROM saved_folders WHERE user_id = 1 AND name = 'Archivo'").get() as { id: number }).id;
+    expect(database.sqlite.prepare("SELECT folder_id FROM notes WHERE id = ?").get(noteId)).toMatchObject({ folder_id: archiveId });
+
+    await send({ text: "Elimina la carpeta Archivo" });
+    expect(sent.at(-1)?.body.text).toContain("Sus guardados no se borrarán; pasarán a «Sin carpeta»");
+    await send({ text: "Sí" });
+    expect(sent.at(-1)?.body.text).toContain("Carpeta eliminada: Archivo");
+    expect(database.sqlite.prepare("SELECT folder_id FROM notes WHERE id = ?").get(noteId)).toMatchObject({ folder_id: null });
+  });
+
   it("creates a missing folder while saving and blocks another user's callback", async () => {
     const { send, callback, sent, database } = setup();
     await send({ text: "Nota una nota en Errata" });

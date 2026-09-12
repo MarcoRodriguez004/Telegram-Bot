@@ -204,6 +204,20 @@ export async function listFolders(
   return result;
 }
 
+export async function listEmptyFolders(db: D1Database, userId: number): Promise<SavedFolderListItem[]> {
+  assertUserId(userId);
+  const folders = await db.prepare(
+    `SELECT f.id, f.name
+       FROM saved_folders f
+       LEFT JOIN notes n ON n.folder_id = f.id AND n.user_id = f.user_id
+      WHERE f.user_id = ?
+      GROUP BY f.id, f.name
+      HAVING COUNT(n.id) = 0
+      ORDER BY LOWER(f.name), f.id`,
+  ).bind(userId).all<{ id: number; name: string }>();
+  return folders.results.map((folder) => ({ id: folder.id, name: folder.name, count: 0 }));
+}
+
 export async function listNotes(
   db: D1Database,
   userId: number,

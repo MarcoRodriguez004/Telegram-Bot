@@ -6,6 +6,9 @@ export type Intent =
   | { action: "create_expense"; amountCents: number; currency: string; category: string; description?: string }
   | { action: "list_expenses"; category?: string; range: "all" }
   | { action: "create_folder"; name: string }
+  | { action: "rename_folder"; currentName: string; newName: string }
+  | { action: "delete_folder"; name: string }
+  | { action: "move_note"; noteId: number; folderName: string | null }
   | { action: "list_folders"; kind?: "all" | "photos" | "documents" | "links" }
   | { action: "save_note"; content: string; url?: string; folderName?: string }
   | { action: "list_notes"; beforeId?: number; kind?: "all" | "photos" | "documents" | "links"; folderId?: number | null; folderName?: string }

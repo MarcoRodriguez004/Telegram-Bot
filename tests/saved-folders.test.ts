@@ -5,6 +5,7 @@ import {
   createNote,
   deleteFolder,
   findSimilarFolder,
+  listEmptyFolders,
   moveNoteToFolder,
   listFolders,
   listNotes,
@@ -78,6 +79,16 @@ describe("saved folder repository", () => {
       notes: [{ content: "unfiled" }],
     });
     await expect(listNotes(db, userId, undefined, "all", otherFolder.id)).rejects.toThrow("Folder not found");
+  });
+
+  it("lists empty folders separately from folders that contain notes", async () => {
+    const { db } = createSqliteDb();
+    const userId = await seedUser(db, 1011);
+    await createFolder(db, { userId, name: "Vacía" });
+    const used = await createFolder(db, { userId, name: "Usada" });
+    await createNote(db, { userId, content: "contenido", folderId: used.id });
+
+    await expect(listEmptyFolders(db, userId)).resolves.toEqual([{ id: 1, name: "Vacía", count: 0 }]);
   });
 
   it("finds the closest folder only for the same user when similarity reaches 70%", async () => {

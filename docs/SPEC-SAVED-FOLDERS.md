@@ -36,6 +36,10 @@ Los nombres se normalizarán para evitar duplicados por mayúsculas, espacios re
 - `mis imágenes`, `mis archivos` y `mis enlaces` muestran primero el bloque de carpetas correspondiente; después de elegir una carpeta, la selección lista solo ese tipo y esa carpeta. `Sin carpeta` aparece cuando tiene elementos.
 - Las listas de imágenes se numeran (`1.-`, `2.-`, etc.) y ofrecen botones compactos en cuadrícula para abrir cada foto; el callback vuelve a validar la propiedad del guardado.
 - `mis guardados` y `/guardados` conservan compatibilidad y muestran los elementos sin carpeta y los organizados, pero la navegación por bloques permite elegir una carpeta explícita.
+- `Renombra la carpeta X a Y` cambia el nombre si no existe otra carpeta normalizada igual del mismo usuario.
+- `Elimina la carpeta X` requiere confirmación; no elimina sus guardados y los pasa a `Sin carpeta`.
+- `Mueve el guardado 123 a la carpeta Y` cambia la clasificación del guardado; `Sin carpeta` quita la clasificación.
+- `Mis carpetas` muestra las carpetas sin elementos en un bloque separado `Carpetas vacías`; no se mezclan con los bloques de contenido.
 - La paginación mantiene el orden actual por `notes.id DESC`, el límite de diez elementos y el comportamiento de continuación sin duplicar elementos.
 - Abrir un elemento continúa usando `/guardado_<id>` o `ver guardado <id>`. La consulta siempre incluye el usuario autenticado y la carpeta seleccionada cuando corresponda.
 - Los callbacks de carpetas y paginación deben validar usuario, chat, formato, propiedad del elemento y existencia de la carpeta antes de leer o mutar D1.
@@ -131,6 +135,9 @@ No se ejecutará una migración remota hasta que la migración local, las prueba
 - [x] `mis imágenes`, `mis archivos` y `mis enlaces` muestran carpetas antes de listar elementos.
 - [x] La selección de una carpeta muestra únicamente los elementos de ese tipo y usuario.
 - [x] La paginación por carpeta no repite ni pierde elementos cuando llegan guardados nuevos.
+- [x] Se pueden renombrar y eliminar carpetas; eliminar conserva los guardados en `Sin carpeta`.
+- [x] Se pueden mover guardados entre carpetas o a `Sin carpeta` con autorización por usuario.
+- [x] Las carpetas vacías aparecen en un bloque separado.
 - [x] Las consultas y callbacks no permiten acceso cruzado entre usuarios.
 - [x] El borrado de datos elimina las colecciones y sus guardados de D1, pero conserva el anti-replay.
 - [x] Pasan tests, lint, typecheck, build y auditoría de dependencias sin degradar los quality gates existentes.

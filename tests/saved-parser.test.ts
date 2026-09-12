@@ -34,6 +34,27 @@ describe("saved item commands", () => {
       folderName: "Trabajo",
     });
   });
+  it("parses saved-folder management commands", () => {
+    expect(parseIntent("Renombra la carpeta Familia a Personal")).toEqual({
+      action: "rename_folder",
+      currentName: "Familia",
+      newName: "Personal",
+    });
+    expect(parseIntent("Elimina la carpeta Temporal")).toEqual({
+      action: "delete_folder",
+      name: "Temporal",
+    });
+    expect(parseIntent("Mueve el guardado 123 a la carpeta Archivo")).toEqual({
+      action: "move_note",
+      noteId: 123,
+      folderName: "Archivo",
+    });
+    expect(parseIntent("Mueve el guardado 123 a Sin carpeta")).toEqual({
+      action: "move_note",
+      noteId: 123,
+      folderName: null,
+    });
+  });
   it.each(["/guardado_123", "/guardado 123", "ver guardado 123", "/guardado_123@my_bot"])("retrieves with %s", (text) => {
     expect(parseIntent(text)).toEqual({ action: "get_note", noteId: 123 });
   });

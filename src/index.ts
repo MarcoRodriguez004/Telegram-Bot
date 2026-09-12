@@ -32,7 +32,20 @@ import {
 import type { NotificationIntervalMinutes, NotificationScope } from "./modules/notifications/repository";
 import { createExpense, getExpenseHistory } from "./modules/expenses/repository";
 import type { ExpenseHistoryResult } from "./modules/expenses/repository";
-import { createFolder, createNote, findSimilarFolder, getFolderById, getFolderByName, getNote, listFolders, listNotes } from "./modules/notes/repository";
+import {
+  createFolder,
+  createNote,
+  deleteFolder,
+  findSimilarFolder,
+  getFolderById,
+  getFolderByName,
+  getNote,
+  listEmptyFolders,
+  listFolders,
+  listNotes,
+  moveNoteToFolder,
+  renameFolder,
+} from "./modules/notes/repository";
 import type { SavedNote, SavedNoteKind } from "./modules/notes/repository";
 import { saveMedia } from "./modules/notes/media";
 import { getSummary } from "./modules/summary/repository";
@@ -323,6 +336,9 @@ async function getReply(
     intent.action === "list_notes" ||
     intent.action === "list_folders" ||
     intent.action === "create_folder" ||
+    intent.action === "rename_folder" ||
+    intent.action === "delete_folder" ||
+    intent.action === "move_note" ||
     intent.action === "get_note" ||
     intent.action === "create_task" ||
     intent.action === "create_reminder" ||
@@ -406,6 +422,66 @@ async function getReply(
       return folder.created
         ? `📁 Carpeta creada: ${folder.name}`
         : `📁 La carpeta «${folder.name}» ya existe.`;
+    }
+
+    if (intent.action === "rename_folder") {
+      try {
+        const folder = await renameFolder(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          currentName: intent.currentName,
+          newName: intent.newName,
+        });
+        return folder
+          ? `📁 Carpeta renombrada: ${intent.currentName} → ${folder.name}`
+          : `No existe la carpeta «${intent.currentName}».`;
+      } catch (error) {
+        if (error instanceof Error && error.message === "Folder name already exists") {
+          return `Ya existe una carpeta llamada «${intent.newName}». Elige otro nombre.`;
+        }
+        return "No pude renombrar la carpeta. Verifica que el nombre sea válido.";
+      }
+    }
+
+    if (intent.action === "delete_folder") {
+      const folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, intent.name);
+      if (!folder) return `No existe la carpeta «${intent.name}».`;
+      if (pendingConfirmationResolution?.kind !== "intent") {
+        await savePendingConfirmation(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          chatId: message.chat.id,
+          question: `⚠️ ¿Confirmas eliminar la carpeta «${folder.name}»? Sus guardados no se borrarán; pasarán a «Sin carpeta». Responde «sí» o «no».`,
+          suggestedText: text,
+        });
+        return `⚠️ ¿Confirmas eliminar la carpeta «${folder.name}»? Sus guardados no se borrarán; pasarán a «Sin carpeta». Responde «sí» o «no».`;
+      }
+      const deleted = await deleteFolder(env.PERSONAL_ASSISTANT_DB, { userId, name: folder.name });
+      return deleted
+        ? `🗑️ Carpeta eliminada: ${deleted.name}\nSus guardados ahora están en «Sin carpeta».`
+        : "La carpeta ya no está disponible.";
+    }
+
+    if (intent.action === "move_note") {
+      let destinationId: number | null = null;
+      let destinationName = "Sin carpeta";
+      if (intent.folderName !== null) {
+        const folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, intent.folderName);
+        if (!folder) return `No existe la carpeta «${intent.folderName}». Créala con «Crea la carpeta ${intent.folderName}» y vuelve a intentarlo.`;
+        destinationId = folder.id;
+        destinationName = folder.name;
+      }
+      try {
+        const moved = await moveNoteToFolder(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          noteId: intent.noteId,
+          folderId: destinationId,
+        });
+        return moved ? `✅ Guardado movido a ${destinationName}.` : "No pude mover ese guardado.";
+      } catch (error) {
+        if (error instanceof Error && error.message === "Note not found") {
+          return `No encontré el guardado ${intent.noteId} o no pertenece a tu cuenta.`;
+        }
+        return "No pude mover el guardado. Verifica la carpeta de destino.";
+      }
     }
 
     if (intent.action === "get_note") {
@@ -1150,7 +1226,8 @@ async function getSavedFoldersReply(
     : ["photos", "documents", "links"];
   const groups = await Promise.all(kinds.map(async (kind) => ({ kind, folders: await listFolders(db, userId, kind) })));
   const visibleGroups = groups.filter((group) => group.folders.length > 0);
-  if (visibleGroups.length === 0) {
+  const emptyFolders = !requestedKind || requestedKind === "all" ? await listEmptyFolders(db, userId) : [];
+  if (visibleGroups.length === 0 && emptyFolders.length === 0) {
     return requestedKind === "photos"
       ? "No tienes carpetas con imágenes guardadas. Crea una con «Crea la carpeta ...» y envía una foto con «Guarda ...»."
       : requestedKind === "documents"
@@ -1167,8 +1244,16 @@ async function getSavedFoldersReply(
     lines.push(...group.folders.map((folder) => `• ${folder.name} (${folder.count})`), "");
     keyboardRows.push(...buildFolderKeyboard(group.kind, group.folders).inline_keyboard);
   }
-  lines.push("Elige una carpeta para ver sus guardados.");
-  return { text: lines.join("\n"), replyMarkup: { inline_keyboard: keyboardRows } };
+  if (emptyFolders.length > 0) {
+    lines.push("📂 Carpetas vacías", "", ...emptyFolders.map((folder) => `• ${folder.name} (0)`), "");
+    lines.push("Para renombrar o eliminar una carpeta vacía, escribe su nombre.");
+  }
+  if (keyboardRows.length > 0) {
+    lines.push("Elige una carpeta para ver sus guardados.");
+    return { text: lines.join("\n"), replyMarkup: { inline_keyboard: keyboardRows } };
+  }
+  lines.push("Todavía no hay guardados dentro de estas carpetas.");
+  return lines.join("\n");
 }
 
 function formatSavedNotesReply(
@@ -1298,7 +1383,7 @@ function getCommandReply(text: string): Reply | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
 
   if (command === "/configuracion" || command === "/config" || command === "configuracion" || command === "configuración") {
