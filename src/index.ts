@@ -3,6 +3,13 @@ import { interpretMessage } from "./ai/openai";
 import { claimUpdate } from "./db/repository";
 import { deleteUserData } from "./modules/privacy/repository";
 import {
+  advanceGlobalResetConfirmation,
+  clearGlobalResetConfirmation,
+  deleteAllData,
+  getGlobalResetConfirmation,
+  startGlobalResetConfirmation,
+} from "./modules/privacy/global-reset";
+import {
   cancelReminder,
   completeReminder,
   createReminder,
@@ -200,6 +207,9 @@ async function getReply(
   telegramFetch: typeof fetch,
   aiFetch: typeof fetch,
 ): Promise<Reply | null> {
+  const globalResetAction = parseGlobalResetAction(text);
+  if (globalResetAction) return handleGlobalResetAction(globalResetAction, update, env);
+
   const commandReply = getCommandReply(text);
   if (commandReply) return commandReply;
 
@@ -1044,6 +1054,71 @@ function formatExpenseHistory(history: ExpenseHistoryResult, category: string | 
     }),
   );
   return lines.join("\n");
+}
+
+type GlobalResetAction = "start" | 1 | 2 | 3;
+
+function parseGlobalResetAction(text: string): GlobalResetAction | null {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (/^\/borrar_bd(?:@[a-z0-9_]+)?$/iu.test(normalized)) return "start";
+  const confirmation = /^CONFIRMO BORRADO GLOBAL ([123])\/3$/iu.exec(normalized);
+  return confirmation ? Number(confirmation[1]) as 1 | 2 | 3 : null;
+}
+
+async function handleGlobalResetAction(
+  action: GlobalResetAction,
+  update: TelegramUpdate,
+  env: Env,
+): Promise<string> {
+  const message = update.message;
+  const telegramUserId = message?.from?.id;
+  if (!message || telegramUserId === undefined) return "No pude identificar al usuario de Telegram.";
+
+  const adminUserId = parseConfiguredTelegramUserId(env.TELEGRAM_ADMIN_USER_ID ?? env.TELEGRAM_ALLOWED_USER_ID);
+  if (adminUserId === null || telegramUserId !== adminUserId) {
+    return "Este comando solo está disponible para el administrador.";
+  }
+
+  if (action === "start") {
+    await startGlobalResetConfirmation(env.PERSONAL_ASSISTANT_DB, {
+      telegramUserId,
+      chatId: message.chat.id,
+    });
+    return "⚠️ Borrado global peligroso. Se eliminarán los datos de TODOS los usuarios y no se podrán recuperar.\n\nConfirmación 1 de 3: escribe exactamente:\nCONFIRMO BORRADO GLOBAL 1/3";
+  }
+
+  const confirmation = await getGlobalResetConfirmation(env.PERSONAL_ASSISTANT_DB, {
+    telegramUserId,
+    chatId: message.chat.id,
+  });
+  if (!confirmation || confirmation.step !== action) {
+    if (confirmation) await clearGlobalResetConfirmation(env.PERSONAL_ASSISTANT_DB, telegramUserId);
+    return "Confirmación incorrecta o expirada. El proceso se canceló y no se eliminó nada. Inicia de nuevo con /borrar_bd.";
+  }
+
+  if (action === 3) {
+    await deleteAllData(env.PERSONAL_ASSISTANT_DB);
+    return "🧹 La base de datos fue vaciada por completo. Se conservaron únicamente las tablas del sistema.";
+  }
+
+  const advanced = await advanceGlobalResetConfirmation(env.PERSONAL_ASSISTANT_DB, {
+    telegramUserId,
+    chatId: message.chat.id,
+    expectedStep: action,
+  });
+  if (!advanced) {
+    await clearGlobalResetConfirmation(env.PERSONAL_ASSISTANT_DB, telegramUserId);
+    return "Confirmación expirada. El proceso se canceló y no se eliminó nada. Inicia de nuevo con /borrar_bd.";
+  }
+  return action === 1
+    ? "Confirmación 2 de 3. Todavía no se ha borrado nada. Escribe exactamente:\nCONFIRMO BORRADO GLOBAL 2/3"
+    : "⚠️ Confirmación 3 de 3 (última). Esta acción eliminará definitivamente toda la información de todos los usuarios. Escribe exactamente:\nCONFIRMO BORRADO GLOBAL 3/3";
+}
+
+function parseConfiguredTelegramUserId(value: string | undefined): number | null {
+  if (!value || !/^\d+$/u.test(value.trim())) return null;
+  const id = Number(value.trim());
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 async function getSavedFoldersReply(

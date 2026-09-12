@@ -46,7 +46,8 @@ Especificación: [`docs/SPEC-SAVED-FOLDERS.md`](../docs/SPEC-SAVED-FOLDERS.md). 
 - [x] Mantener `Sin carpeta` como categoría virtual para elementos antiguos o no clasificados.
 - [x] Validar propiedad de usuario en consultas, callbacks, guardado y paginación.
 - [x] Eliminar carpetas junto con los datos mediante `/borrar_datos CONFIRMAR`.
-- [x] Aplicar y probar localmente las migraciones `0009_saved_folders.sql` y `0010_saved_folder_context.sql`.
+- [x] Añadir `/borrar_bd` para el administrador con tres confirmaciones exactas antes de vaciar todos los datos de la base.
+- [x] Aplicar y probar localmente las migraciones de carpetas y confirmaciones globales hasta `0012_global_reset_confirmations.sql`.
 
 Decisiones pendientes para otro día:
 
