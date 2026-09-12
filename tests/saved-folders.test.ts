@@ -3,9 +3,12 @@ import { createSqliteDb } from "./helpers/sqlite-db";
 import {
   createFolder,
   createNote,
+  deleteFolder,
   findSimilarFolder,
+  moveNoteToFolder,
   listFolders,
   listNotes,
+  renameFolder,
 } from "../src/modules/notes/repository";
 
 async function seedUser(db: D1Database, telegramUserId: number): Promise<number> {
@@ -89,4 +92,49 @@ describe("saved folder repository", () => {
     expect(match?.similarity).toBeGreaterThanOrEqual(0.7);
     await expect(findSimilarFolder(db, userId, "Recetas de cocina")).resolves.toBeNull();
   });
+
+  it("renames a folder without allowing a duplicate normalized name", async () => {
+    const { db } = createSqliteDb();
+    const userId = await seedUser(db, 1007);
+    await createFolder(db, { userId, name: "Familia" });
+    await createFolder(db, { userId, name: "Trabajo" });
+
+    await expect(renameFolder(db, { userId, currentName: "Familia", newName: "Personal" })).resolves.toEqual({
+      id: 1,
+      name: "Personal",
+    });
+    await expect(renameFolder(db, { userId, currentName: "Personal", newName: " trabajo " })).rejects.toThrow("Folder name already exists");
+    await expect(getFolderByNameForTest(db, userId, "Personal")).resolves.toEqual({ id: 1, name: "Personal" });
+  });
+
+  it("deletes a folder while preserving its notes as unfiled", async () => {
+    const { db } = createSqliteDb();
+    const userId = await seedUser(db, 1008);
+    const folder = await createFolder(db, { userId, name: "Temporal" });
+    await createNote(db, { userId, content: "conservar", folderId: folder.id });
+
+    await expect(deleteFolder(db, { userId, name: "Temporal" })).resolves.toEqual({ id: folder.id, name: "Temporal" });
+    await expect(listNotes(db, userId, undefined, "all", null)).resolves.toMatchObject({ notes: [{ content: "conservar" }] });
+    await expect(listFolders(db, userId, "all")).resolves.toEqual([{ id: null, name: "Sin carpeta", count: 1 }]);
+  });
+
+  it("moves a note only within the authenticated user's folders", async () => {
+    const { db } = createSqliteDb();
+    const userId = await seedUser(db, 1009);
+    const otherUserId = await seedUser(db, 1010);
+    const source = await createFolder(db, { userId, name: "Entrada" });
+    const destination = await createFolder(db, { userId, name: "Archivo" });
+    const otherFolder = await createFolder(db, { userId: otherUserId, name: "Archivo" });
+    const noteId = await createNote(db, { userId, content: "mover", folderId: source.id });
+
+    await expect(moveNoteToFolder(db, { userId, noteId, folderId: destination.id })).resolves.toBe(true);
+    await expect(listNotes(db, userId, undefined, "all", destination.id)).resolves.toMatchObject({ notes: [{ id: noteId, content: "mover" }] });
+    await expect(moveNoteToFolder(db, { userId, noteId, folderId: otherFolder.id })).rejects.toThrow("Folder not found");
+    await expect(moveNoteToFolder(db, { userId, noteId, folderId: null })).resolves.toBe(true);
+  });
 });
+
+async function getFolderByNameForTest(db: D1Database, userId: number, name: string) {
+  return db.prepare("SELECT id, name FROM saved_folders WHERE user_id = ? AND normalized_name = ?")
+    .bind(userId, name.toLocaleLowerCase("es-MX")).first<{ id: number; name: string }>();
+}

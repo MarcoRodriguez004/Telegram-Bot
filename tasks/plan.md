@@ -154,3 +154,24 @@ La especificación aprobada está en [`docs/SPEC-TASK-REMINDER-QUERIES.md`](../d
 | Edición abandonada | Sesión temporal por usuario con expiración y botón de cancelación |
 | Cambio de estado durante el scheduler | Actualizaciones condicionadas por estado y exclusión de cancelados en el reclamo |
 | Migración incompatible con CHECK existente | Añadir columnas derivadas (`cancelled_at`) sin reescribir tablas; conservar estados actuales del scheduler |
+
+## Incremento actual: administración de carpetas y verificación de avisos
+
+### Tareas
+
+1. Añadir renombrado, eliminación segura y movimiento de guardados entre carpetas, siempre filtrando por `user_id`.
+2. Mostrar las carpetas vacías en un bloque separado (`📂 Carpetas vacías`) sin mezclar contenido ni borrar guardados al eliminar una carpeta; sus elementos pasarán a `Sin carpeta`.
+3. Ejecutar smoke tests de producción para avisos persistentes: configuración individual, repetición, detener avisos, completar y cancelar.
+
+### Criterios de aceptación
+
+- [ ] `Renombra la carpeta X a Y` actualiza el nombre y rechaza duplicados normalizados.
+- [ ] `Elimina la carpeta X` solicita confirmación y conserva sus guardados en `Sin carpeta`.
+- [ ] `Mueve el guardado 123 a Y` cambia únicamente el guardado del usuario autenticado; `Sin carpeta` permite quitar la clasificación.
+- [ ] `Mis carpetas` muestra las carpetas sin contenido en un bloque separado y no las presenta como si tuvieran guardados.
+- [ ] La operación de un usuario no puede leer ni modificar carpetas o guardados de otro usuario.
+- [ ] El smoke test confirma que los avisos están apagados por defecto, se pueden configurar, detener definitivamente y completar/cancelar desde Telegram.
+
+### Decisión de seguridad
+
+Eliminar una carpeta no elimina los guardados: la operación usa `folder_id = NULL` y después borra la carpeta. Esto evita pérdida de datos y conserva la categoría virtual `Sin carpeta`. El movimiento y el renombrado requieren que el origen y el destino pertenezcan al mismo usuario.

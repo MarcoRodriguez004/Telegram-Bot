@@ -90,6 +90,62 @@ export async function getFolderById(db: D1Database, userId: number, folderId: nu
     .bind(userId, folderId).first<SavedFolder>();
 }
 
+export async function renameFolder(
+  db: D1Database,
+  input: { userId: number; currentName: string; newName: string },
+): Promise<SavedFolder | null> {
+  assertUserId(input.userId);
+  const current = await getFolderByName(db, input.userId, input.currentName);
+  if (!current) return null;
+
+  const { name, normalizedName } = assertFolderName(input.newName);
+  const duplicate = await db.prepare(
+    "SELECT id FROM saved_folders WHERE user_id = ? AND normalized_name = ? AND id != ?",
+  ).bind(input.userId, normalizedName, current.id).first<{ id: number }>();
+  if (duplicate) throw new Error("Folder name already exists");
+
+  await db.prepare(
+    "UPDATE saved_folders SET name = ?, normalized_name = ? WHERE user_id = ? AND id = ?",
+  ).bind(name, normalizedName, input.userId, current.id).run();
+  return { id: current.id, name };
+}
+
+export async function deleteFolder(
+  db: D1Database,
+  input: { userId: number; name: string },
+): Promise<SavedFolder | null> {
+  assertUserId(input.userId);
+  const folder = await getFolderByName(db, input.userId, input.name);
+  if (!folder) return null;
+
+  await db.batch([
+    db.prepare("UPDATE notes SET folder_id = NULL WHERE user_id = ? AND folder_id = ?").bind(input.userId, folder.id),
+    db.prepare("DELETE FROM saved_folders WHERE user_id = ? AND id = ?").bind(input.userId, folder.id),
+  ]);
+  return folder;
+}
+
+export async function moveNoteToFolder(
+  db: D1Database,
+  input: { userId: number; noteId: number; folderId: number | null },
+): Promise<boolean> {
+  assertUserId(input.userId);
+  if (!Number.isSafeInteger(input.noteId) || input.noteId < 1) throw new Error("Note id is invalid");
+  if (input.folderId !== null) {
+    assertFolderId(input.folderId);
+    const folder = await getFolderById(db, input.userId, input.folderId);
+    if (!folder) throw new Error("Folder not found");
+  }
+
+  const note = await db.prepare("SELECT id FROM notes WHERE user_id = ? AND id = ?")
+    .bind(input.userId, input.noteId).first<{ id: number }>();
+  if (!note) throw new Error("Note not found");
+
+  const result = await db.prepare("UPDATE notes SET folder_id = ? WHERE user_id = ? AND id = ?")
+    .bind(input.folderId, input.userId, input.noteId).run();
+  return result.meta.changes > 0;
+}
+
 export async function findSimilarFolder(
   db: D1Database,
   userId: number,
