@@ -456,10 +456,15 @@ async function getReply(
       let folderId: number | undefined;
       let folderLabel = "";
       if (intent.folderName !== undefined) {
-        const folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, intent.folderName);
-        if (!folder) return `No existe la carpeta «${intent.folderName}». Créala con «Crea la carpeta ${intent.folderName}» y vuelve a enviar la nota.`;
+        let folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, intent.folderName);
+        let folderCreated = false;
+        if (!folder) {
+          const createdFolder = await createFolder(env.PERSONAL_ASSISTANT_DB, { userId, name: intent.folderName });
+          folder = createdFolder;
+          folderCreated = createdFolder.created;
+        }
         folderId = folder.id;
-        folderLabel = `\nCarpeta: ${folder.name}`;
+        folderLabel = `${folderCreated ? `\n📁 Carpeta creada: ${folder.name}` : ""}\nCarpeta: ${folder.name}`;
       }
       await createNote(env.PERSONAL_ASSISTANT_DB, {
         userId,

@@ -52,4 +52,4 @@ Decisiones pendientes para otro día:
 
 - [ ] Añadir renombrado, eliminación y movimiento de elementos entre carpetas.
 - [ ] Decidir si las carpetas vacías deben mostrarse en un bloque adicional.
-- [ ] Mantener creación explícita: una carpeta inexistente no se crea automáticamente por posibles errores de escritura.
+- [x] Crear automáticamente una carpeta inexistente cuando el usuario la indica explícitamente al guardar; las consultas no crean carpetas.

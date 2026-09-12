@@ -48,6 +48,18 @@ function setup() {
 }
 
 describe("saved folders webhook flow", () => {
+  it("creates a missing folder when a media caption assigns it", async () => {
+    const { send, sent, database } = setup();
+    await send({
+      photo: [{ file_id: "photo_large", file_unique_id: "unique-new-folder", width: 100, height: 100 }],
+      caption: "Guarda INE en docs personales",
+    });
+
+    expect(sent.at(-1)?.body.text).toContain("Carpeta creada: docs personales");
+    expect(database.sqlite.prepare("SELECT name FROM saved_folders WHERE user_id = 1").get()).toMatchObject({ name: "docs personales" });
+    expect(database.sqlite.prepare("SELECT folder_id FROM notes WHERE user_id = 1").get()).toMatchObject({ folder_id: 1 });
+  });
+
   it("groups folders by type and lists only the selected folder", async () => {
     const { send, callback, sent } = setup();
     await send({ text: "Crea la carpeta Familia" });
@@ -68,15 +80,13 @@ describe("saved folders webhook flow", () => {
     expect(sent.at(-2)?.body.text).not.toContain("recibo");
   });
 
-  it("does not create an unknown folder while saving and blocks another user's callback", async () => {
+  it("creates a missing folder while saving and blocks another user's callback", async () => {
     const { send, callback, sent, database } = setup();
     await send({ text: "Nota una nota en Errata" });
-    expect(sent.at(-1)?.body.text).toContain("No existe la carpeta");
-    expect(database.sqlite.prepare("SELECT COUNT(*) AS count FROM notes").get()).toMatchObject({ count: 0 });
-
-    await send({ text: "Crea la carpeta Privada" });
-    await send({ text: "Nota una nota en Privada" });
-    const folderId = database.sqlite.prepare("SELECT id FROM saved_folders WHERE user_id = 1").get() as { id: number };
+    expect(sent.at(-1)?.body.text).toContain("Nota guardada");
+    expect(database.sqlite.prepare("SELECT COUNT(*) AS count FROM notes").get()).toMatchObject({ count: 1 });
+    const folderId = database.sqlite.prepare("SELECT id FROM saved_folders WHERE user_id = 1 AND name = 'Errata'").get() as { id: number };
+    expect(database.sqlite.prepare("SELECT folder_id FROM notes WHERE user_id = 1").get()).toMatchObject({ folder_id: folderId.id });
     const response = await callback(`pa:f:i:l:${folderId.id}`, 99);
     expect(response.status).toBe(200);
     expect(sent.at(-2)?.body.text).toContain("Esta carpeta ya no está disponible");

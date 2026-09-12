@@ -1,7 +1,7 @@
 import { ensureUser } from "../../db/users";
 import type { TelegramAttachment, TelegramMessage } from "../../telegram/types";
 import type { Env } from "../../types";
-import { getFolderByName, createNote } from "./repository";
+import { createFolder, createNote, getFolderByName } from "./repository";
 import { extractFolderInstruction } from "../../router/parser";
 
 export async function saveMedia(message: TelegramMessage, env: Env): Promise<string> {
@@ -33,15 +33,19 @@ export async function saveMedia(message: TelegramMessage, env: Env): Promise<str
     timezone: env.APP_TIMEZONE, currency: env.DEFAULT_CURRENCY,
   });
   let folderId: number | undefined;
+  let folderLabel = "";
   if (folderInstruction.folderName) {
-    const folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, folderInstruction.folderName);
+    let folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, folderInstruction.folderName);
+    let folderCreated = false;
     if (!folder) {
-      return `No existe la carpeta «${folderInstruction.folderName}». Créala con «Crea la carpeta ${folderInstruction.folderName}» y vuelve a enviar el archivo.`;
+      const createdFolder = await createFolder(env.PERSONAL_ASSISTANT_DB, { userId, name: folderInstruction.folderName });
+      folder = createdFolder;
+      folderCreated = createdFolder.created;
     }
     folderId = folder.id;
+    folderLabel = `${folderCreated ? `\n📁 Carpeta creada: ${folder.name}` : ""}\nCarpeta: ${folder.name}`;
   }
   const id = await createNote(env.PERSONAL_ASSISTANT_DB, { userId, content, attachment, folderId });
   const label = attachment.kind === "photo" ? "Foto guardada" : "Documento guardado";
-  const folderLabel = folderInstruction.folderName ? `\nCarpeta: ${folderInstruction.folderName}` : "";
   return `📎 ${label}${folderLabel}\n\n${content}\n\nVer: /guardado_${id}\nLista: /guardados`;
 }

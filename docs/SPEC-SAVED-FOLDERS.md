@@ -1,6 +1,6 @@
 # Especificación: carpetas y datos personales en guardados
 
-**Estado:** implementada localmente; pendiente de publicar tras revisión
+**Estado:** implementada y desplegada en `Dev` y `main`
 **Módulo:** `saved-folders`
 **Base actual:** guardados en `notes`, adjuntos referenciados por `file_id` de Telegram y migraciones hasta `0010_saved_folder_context.sql`.
 
@@ -22,12 +22,12 @@ Los nombres se normalizarán para evitar duplicados por mayúsculas, espacios re
 
 ### Guardar y clasificar
 
-- El usuario puede crear una carpeta con `crea la carpeta Trabajo`. También puede indicar una carpeta al guardar usando `Guarda este INE en Documentos personales`; si la carpeta no existe, el bot no guarda el elemento, muestra el nombre detectado y pide crearla antes de volver a enviarlo.
+- El usuario puede crear una carpeta con `crea la carpeta Trabajo`. También puede indicar una carpeta al guardar usando `Guarda este INE en Documentos personales`; si la carpeta no existe, el bot la crea automáticamente porque el usuario la indicó explícitamente y guarda el elemento en ella.
 - La carpeta es opcional. Si no se indica, el elemento queda en `Sin carpeta`, conservando el comportamiento actual de `Guarda`.
 - El nombre de la carpeta debe aparecer explícitamente en el mensaje. No se clasificará automáticamente por palabras como `INE`, `factura` o `trabajo`.
-- Una carpeta desconocida no se crea silenciosamente por una posible errata: el bot muestra el nombre detectado y explica que primero debe crearse con `Crea la carpeta ...`.
+- Una carpeta desconocida solo se crea cuando aparece explícitamente en una instrucción de guardado; las consultas no crean carpetas por una posible errata.
 - La misma carpeta puede contener notas, enlaces, fotos y documentos. Para fotos y documentos se conserva el flujo actual: se guarda la referencia de Telegram, no se descarga el archivo.
-- La IA, si está habilitada, podrá proponer únicamente un nombre de carpeta acotado por longitud; el Worker vuelve a validarlo y nunca crea una carpeta implícitamente.
+- La IA, si está habilitada, podrá proponer únicamente un nombre de carpeta acotado por longitud; el Worker vuelve a validarlo y solo la crea cuando forma parte de una instrucción explícita para guardar.
 
 ### Navegación
 
@@ -121,15 +121,15 @@ No se ejecutará una migración remota hasta que la migración local, las prueba
 ## Criterios de aceptación
 
 - [ ] Un guardado sin carpeta sigue funcionando y queda en `Sin carpeta`.
-- [ ] `Guarda este INE en Documentos personales` informa si la carpeta no existe y permite guardarlo después de crearla explícitamente.
-- [ ] Un usuario puede crear y listar carpetas con nombres arbitrarios dentro de los límites.
-- [ ] `mis carpetas` muestra bloques de imágenes, archivos y enlaces/notas.
-- [ ] `mis imágenes`, `mis archivos` y `mis enlaces` muestran carpetas antes de listar elementos.
-- [ ] La selección de una carpeta muestra únicamente los elementos de ese tipo y usuario.
-- [ ] La paginación por carpeta no repite ni pierde elementos cuando llegan guardados nuevos.
-- [ ] Las consultas y callbacks no permiten acceso cruzado entre usuarios.
-- [ ] El borrado de datos elimina las colecciones y sus guardados de D1, pero conserva el anti-replay.
-- [ ] Pasan tests, lint, typecheck, build y auditoría de dependencias sin degradar los quality gates existentes.
+- [x] `Guarda este INE en Documentos personales` crea la carpeta si no existe y guarda el elemento en ella.
+- [x] Un usuario puede crear y listar carpetas con nombres arbitrarios dentro de los límites.
+- [x] `mis carpetas` muestra bloques de imágenes, archivos y enlaces/notas.
+- [x] `mis imágenes`, `mis archivos` y `mis enlaces` muestran carpetas antes de listar elementos.
+- [x] La selección de una carpeta muestra únicamente los elementos de ese tipo y usuario.
+- [x] La paginación por carpeta no repite ni pierde elementos cuando llegan guardados nuevos.
+- [x] Las consultas y callbacks no permiten acceso cruzado entre usuarios.
+- [x] El borrado de datos elimina las colecciones y sus guardados de D1, pero conserva el anti-replay.
+- [x] Pasan tests, lint, typecheck, build y auditoría de dependencias sin degradar los quality gates existentes.
 
 ## Decisiones aprobadas
 
