@@ -52,15 +52,15 @@ Especificación: [`docs/SPEC-SAVED-FOLDERS.md`](../docs/SPEC-SAVED-FOLDERS.md). 
 
 Decisiones pendientes para otro día:
 
-- [ ] Añadir renombrado, eliminación y movimiento de elementos entre carpetas.
-- [ ] Decidir si las carpetas vacías deben mostrarse en un bloque adicional.
+- [x] Añadir renombrado, eliminación y movimiento de elementos entre carpetas.
+- [x] Decidir si las carpetas vacías deben mostrarse en un bloque adicional.
 - [x] Crear automáticamente una carpeta inexistente cuando el usuario la indica explícitamente al guardar; las consultas no crean carpetas.
 - [x] Pedir confirmación si el nombre solicitado coincide en 70% o más con una carpeta existente, incluyendo guardados multimedia pendientes.
 
 ## Incremento actual: administración de carpetas y smoke test de avisos
 
-- [ ] Implementar renombrado de carpetas con validación de duplicados por usuario.
-- [ ] Implementar eliminación confirmada conservando los guardados en `Sin carpeta`.
-- [ ] Implementar movimiento de guardados entre carpetas, incluyendo `Sin carpeta`.
-- [ ] Mostrar carpetas vacías en un bloque separado.
-- [ ] Ejecutar smoke test de producción para avisos persistentes individuales y acciones de detener/completar/cancelar.
+- [x] Implementar renombrado de carpetas con validación de duplicados por usuario.
+- [x] Implementar eliminación confirmada conservando los guardados en `Sin carpeta`.
+- [x] Implementar movimiento de guardados entre carpetas, incluyendo `Sin carpeta`.
+- [x] Mostrar carpetas vacías en un bloque separado.
+- [ ] Ejecutar smoke test de producción para avisos persistentes individuales y acciones de detener/completar/cancelar; pendiente porque esta sesión no tiene Telegram Desktop/Web conectado.

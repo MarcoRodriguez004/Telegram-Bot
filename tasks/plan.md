@@ -165,12 +165,12 @@ La especificación aprobada está en [`docs/SPEC-TASK-REMINDER-QUERIES.md`](../d
 
 ### Criterios de aceptación
 
-- [ ] `Renombra la carpeta X a Y` actualiza el nombre y rechaza duplicados normalizados.
-- [ ] `Elimina la carpeta X` solicita confirmación y conserva sus guardados en `Sin carpeta`.
-- [ ] `Mueve el guardado 123 a Y` cambia únicamente el guardado del usuario autenticado; `Sin carpeta` permite quitar la clasificación.
-- [ ] `Mis carpetas` muestra las carpetas sin contenido en un bloque separado y no las presenta como si tuvieran guardados.
-- [ ] La operación de un usuario no puede leer ni modificar carpetas o guardados de otro usuario.
-- [ ] El smoke test confirma que los avisos están apagados por defecto, se pueden configurar, detener definitivamente y completar/cancelar desde Telegram.
+- [x] `Renombra la carpeta X a Y` actualiza el nombre y rechaza duplicados normalizados.
+- [x] `Elimina la carpeta X` solicita confirmación y conserva sus guardados en `Sin carpeta`.
+- [x] `Mueve el guardado 123 a Y` cambia únicamente el guardado del usuario autenticado; `Sin carpeta` permite quitar la clasificación.
+- [x] `Mis carpetas` muestra las carpetas sin contenido en un bloque separado y no las presenta como si tuvieran guardados.
+- [x] La operación de un usuario no puede leer ni modificar carpetas o guardados de otro usuario.
+- [ ] El smoke test confirma que los avisos están apagados por defecto, se pueden configurar, detener definitivamente y completar/cancelar desde Telegram. Bloqueado hasta tener Telegram Desktop/Web conectado a esta sesión.
 
 ### Decisión de seguridad
 
