@@ -3,11 +3,14 @@ import { ensureUser } from "../src/db/users";
 import { deleteUserData } from "../src/modules/privacy/repository";
 import {
   clearPendingConfirmation,
+  clearPendingFolderSave,
   clearPendingListContext,
+  getPendingFolderSave,
   getPendingConfirmation,
   getPendingListContext,
   getSavedNotesContext,
   savePendingConfirmation,
+  savePendingFolderSave,
   savePendingListContext,
   saveSavedNotesContext,
 } from "../src/modules/conversation/repository";
@@ -89,6 +92,44 @@ describe("conversation context", () => {
     await clearPendingListContext(db, userId);
   });
 
+  it("keeps a pending folder decision with its media and expires it", async () => {
+    const { db, userId } = await setup();
+    const folder = await db.prepare(
+      "INSERT INTO saved_folders (user_id, name, normalized_name, created_at) VALUES (?, ?, ?, ?)",
+    ).bind(userId, "Documentos personales", "documentos personales", "2026-09-09T00:00:00.000Z").run();
+
+    await savePendingFolderSave(db, {
+      userId,
+      chatId: 42,
+      pending: {
+        content: "INE",
+        attachment: { kind: "photo", fileId: "photo_pending" },
+        requestedFolderName: "Documentos personles",
+        existingFolderId: folder.meta.last_row_id,
+        existingFolderName: "Documentos personales",
+      },
+      now: new Date("2026-09-09T00:00:00.000Z"),
+    });
+
+    await expect(getPendingFolderSave(db, {
+      userId,
+      chatId: 42,
+      now: new Date("2026-09-09T00:05:00.000Z"),
+    })).resolves.toEqual({
+      content: "INE",
+      attachment: { kind: "photo", fileId: "photo_pending" },
+      requestedFolderName: "Documentos personles",
+      existingFolderId: folder.meta.last_row_id,
+      existingFolderName: "Documentos personales",
+    });
+    await expect(getPendingFolderSave(db, {
+      userId,
+      chatId: 42,
+      now: new Date("2026-09-09T00:16:00.000Z"),
+    })).resolves.toBeNull();
+    await clearPendingFolderSave(db, userId);
+  });
+
   it("keeps the latest saved-notes query for the same chat", async () => {
     const { db, userId } = await setup();
 
@@ -153,12 +194,26 @@ describe("conversation context", () => {
       question: "¿Quisiste decir tareas?",
       suggestedText: "mis tareas",
     });
+    const folder = await db.prepare(
+      "INSERT INTO saved_folders (user_id, name, normalized_name, created_at) VALUES (?, ?, ?, ?)",
+    ).bind(userId, "Documentos", "documentos", "2026-09-09T00:00:00.000Z").run();
+    await savePendingFolderSave(db, {
+      userId,
+      chatId: 42,
+      pending: {
+        content: "INE",
+        requestedFolderName: "Documentosss",
+        existingFolderId: folder.meta.last_row_id,
+        existingFolderName: "Documentos",
+      },
+    });
 
     await deleteUserData(db, 42);
 
     expect(sqlite.prepare("SELECT * FROM conversation_context").all()).toHaveLength(0);
     expect(sqlite.prepare("SELECT * FROM pending_conversation").all()).toHaveLength(0);
     expect(sqlite.prepare("SELECT * FROM conversation_confirmations").all()).toHaveLength(0);
+    expect(sqlite.prepare("SELECT * FROM pending_folder_saves").all()).toHaveLength(0);
     await expect(getSavedNotesContext(db, { userId, chatId: 42 })).resolves.toBeNull();
   });
 });

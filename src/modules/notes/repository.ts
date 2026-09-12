@@ -19,6 +19,11 @@ export interface SavedFolder {
   name: string;
 }
 
+export interface SimilarFolderMatch {
+  folder: SavedFolder;
+  similarity: number;
+}
+
 export interface SavedFolderListItem {
   id: number | null;
   name: string;
@@ -83,6 +88,34 @@ export async function getFolderById(db: D1Database, userId: number, folderId: nu
   assertFolderId(folderId);
   return db.prepare("SELECT id, name FROM saved_folders WHERE user_id = ? AND id = ?")
     .bind(userId, folderId).first<SavedFolder>();
+}
+
+export async function findSimilarFolder(
+  db: D1Database,
+  userId: number,
+  name: string,
+  threshold = 0.7,
+): Promise<SimilarFolderMatch | null> {
+  assertUserId(userId);
+  const { normalizedName } = assertFolderName(name);
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    throw new Error("Folder similarity threshold is invalid");
+  }
+
+  const folders = await db.prepare(
+    "SELECT id, name, normalized_name FROM saved_folders WHERE user_id = ? ORDER BY id",
+  ).bind(userId).all<{ id: number; name: string; normalized_name: string }>();
+
+  let best: SimilarFolderMatch | null = null;
+  for (const folder of folders.results) {
+    const similarity = stringSimilarity(normalizedName, folder.normalized_name);
+    if (similarity < threshold || (best && similarity <= best.similarity)) continue;
+    best = {
+      folder: { id: folder.id, name: folder.name },
+      similarity,
+    };
+  }
+  return best;
 }
 
 export async function listFolders(
@@ -221,4 +254,26 @@ function savedNoteKindCondition(kind: SavedNoteKind, alias?: string): string {
       : kind === "links"
         ? ` AND ${prefix}file_kind IS NULL`
         : "";
+}
+
+function stringSimilarity(left: string, right: string): number {
+  const maxLength = Math.max(left.length, right.length);
+  if (maxLength === 0) return 1;
+  return 1 - levenshteinDistance(left, right) / maxLength;
+}
+
+function levenshteinDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    let previousDiagonal = previous[0];
+    previous[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const current = previous[rightIndex];
+      previous[rightIndex] = left[leftIndex - 1] === right[rightIndex - 1]
+        ? previousDiagonal
+        : Math.min(previous[rightIndex - 1] + 1, previous[rightIndex] + 1, previousDiagonal + 1);
+      previousDiagonal = current;
+    }
+  }
+  return previous[right.length];
 }

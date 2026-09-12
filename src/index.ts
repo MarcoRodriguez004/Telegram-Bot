@@ -25,7 +25,7 @@ import {
 import type { NotificationIntervalMinutes, NotificationScope } from "./modules/notifications/repository";
 import { createExpense, getExpenseHistory } from "./modules/expenses/repository";
 import type { ExpenseHistoryResult } from "./modules/expenses/repository";
-import { createFolder, createNote, getFolderByName, getNote, listFolders, listNotes } from "./modules/notes/repository";
+import { createFolder, createNote, findSimilarFolder, getFolderById, getFolderByName, getNote, listFolders, listNotes } from "./modules/notes/repository";
 import type { SavedNote, SavedNoteKind } from "./modules/notes/repository";
 import { saveMedia } from "./modules/notes/media";
 import { getSummary } from "./modules/summary/repository";
@@ -42,15 +42,19 @@ import type { TaskListItem } from "./modules/tasks/repository";
 import { clearEditSession, getActiveEditSession, startEditSession } from "./modules/edit-sessions/repository";
 import {
   clearPendingConfirmation,
+  clearPendingFolderSave,
   clearPendingListContext,
   getPendingConfirmation,
+  getPendingFolderSave,
   getPendingListContext,
   getSavedNotesContext,
   savePendingConfirmation,
+  savePendingFolderSave,
   savePendingListContext,
   saveSavedNotesContext,
 } from "./modules/conversation/repository";
 import type { PendingConfirmationContext, PendingListContext } from "./modules/conversation/repository";
+import { buildFolderConflictReply } from "./modules/notes/folder-conflict";
 import { parseIntent } from "./router/parser";
 import type { Intent } from "./router/intent";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
@@ -157,7 +161,7 @@ export async function handleRequest(
 
     if (update.message?.photo || update.message?.document) {
       const reply = await saveMedia(update.message, env);
-      await sendMessage(env, update.message.chat.id, reply, telegramFetch);
+      await sendBotReply(env, update.message.chat.id, reply, telegramFetch);
       return new Response(null, { status: 200 });
     }
 
@@ -459,6 +463,21 @@ async function getReply(
         let folder = await getFolderByName(env.PERSONAL_ASSISTANT_DB, userId, intent.folderName);
         let folderCreated = false;
         if (!folder) {
+          const similar = await findSimilarFolder(env.PERSONAL_ASSISTANT_DB, userId, intent.folderName);
+          if (similar) {
+            await savePendingFolderSave(env.PERSONAL_ASSISTANT_DB, {
+              userId,
+              chatId: message.chat.id,
+              pending: {
+                content: intent.content,
+                url: intent.url,
+                requestedFolderName: intent.folderName,
+                existingFolderId: similar.folder.id,
+                existingFolderName: similar.folder.name,
+              },
+            });
+            return buildFolderConflictReply(similar.folder.name, intent.folderName);
+          }
           const createdFolder = await createFolder(env.PERSONAL_ASSISTANT_DB, { userId, name: intent.folderName });
           folder = createdFolder;
           folderCreated = createdFolder.created;
@@ -472,6 +491,7 @@ async function getReply(
         url: intent.url,
         folderId,
       });
+      await clearPendingFolderSave(env.PERSONAL_ASSISTANT_DB, userId);
       const savedContent = intent.url && intent.content !== intent.url ? `${intent.content}\n${intent.url}` : intent.content;
       return `🔖 Nota guardada${folderLabel}\n\n${savedContent}`;
     }
@@ -624,6 +644,53 @@ async function handleCallbackQuery(
         : `Avisos persistentes activados cada ${action.intervalMinutes} minutos para ${notificationScopeLabel(action.scope)}.`,
       telegramFetch,
     );
+    return;
+  }
+
+  if (action.kind === "folder_conflict") {
+    const pending = await getPendingFolderSave(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: source.chat.id,
+    });
+    if (!pending) {
+      await sendMessage(env, source.chat.id, "Esta decisión ya no está disponible. Vuelve a enviar el archivo o la nota.", telegramFetch);
+      return;
+    }
+
+    let folderCreated = false;
+    let folder: { id: number; name: string } | null;
+    if (action.decision === "use_existing") {
+      folder = await getFolderById(env.PERSONAL_ASSISTANT_DB, userId, pending.existingFolderId);
+    } else {
+      const createdFolder = await createFolder(env.PERSONAL_ASSISTANT_DB, { userId, name: pending.requestedFolderName });
+      folder = createdFolder;
+      folderCreated = createdFolder.created;
+    }
+    if (!folder) {
+      await clearPendingFolderSave(env.PERSONAL_ASSISTANT_DB, userId);
+      await sendMessage(env, source.chat.id, "La carpeta existente ya no está disponible. Vuelve a enviar la nota o el archivo.", telegramFetch);
+      return;
+    }
+    try {
+      const noteId = await createNote(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        content: pending.content,
+        url: pending.url,
+        folderId: folder.id,
+        attachment: pending.attachment,
+      });
+      await clearPendingFolderSave(env.PERSONAL_ASSISTANT_DB, userId);
+      const folderLabel = `${folderCreated ? `\n📁 Carpeta creada: ${folder.name}` : ""}\nCarpeta: ${folder.name}`;
+      if (pending.attachment) {
+        const label = pending.attachment.kind === "photo" ? "Foto guardada" : "Documento guardado";
+        await sendMessage(env, source.chat.id, `📎 ${label}${folderLabel}\n\n${pending.content}\n\nVer: /guardado_${noteId}\nLista: /guardados`, telegramFetch);
+      } else {
+        const savedContent = pending.url && pending.content !== pending.url ? `${pending.content}\n${pending.url}` : pending.content;
+        await sendMessage(env, source.chat.id, `🔖 Nota guardada${folderLabel}\n\n${savedContent}`, telegramFetch);
+      }
+    } catch {
+      await sendMessage(env, source.chat.id, "No pude guardar el elemento. Vuelve a enviarlo para intentarlo de nuevo.", telegramFetch);
+    }
     return;
   }
 

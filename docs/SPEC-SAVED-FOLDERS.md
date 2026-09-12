@@ -2,7 +2,7 @@
 
 **Estado:** implementada y desplegada en `Dev` y `main`
 **Módulo:** `saved-folders`
-**Base actual:** guardados en `notes`, adjuntos referenciados por `file_id` de Telegram y migraciones hasta `0010_saved_folder_context.sql`.
+**Base actual:** guardados en `notes`, adjuntos referenciados por `file_id` de Telegram y migraciones hasta `0011_pending_folder_saves.sql`.
 
 ## Objetivo
 
@@ -23,6 +23,7 @@ Los nombres se normalizarán para evitar duplicados por mayúsculas, espacios re
 ### Guardar y clasificar
 
 - El usuario puede crear una carpeta con `crea la carpeta Trabajo`. También puede indicar una carpeta al guardar usando `Guarda este INE en Documentos personales`; si la carpeta no existe, el bot la crea automáticamente porque el usuario la indicó explícitamente y guarda el elemento en ella.
+- Si el nombre indicado no existe pero alcanza una similitud de al menos 70% con una carpeta del mismo usuario, el bot no crea nada automáticamente: muestra el nombre solicitado junto al existente y ofrece `Usar` la existente o `Crear` la nueva. En fotos y documentos la operación queda pendiente durante 15 minutos para no perder el archivo mientras se decide.
 - La carpeta es opcional. Si no se indica, el elemento queda en `Sin carpeta`, conservando el comportamiento actual de `Guarda`.
 - El nombre de la carpeta debe aparecer explícitamente en el mensaje. No se clasificará automáticamente por palabras como `INE`, `factura` o `trabajo`.
 - Una carpeta desconocida solo se crea cuando aparece explícitamente en una instrucción de guardado; las consultas no crean carpetas por una posible errata.
@@ -109,6 +110,7 @@ No se ejecutará una migración remota hasta que la migración local, las prueba
 - Repositorio: creación de carpetas por usuario, deduplicación normalizada, filtros por usuario/tipo/carpeta, orden y paginación.
 - Webhook: guardar una foto, documento, nota o enlace en una carpeta, mostrar bloques y recuperar el elemento correcto.
 - Seguridad: otro usuario no puede listar, abrir ni mutar carpetas o elementos mediante comandos o callbacks.
+- Similitud: una coincidencia de carpeta de 70% o más solicita una decisión y no mezcla operaciones entre usuarios o chats.
 - Privacidad: `/borrar_datos CONFIRMAR` elimina notas y carpetas, conserva `processed_updates` y permite crear carpetas nuevas después.
 - Regresión: mantener todos los casos actuales de `mis guardados`, `/guardado_<id>`, imágenes, documentos, enlaces y contexto temporal.
 
@@ -122,6 +124,7 @@ No se ejecutará una migración remota hasta que la migración local, las prueba
 
 - [ ] Un guardado sin carpeta sigue funcionando y queda en `Sin carpeta`.
 - [x] `Guarda este INE en Documentos personales` crea la carpeta si no existe y guarda el elemento en ella.
+- [x] Un nombre de carpeta con similitud de 70% o más muestra comparación y permite reutilizar o crear; fotos y documentos conservan la operación pendiente mientras se decide.
 - [x] Un usuario puede crear y listar carpetas con nombres arbitrarios dentro de los límites.
 - [x] `mis carpetas` muestra bloques de imágenes, archivos y enlaces/notas.
 - [x] `mis imágenes`, `mis archivos` y `mis enlaces` muestran carpetas antes de listar elementos.

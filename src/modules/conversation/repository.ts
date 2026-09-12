@@ -1,3 +1,7 @@
+import { normalizeHttpUrl } from "../../shared/urls";
+import { isTelegramFileId } from "../../telegram/types";
+import type { TelegramAttachment } from "../../telegram/types";
+
 const CONTEXT_TTL_MS = 15 * 60 * 1000;
 
 export type SavedNotesContext = {
@@ -15,6 +19,15 @@ export type PendingListContext = {
 export type PendingConfirmationContext = {
   question: string;
   suggestedText: string;
+};
+
+export type PendingFolderSave = {
+  content: string;
+  url?: string;
+  attachment?: TelegramAttachment;
+  requestedFolderName: string;
+  existingFolderId: number;
+  existingFolderName: string;
 };
 
 type SavedNotesContextInput = SavedNotesContext & {
@@ -39,6 +52,18 @@ type StoredPendingListContext = {
 type StoredPendingConfirmationContext = {
   question: string;
   suggested_text: string;
+  expires_at: string;
+};
+
+type StoredPendingFolderSave = {
+  chat_id: number;
+  content: string;
+  url: string | null;
+  file_kind: string | null;
+  file_id: string | null;
+  requested_folder_name: string;
+  existing_folder_id: number;
+  existing_folder_name: string;
   expires_at: string;
 };
 
@@ -83,6 +108,86 @@ export async function getPendingConfirmation(
 export async function clearPendingConfirmation(db: D1Database, userId: number): Promise<void> {
   if (!Number.isInteger(userId) || userId <= 0) throw new Error("Context user id is invalid");
   await db.prepare("DELETE FROM conversation_confirmations WHERE user_id = ?").bind(userId).run();
+}
+
+export async function savePendingFolderSave(
+  db: D1Database,
+  input: {
+    userId: number;
+    chatId: number;
+    pending: PendingFolderSave;
+    now?: Date;
+  },
+): Promise<void> {
+  assertIdentifiers(input.userId, input.chatId);
+  const content = input.pending.content.trim().replace(/\s+/g, " ");
+  if (!content || content.length > 1_000) throw new Error("Pending folder content is invalid");
+  const url = input.pending.url === undefined ? null : normalizeHttpUrl(input.pending.url);
+  if (input.pending.url !== undefined && url === null) throw new Error("Pending folder URL is invalid");
+  const requestedFolderName = normalizeFolderName(input.pending.requestedFolderName);
+  const existingFolderName = normalizeFolderName(input.pending.existingFolderName);
+  if (!requestedFolderName || requestedFolderName.length > 80) throw new Error("Pending requested folder name is invalid");
+  if (!existingFolderName || existingFolderName.length > 80) throw new Error("Pending existing folder name is invalid");
+  if (!Number.isSafeInteger(input.pending.existingFolderId) || input.pending.existingFolderId < 1) {
+    throw new Error("Pending existing folder id is invalid");
+  }
+  if (input.pending.attachment && !isValidAttachment(input.pending.attachment)) {
+    throw new Error("Pending folder attachment is invalid");
+  }
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) throw new Error("Context timestamp is invalid");
+  const expiresAt = new Date(now.getTime() + CONTEXT_TTL_MS).toISOString();
+  const fileKind = input.pending.attachment?.kind ?? null;
+  const fileId = input.pending.attachment?.fileId ?? null;
+
+  await db.prepare(
+    "INSERT INTO pending_folder_saves (user_id, chat_id, content, url, file_kind, file_id, requested_folder_name, existing_folder_id, existing_folder_name, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT(user_id) DO UPDATE SET chat_id = excluded.chat_id, content = excluded.content, url = excluded.url, file_kind = excluded.file_kind, file_id = excluded.file_id, requested_folder_name = excluded.requested_folder_name, existing_folder_id = excluded.existing_folder_id, existing_folder_name = excluded.existing_folder_name, created_at = excluded.created_at, expires_at = excluded.expires_at",
+  ).bind(
+    input.userId,
+    input.chatId,
+    content,
+    url,
+    fileKind,
+    fileId,
+    requestedFolderName,
+    input.pending.existingFolderId,
+    existingFolderName,
+    now.toISOString(),
+    expiresAt,
+  ).run();
+}
+
+export async function getPendingFolderSave(
+  db: D1Database,
+  input: { userId: number; chatId: number; now?: Date },
+): Promise<PendingFolderSave | null> {
+  assertIdentifiers(input.userId, input.chatId);
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) throw new Error("Context timestamp is invalid");
+  const row = await db.prepare(
+    "SELECT chat_id, content, url, file_kind, file_id, requested_folder_name, existing_folder_id, existing_folder_name, expires_at FROM pending_folder_saves WHERE user_id = ? AND chat_id = ?",
+  ).bind(input.userId, input.chatId).first<StoredPendingFolderSave>();
+
+  if (!row) return null;
+  if (!isValidPendingFolderSave(row) || new Date(row.expires_at).getTime() <= now.getTime()) {
+    await clearPendingFolderSave(db, input.userId);
+    return null;
+  }
+
+  return {
+    content: row.content,
+    ...(row.url === null ? {} : { url: row.url }),
+    ...(row.file_kind === null || row.file_id === null ? {} : { attachment: { kind: row.file_kind, fileId: row.file_id } }),
+    requestedFolderName: row.requested_folder_name,
+    existingFolderId: row.existing_folder_id,
+    existingFolderName: row.existing_folder_name,
+  };
+}
+
+export async function clearPendingFolderSave(db: D1Database, userId: number): Promise<void> {
+  if (!Number.isInteger(userId) || userId <= 0) throw new Error("Context user id is invalid");
+  await db.prepare("DELETE FROM pending_folder_saves WHERE user_id = ?").bind(userId).run();
 }
 
 export async function savePendingListContext(
@@ -210,6 +315,31 @@ function isValidContext(row: StoredContext): row is StoredContext & { note_kind:
     (row.next_before_id === null || (Number.isSafeInteger(row.next_before_id) && row.next_before_id > 0)) &&
     Number.isFinite(expiresAt)
   );
+}
+
+function normalizeFolderName(value: string): string {
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ");
+}
+
+function isValidAttachment(attachment: TelegramAttachment): boolean {
+  return (attachment.kind === "photo" || attachment.kind === "document") && isTelegramFileId(attachment.fileId);
+}
+
+function isValidPendingFolderSave(row: StoredPendingFolderSave): row is StoredPendingFolderSave & {
+  file_kind: "photo" | "document";
+  file_id: string;
+} {
+  const expiresAt = new Date(row.expires_at).getTime();
+  const hasNoAttachment = row.file_kind === null && row.file_id === null;
+  const hasAttachment = (row.file_kind === "photo" || row.file_kind === "document") && isTelegramFileId(row.file_id);
+  return Number.isInteger(row.chat_id) &&
+    Boolean(row.content) && row.content.length <= 1_000 &&
+    (row.url === null || normalizeHttpUrl(row.url) !== null) &&
+    (hasNoAttachment || hasAttachment) &&
+    Boolean(row.requested_folder_name) && row.requested_folder_name.length <= 80 &&
+    Number.isSafeInteger(row.existing_folder_id) && row.existing_folder_id > 0 &&
+    Boolean(row.existing_folder_name) && row.existing_folder_name.length <= 80 &&
+    Number.isFinite(expiresAt);
 }
 
 function isValidPendingListContext(row: StoredPendingListContext): row is StoredPendingListContext & { resource_type: PendingListResource } {

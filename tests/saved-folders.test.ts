@@ -3,6 +3,7 @@ import { createSqliteDb } from "./helpers/sqlite-db";
 import {
   createFolder,
   createNote,
+  findSimilarFolder,
   listFolders,
   listNotes,
 } from "../src/modules/notes/repository";
@@ -74,5 +75,18 @@ describe("saved folder repository", () => {
       notes: [{ content: "unfiled" }],
     });
     await expect(listNotes(db, userId, undefined, "all", otherFolder.id)).rejects.toThrow("Folder not found");
+  });
+
+  it("finds the closest folder only for the same user when similarity reaches 70%", async () => {
+    const { db } = createSqliteDb();
+    const userId = await seedUser(db, 1005);
+    const otherUserId = await seedUser(db, 1006);
+    const folder = await createFolder(db, { userId, name: "Documentos personales" });
+    await createFolder(db, { userId: otherUserId, name: "Documentos personales" });
+
+    const match = await findSimilarFolder(db, userId, "Documentos personles");
+    expect(match?.folder).toEqual({ id: folder.id, name: folder.name });
+    expect(match?.similarity).toBeGreaterThanOrEqual(0.7);
+    await expect(findSimilarFolder(db, userId, "Recetas de cocina")).resolves.toBeNull();
   });
 });

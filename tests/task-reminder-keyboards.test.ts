@@ -7,6 +7,7 @@ import {
   buildNotificationChoiceKeyboard,
   buildPersistentAlertKeyboard,
   buildFolderKeyboard,
+  buildFolderConflictKeyboard,
   parseCallbackData,
 } from "../src/telegram/keyboards";
 
@@ -100,5 +101,20 @@ describe("task and reminder inline keyboards", () => {
     expect(parseCallbackData(keyboard.inline_keyboard[1][0].callback_data)).toEqual({
       kind: "folder_item", noteKind: "photos", folderId: null,
     });
+  });
+
+  it("asks whether to reuse or create a similar folder", () => {
+    const keyboard = buildFolderConflictKeyboard("Documentos personales", "Documentos personles");
+    expect(keyboard.inline_keyboard.flat().map((button) => button.text)).toEqual([
+      'Usar "Documentos personales"',
+      'Crear "Documentos personles"',
+    ]);
+    expect(parseCallbackData(keyboard.inline_keyboard[0][0].callback_data)).toEqual({
+      kind: "folder_conflict", decision: "use_existing",
+    });
+    expect(parseCallbackData(keyboard.inline_keyboard[1][0].callback_data)).toEqual({
+      kind: "folder_conflict", decision: "create_new",
+    });
+    expect(keyboard.inline_keyboard.flat().every((button) => button.callback_data.length <= 64)).toBe(true);
   });
 });

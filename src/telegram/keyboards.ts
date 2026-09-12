@@ -11,7 +11,8 @@ export type SavedFolderKind = Exclude<SavedNoteKind, "all">;
 
 export type FolderCallbackAction =
   | { kind: "folder_item"; noteKind: SavedFolderKind; folderId: number | null }
-  | { kind: "folder_page"; noteKind: SavedFolderKind; folderId: number | null; beforeId: number };
+  | { kind: "folder_page"; noteKind: SavedFolderKind; folderId: number | null; beforeId: number }
+  | { kind: "folder_conflict"; decision: "use_existing" | "create_new" };
 
 export type CallbackAction =
   | { kind: "filter"; resource: QueryResource; filter: QueryFilter }
@@ -118,6 +119,15 @@ export function buildFolderPageKeyboard(
     }]] };
 }
 
+export function buildFolderConflictKeyboard(existingName: string, requestedName: string): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: `Usar "${clipFolderName(existingName)}"`, callback_data: "pa:f:u" }],
+      [{ text: `Crear "${clipFolderName(requestedName)}"`, callback_data: "pa:f:c" }],
+    ],
+  };
+}
+
 export function buildNotificationChoiceKeyboard(resource: QueryResource, id: number): InlineKeyboardMarkup {
   return {
     inline_keyboard: [
@@ -193,6 +203,12 @@ export function parseCallbackData(data: string | undefined): CallbackAction | nu
     const scope = parseNotificationScope(parts[3]);
     const intervalMinutes = parseNotificationInterval(parts[4]);
     return scope && intervalMinutes !== undefined ? { kind: "notification_global_set", scope, intervalMinutes } : null;
+  }
+  if (parts[1] === "f" && parts[2] === "u" && parts.length === 3) {
+    return { kind: "folder_conflict", decision: "use_existing" };
+  }
+  if (parts[1] === "f" && parts[2] === "c" && parts.length === 3) {
+    return { kind: "folder_conflict", decision: "create_new" };
   }
   if (parts[1] === "f" && parts[2] === "i" && parts.length === 5) {
     const noteKind = savedFolderKindFromCode(parts[3]);
@@ -282,4 +298,8 @@ function formatItemButton(resource: QueryResource, index: number): string {
 
 function resourceCode(resource: QueryResource): "t" | "r" {
   return resource === "task" ? "t" : "r";
+}
+
+function clipFolderName(name: string): string {
+  return name.length <= 42 ? name : `${name.slice(0, 41)}…`;
 }

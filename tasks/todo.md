@@ -53,3 +53,4 @@ Decisiones pendientes para otro día:
 - [ ] Añadir renombrado, eliminación y movimiento de elementos entre carpetas.
 - [ ] Decidir si las carpetas vacías deben mostrarse en un bloque adicional.
 - [x] Crear automáticamente una carpeta inexistente cuando el usuario la indica explícitamente al guardar; las consultas no crean carpetas.
+- [x] Pedir confirmación si el nombre solicitado coincide en 70% o más con una carpeta existente, incluyendo guardados multimedia pendientes.

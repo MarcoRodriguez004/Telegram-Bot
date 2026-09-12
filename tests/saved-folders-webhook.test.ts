@@ -91,4 +91,41 @@ describe("saved folders webhook flow", () => {
     expect(response.status).toBe(200);
     expect(sent.at(-2)?.body.text).toContain("Esta carpeta ya no está disponible");
   });
+
+  it("asks before using a similar folder and can reuse the existing one", async () => {
+    const { send, callback, sent, database } = setup();
+    await send({ text: "Crea la carpeta Documentos personales" });
+    await send({ text: "Nota INE en Documentos personles" });
+
+    const prompt = sent.at(-1)?.body;
+    expect(prompt?.text).toContain("Solicitada: Documentos personles");
+    expect(prompt?.text).toContain("Existente: Documentos personales");
+    const buttons = (prompt?.reply_markup as { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }).inline_keyboard.flat();
+    expect(buttons.map((button) => button.text)).toEqual([
+      'Usar "Documentos personales"',
+      'Crear "Documentos personles"',
+    ]);
+    await callback("pa:f:u");
+
+    expect(sent.at(-2)?.body.text).toContain("Nota guardada");
+    expect(database.sqlite.prepare("SELECT COUNT(*) AS count FROM saved_folders WHERE user_id = 1").get()).toMatchObject({ count: 1 });
+    expect(database.sqlite.prepare("SELECT folder_id FROM notes WHERE user_id = 1").get()).toMatchObject({ folder_id: 1 });
+  });
+
+  it("keeps a media save pending until the user chooses to create the new folder", async () => {
+    const { send, callback, sent, database } = setup();
+    await send({ text: "Crea la carpeta Documentos personales" });
+    await send({
+      photo: [{ file_id: "photo_similar", file_unique_id: "unique-similar", width: 100, height: 100 }],
+      caption: "Guarda INE en Documentos personles",
+    });
+
+    expect(sent.at(-1)?.body.text).toContain("Solicitada: Documentos personles");
+    expect(database.sqlite.prepare("SELECT COUNT(*) AS count FROM notes").get()).toMatchObject({ count: 0 });
+    await callback("pa:f:c");
+
+    expect(sent.at(-2)?.body.text).toContain("Carpeta creada: Documentos personles");
+    expect(database.sqlite.prepare("SELECT name FROM saved_folders WHERE user_id = 1 ORDER BY id DESC LIMIT 1").get()).toMatchObject({ name: "Documentos personles" });
+    expect(database.sqlite.prepare("SELECT folder_id FROM notes WHERE user_id = 1").get()).toMatchObject({ folder_id: 2 });
+  });
 });
