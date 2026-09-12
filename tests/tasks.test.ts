@@ -32,8 +32,8 @@ describe("task repository", () => {
 
     expect(taskId).toBe(7);
     expect(calls[0]).toEqual({
-      query: "INSERT INTO tasks (user_id, title, status, created_at) VALUES (?, ?, 'pending', ?)",
-      values: [3, "comprar medicina", "2026-09-07T20:00:00.000Z"],
+      query: "INSERT INTO tasks (user_id, title, status, due_at, recurrence_rule, created_at) VALUES (?, ?, 'pending', ?, ?, ?)",
+      values: [3, "comprar medicina", null, null, "2026-09-07T20:00:00.000Z"],
     });
   });
 
@@ -48,8 +48,8 @@ describe("task repository", () => {
     });
 
     expect(calls[0]).toEqual({
-      query: "INSERT INTO tasks (user_id, title, status, due_at, created_at) VALUES (?, ?, 'pending', ?, ?)",
-      values: [3, "pagar la luz", "2026-09-12T00:00:00.000Z", "2026-09-10T15:00:00.000Z"],
+      query: "INSERT INTO tasks (user_id, title, status, due_at, recurrence_rule, created_at) VALUES (?, ?, 'pending', ?, ?, ?)",
+      values: [3, "pagar la luz", "2026-09-12T00:00:00.000Z", null, "2026-09-10T15:00:00.000Z"],
     });
   });
 

@@ -1,9 +1,11 @@
-import { disablePersistentNotification } from "../notifications/repository";
+import { disablePersistentNotification, initializePersistentNotification } from "../notifications/repository";
+import { nextRecurringOccurrence, type RecurrenceRule } from "../recurrence";
 
 export interface CreateTaskInput {
   userId: number;
   title: string;
   dueAt?: string | null;
+  recurrenceRule?: RecurrenceRule | null;
   createdAt?: string;
 }
 
@@ -15,6 +17,7 @@ export interface TaskListItem {
   status: "pending" | "completed" | "cancelled";
   dueAt: string | null;
   createdAt: string;
+  recurrenceRule?: RecurrenceRule | null;
 }
 
 export interface ListTasksInput {
@@ -28,6 +31,7 @@ export interface CompleteTaskInput {
   userId: number;
   taskId: number;
   completedAt?: string;
+  timeZone?: string;
 }
 
 export interface CancelTaskInput {
@@ -59,15 +63,11 @@ export async function createTask(db: D1Database, input: CreateTaskInput): Promis
   const dueAt = input.dueAt === undefined || input.dueAt === null ? null : new Date(input.dueAt);
   if (dueAt && Number.isNaN(dueAt.getTime())) throw new Error("Task due date is invalid");
 
-  const result = dueAt
-    ? await db
-      .prepare("INSERT INTO tasks (user_id, title, status, due_at, created_at) VALUES (?, ?, 'pending', ?, ?)")
-      .bind(input.userId, title, dueAt.toISOString(), createdAt)
-      .run()
-    : await db
-      .prepare("INSERT INTO tasks (user_id, title, status, created_at) VALUES (?, ?, 'pending', ?)")
-      .bind(input.userId, title, createdAt)
-      .run();
+  if (input.recurrenceRule !== undefined && input.recurrenceRule !== null) validateRecurrenceRule(input.recurrenceRule);
+  const result = await db
+    .prepare("INSERT INTO tasks (user_id, title, status, due_at, recurrence_rule, created_at) VALUES (?, ?, 'pending', ?, ?, ?)")
+    .bind(input.userId, title, dueAt?.toISOString() ?? null, input.recurrenceRule ?? null, createdAt)
+    .run();
 
   return result.meta.last_row_id;
 }
@@ -90,7 +90,7 @@ export async function listTasks(db: D1Database, input: ListTasksInput): Promise<
   values.push(input.beforeId ?? Number.MAX_SAFE_INTEGER);
 
   const result = await db.prepare(
-    `SELECT id, title, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'done' THEN 'completed' ELSE 'pending' END AS status, due_at AS dueAt, created_at AS createdAt FROM tasks WHERE ${conditions.join(" AND ")} ORDER BY id DESC LIMIT ?`,
+    `SELECT id, title, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'done' THEN 'completed' ELSE 'pending' END AS status, due_at AS dueAt, recurrence_rule AS recurrenceRule, created_at AS createdAt FROM tasks WHERE ${conditions.join(" AND ")} ORDER BY id DESC LIMIT ?`,
   ).bind(...values, limit + 1).all<TaskListItem>();
 
   const tasks = result.results.slice(0, limit);
@@ -101,17 +101,36 @@ export async function getTask(db: D1Database, userId: number, taskId: number): P
   validateUserId(userId);
   validateRecordId(taskId, "Task");
   return db.prepare(
-    "SELECT id, title, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'done' THEN 'completed' ELSE 'pending' END AS status, due_at AS dueAt, created_at AS createdAt FROM tasks WHERE user_id = ? AND id = ?",
+    "SELECT id, title, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'done' THEN 'completed' ELSE 'pending' END AS status, due_at AS dueAt, recurrence_rule AS recurrenceRule, created_at AS createdAt FROM tasks WHERE user_id = ? AND id = ?",
   ).bind(userId, taskId).first<TaskListItem>();
 }
 
 export async function completeTask(db: D1Database, input: CompleteTaskInput): Promise<boolean> {
   validateUserId(input.userId);
   validateRecordId(input.taskId, "Task");
+  const current = await db.prepare("SELECT title, due_at AS dueAt, recurrence_rule AS recurrenceRule FROM tasks WHERE user_id = ? AND id = ? AND status = 'pending' AND cancelled_at IS NULL")
+    .bind(input.userId, input.taskId).first<{ title: string; dueAt: string | null; recurrenceRule: RecurrenceRule | null }>();
+  const completedAt = input.completedAt ?? new Date().toISOString();
   const result = await db.prepare(
     "UPDATE tasks SET status = 'done', completed_at = ?, cancelled_at = NULL WHERE user_id = ? AND id = ? AND status = 'pending' AND cancelled_at IS NULL",
-  ).bind(input.completedAt ?? new Date().toISOString(), input.userId, input.taskId).run();
-  if (result.meta.changes === 1) await disablePersistentNotification(db, input.userId, "task", input.taskId);
+  ).bind(completedAt, input.userId, input.taskId).run();
+  if (result.meta.changes === 1) {
+    await disablePersistentNotification(db, input.userId, "task", input.taskId);
+    if (current?.recurrenceRule) {
+      const dueAt = nextRecurringOccurrence(current.dueAt ?? completedAt, current.recurrenceRule, input.timeZone ?? "America/Mexico_City");
+      const nextId = await createTask(db, { userId: input.userId, title: current.title, dueAt, recurrenceRule: current.recurrenceRule, createdAt: completedAt });
+      await initializePersistentNotification(db, { userId: input.userId, resourceType: "task", resourceId: nextId, firstNotifyAt: dueAt, createdAt: completedAt });
+    }
+  }
+  return result.meta.changes === 1;
+}
+
+export async function setTaskRecurrence(db: D1Database, input: { userId: number; taskId: number; recurrenceRule: RecurrenceRule | null }): Promise<boolean> {
+  validateUserId(input.userId);
+  validateRecordId(input.taskId, "Task");
+  if (input.recurrenceRule !== null) validateRecurrenceRule(input.recurrenceRule);
+  const result = await db.prepare("UPDATE tasks SET recurrence_rule = ? WHERE user_id = ? AND id = ? AND status = 'pending' AND cancelled_at IS NULL")
+    .bind(input.recurrenceRule, input.userId, input.taskId).run();
   return result.meta.changes === 1;
 }
 
@@ -149,4 +168,8 @@ function validateFilter(filter: TaskFilter): void {
   if (filter !== "pending" && filter !== "completed" && filter !== "cancelled" && filter !== "all") {
     throw new Error("Task filter is invalid");
   }
+}
+
+function validateRecurrenceRule(rule: RecurrenceRule): void {
+  if (rule !== "daily" && rule !== "weekly" && rule !== "monthly") throw new Error("Task recurrence rule is invalid");
 }

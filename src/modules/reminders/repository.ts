@@ -1,10 +1,17 @@
-import { disablePersistentNotification } from "../notifications/repository";
+import {
+  disablePersistentNotification,
+  getPersistentNotification,
+  initializePersistentNotification,
+  setPersistentNotification,
+} from "../notifications/repository";
+import { nextRecurringOccurrence, type RecurrenceRule } from "../recurrence";
 
 export interface CreateReminderInput {
   userId: number;
   title: string;
   remindAt: string;
   createdAt?: string;
+  recurrenceRule?: RecurrenceRule | null;
 }
 
 export type ReminderFilter = "pending" | "completed" | "cancelled" | "all";
@@ -15,6 +22,7 @@ export interface ReminderListItem {
   remindAt: string;
   status: "pending" | "completed" | "cancelled";
   createdAt: string;
+  recurrenceRule?: RecurrenceRule | null;
 }
 
 export interface ListRemindersInput {
@@ -28,6 +36,7 @@ export interface CompleteReminderInput {
   userId: number;
   reminderId: number;
   completedAt?: string;
+  timeZone?: string;
 }
 
 export interface CancelReminderInput {
@@ -61,9 +70,11 @@ export async function createReminder(db: D1Database, input: CreateReminderInput)
     throw new Error("Reminder time is invalid");
   }
 
+  if (input.recurrenceRule !== undefined && input.recurrenceRule !== null) validateRecurrenceRule(input.recurrenceRule);
+  const createdAt = input.createdAt ?? new Date().toISOString();
   const result = await db
-    .prepare("INSERT INTO reminders (user_id, title, remind_at, status, created_at) VALUES (?, ?, ?, 'pending', ?)")
-    .bind(input.userId, title, remindAt.toISOString(), input.createdAt ?? new Date().toISOString())
+    .prepare("INSERT INTO reminders (user_id, title, remind_at, status, recurrence_rule, created_at) VALUES (?, ?, ?, 'pending', ?, ?)")
+    .bind(input.userId, title, remindAt.toISOString(), input.recurrenceRule ?? null, createdAt)
     .run();
 
   return result.meta.last_row_id;
@@ -87,7 +98,7 @@ export async function listReminders(db: D1Database, input: ListRemindersInput): 
   values.push(input.beforeId ?? Number.MAX_SAFE_INTEGER);
 
   const result = await db.prepare(
-    `SELECT id, title, remind_at AS remindAt, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'sent' THEN 'completed' ELSE 'pending' END AS status, created_at AS createdAt FROM reminders WHERE ${conditions.join(" AND ")} ORDER BY id DESC LIMIT ?`,
+    `SELECT id, title, remind_at AS remindAt, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'sent' THEN 'completed' ELSE 'pending' END AS status, recurrence_rule AS recurrenceRule, created_at AS createdAt FROM reminders WHERE ${conditions.join(" AND ")} ORDER BY id DESC LIMIT ?`,
   ).bind(...values, limit + 1).all<ReminderListItem>();
 
   const reminders = result.results.slice(0, limit);
@@ -98,7 +109,7 @@ export async function getReminder(db: D1Database, userId: number, reminderId: nu
   validateUserId(userId);
   validateRecordId(reminderId, "Reminder");
   return db.prepare(
-    "SELECT id, title, remind_at AS remindAt, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'sent' THEN 'completed' ELSE 'pending' END AS status, created_at AS createdAt FROM reminders WHERE user_id = ? AND id = ?",
+    "SELECT id, title, remind_at AS remindAt, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'sent' THEN 'completed' ELSE 'pending' END AS status, recurrence_rule AS recurrenceRule, created_at AS createdAt FROM reminders WHERE user_id = ? AND id = ?",
   ).bind(userId, reminderId).first<ReminderListItem>();
 }
 
@@ -106,10 +117,40 @@ export async function completeReminder(db: D1Database, input: CompleteReminderIn
   validateUserId(input.userId);
   validateRecordId(input.reminderId, "Reminder");
   const completedAt = input.completedAt ?? new Date().toISOString();
+  const current = await db.prepare("SELECT title, remind_at AS remindAt, recurrence_rule AS recurrenceRule FROM reminders WHERE user_id = ? AND id = ? AND status IN ('pending', 'processing', 'failed') AND cancelled_at IS NULL")
+    .bind(input.userId, input.reminderId).first<{ title: string; remindAt: string; recurrenceRule: RecurrenceRule | null }>();
+  const persistentNotification = current ? await getPersistentNotification(db, input.userId, "reminder", input.reminderId) : null;
   const result = await db.prepare(
     "UPDATE reminders SET status = 'sent', sent_at = ?, processing_until = NULL WHERE user_id = ? AND id = ? AND status IN ('pending', 'processing', 'failed') AND cancelled_at IS NULL",
   ).bind(completedAt, input.userId, input.reminderId).run();
-  if (result.meta.changes === 1) await disablePersistentNotification(db, input.userId, "reminder", input.reminderId);
+  if (result.meta.changes === 1) {
+    await disablePersistentNotification(db, input.userId, "reminder", input.reminderId);
+    if (current?.recurrenceRule) {
+      const remindAt = nextRecurringOccurrence(current.remindAt, current.recurrenceRule, input.timeZone ?? "America/Mexico_City");
+      const nextId = await createReminder(db, { userId: input.userId, title: current.title, remindAt, recurrenceRule: current.recurrenceRule, createdAt: completedAt });
+      if (persistentNotification?.enabled) {
+        await setPersistentNotification(db, {
+          userId: input.userId,
+          resourceType: "reminder",
+          resourceId: nextId,
+          intervalMinutes: persistentNotification.intervalMinutes,
+          nextNotifyAt: remindAt,
+          now: completedAt,
+        });
+      } else {
+        await initializePersistentNotification(db, { userId: input.userId, resourceType: "reminder", resourceId: nextId, firstNotifyAt: remindAt, createdAt: completedAt });
+      }
+    }
+  }
+  return result.meta.changes === 1;
+}
+
+export async function setReminderRecurrence(db: D1Database, input: { userId: number; reminderId: number; recurrenceRule: RecurrenceRule | null }): Promise<boolean> {
+  validateUserId(input.userId);
+  validateRecordId(input.reminderId, "Reminder");
+  if (input.recurrenceRule !== null) validateRecurrenceRule(input.recurrenceRule);
+  const result = await db.prepare("UPDATE reminders SET recurrence_rule = ? WHERE user_id = ? AND id = ? AND status IN ('pending', 'processing', 'failed') AND cancelled_at IS NULL")
+    .bind(input.recurrenceRule, input.userId, input.reminderId).run();
   return result.meta.changes === 1;
 }
 
@@ -149,4 +190,8 @@ function validateFilter(filter: ReminderFilter): void {
   if (filter !== "pending" && filter !== "completed" && filter !== "cancelled" && filter !== "all") {
     throw new Error("Reminder filter is invalid");
   }
+}
+
+function validateRecurrenceRule(rule: RecurrenceRule): void {
+  if (rule !== "daily" && rule !== "weekly" && rule !== "monthly") throw new Error("Reminder recurrence rule is invalid");
 }

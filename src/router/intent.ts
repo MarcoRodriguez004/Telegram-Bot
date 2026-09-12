@@ -1,5 +1,6 @@
 export type Intent =
   | { action: "create_task"; title: string; dueAt?: string | null }
+  | { action: "set_recurrence"; resource: "task" | "reminder"; resourceId: number; recurrenceRule: "daily" | "weekly" | "monthly" | null }
   | { action: "list_tasks"; filter?: "pending" | "completed" | "cancelled" | "all" }
   | { action: "create_reminder"; title: string; remindAt: string }
   | { action: "list_reminders"; filter?: "pending" | "completed" | "cancelled" | "all" }

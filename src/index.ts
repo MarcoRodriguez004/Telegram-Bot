@@ -15,6 +15,7 @@ import {
   createReminder,
   getReminder,
   listReminders,
+  setReminderRecurrence,
   updateReminder,
 } from "./modules/reminders/repository";
 import type { ReminderListItem } from "./modules/reminders/repository";
@@ -57,6 +58,7 @@ import {
   createTask,
   getTask,
   listTasks,
+  setTaskRecurrence,
   updateTaskTitle,
 } from "./modules/tasks/repository";
 import type { TaskListItem } from "./modules/tasks/repository";
@@ -107,6 +109,7 @@ import type { QueryFilter, QueryResource, SavedFolderKind } from "./telegram/key
 import { parseTelegramUpdate } from "./telegram/types";
 import type { TelegramCallbackQuery, TelegramUpdate } from "./telegram/types";
 import type { Env } from "./types";
+import type { RecurrenceRule } from "./modules/recurrence";
 
 const MAX_UPDATE_BYTES = 64 * 1024;
 
@@ -382,12 +385,29 @@ async function getReply(
     intent.action === "move_note" ||
     intent.action === "get_note" ||
     intent.action === "create_task" ||
+    intent.action === "set_recurrence" ||
     intent.action === "create_reminder" ||
     intent.action === "create_expense" ||
     intent.action === "save_note"
   ) {
     if (!message || telegramUserId === undefined || userId === undefined) {
       return "No pude identificar al usuario de Telegram.";
+    }
+
+    if (intent.action === "set_recurrence") {
+      const item = intent.resource === "task"
+        ? await getTask(env.PERSONAL_ASSISTANT_DB, userId, intent.resourceId)
+        : await getReminder(env.PERSONAL_ASSISTANT_DB, userId, intent.resourceId);
+      if (!item || item.status !== "pending") {
+        return "Solo puedes configurar repeticiones en elementos pendientes de tu cuenta.";
+      }
+      const changed = intent.resource === "task"
+        ? await setTaskRecurrence(env.PERSONAL_ASSISTANT_DB, { userId, taskId: intent.resourceId, recurrenceRule: intent.recurrenceRule })
+        : await setReminderRecurrence(env.PERSONAL_ASSISTANT_DB, { userId, reminderId: intent.resourceId, recurrenceRule: intent.recurrenceRule });
+      if (!changed) return "El elemento ya no está pendiente o no existe.";
+      return intent.recurrenceRule
+        ? `🔁 Repetición ${recurrenceLabel(intent.recurrenceRule)} configurada para ${intent.resource === "task" ? "la tarea" : "el recordatorio"} ${intent.resourceId}.`
+        : `🔁 Repetición desactivada para ${intent.resource === "task" ? "la tarea" : "el recordatorio"} ${intent.resourceId}.`;
     }
 
     if (intent.action === "list_tasks") {
@@ -992,8 +1012,8 @@ async function handleCallbackQuery(
 
   if (action.kind === "action" && action.action === "complete_after_stop") {
     const changed = action.resource === "task"
-      ? await completeTask(env.PERSONAL_ASSISTANT_DB, { userId, taskId: action.id })
-      : await completeReminder(env.PERSONAL_ASSISTANT_DB, { userId, reminderId: action.id });
+      ? await completeTask(env.PERSONAL_ASSISTANT_DB, { userId, taskId: action.id, timeZone: env.APP_TIMEZONE })
+      : await completeReminder(env.PERSONAL_ASSISTANT_DB, { userId, reminderId: action.id, timeZone: env.APP_TIMEZONE });
     if (changed) {
       await sendMessage(env, source.chat.id, "✅ Marcado como completado. No volveré a avisar.", telegramFetch);
     } else {
@@ -1028,10 +1048,10 @@ async function handleCallbackQuery(
 
   const changed = action.resource === "task"
     ? action.action === "complete"
-      ? await completeTask(env.PERSONAL_ASSISTANT_DB, { userId, taskId: action.id })
+      ? await completeTask(env.PERSONAL_ASSISTANT_DB, { userId, taskId: action.id, timeZone: env.APP_TIMEZONE })
       : await cancelTask(env.PERSONAL_ASSISTANT_DB, { userId, taskId: action.id })
     : action.action === "complete"
-      ? await completeReminder(env.PERSONAL_ASSISTANT_DB, { userId, reminderId: action.id })
+      ? await completeReminder(env.PERSONAL_ASSISTANT_DB, { userId, reminderId: action.id, timeZone: env.APP_TIMEZONE })
       : await cancelReminder(env.PERSONAL_ASSISTANT_DB, { userId, reminderId: action.id });
 
   if (!changed) {
@@ -1491,7 +1511,7 @@ function getCommandReply(text: string): Reply | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
 
   if (command === "/configuracion" || command === "/config" || command === "configuracion" || command === "configuración") {
@@ -1506,6 +1526,10 @@ function getCommandReply(text: string): Reply | null {
 
 function notificationScopeLabel(scope: NotificationScope): string {
   return scope === "task" ? "todas las tareas" : scope === "reminder" ? "todos los recordatorios" : "tareas y recordatorios";
+}
+
+function recurrenceLabel(rule: RecurrenceRule): string {
+  return rule === "daily" ? "diaria" : rule === "weekly" ? "semanal" : "mensual";
 }
 
 function getFirstNotificationAt(

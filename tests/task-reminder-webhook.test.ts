@@ -259,6 +259,17 @@ describe("task and reminder query webhook flow", () => {
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM persistent_notifications").get()).toEqual({ count: 0 });
   });
 
+  it("configures recurrence through a natural command and keeps it user-scoped", async () => {
+    const { db, sqlite } = createSqliteDb();
+    const { env, calls, telegramFetch } = createEnv(db);
+
+    await post(messageUpdate(25, "tarea revisar contrato"), env, telegramFetch);
+    await post(messageUpdate(26, "repite tarea 1 cada semana"), env, telegramFetch);
+
+    expect(sqlite.prepare("SELECT recurrence_rule FROM tasks WHERE id = 1").get()).toEqual({ recurrence_rule: "weekly" });
+    expect(String(calls.at(-1)?.body.text)).toContain("semanal");
+  });
+
   it("offers global alert configuration and applies it to both resource types", async () => {
     const { db, sqlite } = createSqliteDb();
     const { env, calls, telegramFetch } = createEnv(db);

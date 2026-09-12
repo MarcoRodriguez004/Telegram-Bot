@@ -18,6 +18,7 @@ WITH owned_bytes AS (
       + length(CAST(COALESCE(title, '') AS BLOB))
       + length(CAST(COALESCE(status, '') AS BLOB))
       + length(CAST(COALESCE(due_at, '') AS BLOB))
+      + length(CAST(COALESCE(recurrence_rule, '') AS BLOB))
       + length(CAST(COALESCE(created_at, '') AS BLOB))
       + length(CAST(COALESCE(completed_at, '') AS BLOB))
       + length(CAST(COALESCE(cancelled_at, '') AS BLOB)) AS logical_bytes
@@ -27,6 +28,7 @@ WITH owned_bytes AS (
     64 + 16
       + length(CAST(COALESCE(title, '') AS BLOB))
       + length(CAST(COALESCE(remind_at, '') AS BLOB))
+      + length(CAST(COALESCE(recurrence_rule, '') AS BLOB))
       + length(CAST(COALESCE(status, '') AS BLOB))
       + length(CAST(COALESCE(processing_until, '') AS BLOB))
       + length(CAST(COALESCE(sent_at, '') AS BLOB))

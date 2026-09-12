@@ -19,6 +19,22 @@ function createEnv(db: D1Database) {
 }
 
 describe("persistent notification scheduler", () => {
+  it("creates the next occurrence when a non-persistent recurring reminder is delivered", async () => {
+    const { db, sqlite } = createSqliteDb();
+    sqlite.prepare(
+      "INSERT INTO users (telegram_user_id, telegram_chat_id, timezone, currency, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(42, 42, "America/Mexico_City", "MXN", "2026-09-10T15:00:00.000Z");
+    sqlite.prepare("INSERT INTO reminders (user_id, title, remind_at, status, recurrence_rule, created_at) VALUES (?, ?, ?, 'pending', ?, ?)")
+      .run(1, "pagar internet", "2026-09-10T15:00:00.000Z", "weekly", "2026-09-09T15:00:00.000Z");
+    const telegramFetch: typeof fetch = async () => new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+
+    expect(await processDueReminders(db, createEnv(db), new Date("2026-09-10T15:01:00.000Z"), telegramFetch)).toBe(1);
+    expect(sqlite.prepare("SELECT title, status, remind_at, recurrence_rule FROM reminders ORDER BY id").all()).toEqual([
+      { title: "pagar internet", status: "sent", remind_at: "2026-09-10T15:00:00.000Z", recurrence_rule: "weekly" },
+      { title: "pagar internet", status: "pending", remind_at: "2026-09-17T15:00:00.000Z", recurrence_rule: "weekly" },
+    ]);
+  });
+
   it("sends a due one-time snooze and does not turn it into a persistent alert", async () => {
     const { db, sqlite } = createSqliteDb();
     sqlite.prepare(

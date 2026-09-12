@@ -36,6 +36,7 @@ const SAVED_LIST = /^(?:(?:mu[eé]strame\s+)?mis\s+guardados|\/?guardados)(?:_(\
 const SAVED_ITEM = /^(?:ver\s+guardado\s+|\/?guardado(?:_|\s+))(\d+)(?:@[a-z0-9_]+)?$/iu;
 const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const RECURRENCE_COMMAND = /^(?:\/)?repite\s+(tarea|recordatorio)\s+(\d+)\s+(?:(?:cada)\s+)?(d[ií]a|diario|diaria|semana|semanal|semanalmente|mes|mensual|mensualmente|nunca|no)$/iu;
 const DELETE_DATA_COMMAND = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?\s+CONFIRMAR$/u;
 const DELETE_DATA_PREFIX = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?(?:\s+.*)?$/iu;
 const URL_PATTERN = /https?:\/\/[^\s<>]+/iu;
@@ -161,6 +162,26 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   const summaryMatch = SUMMARY_COMMAND.exec(normalized);
   if (summaryMatch) {
     return parseSummary(summaryMatch[1] ?? "");
+  }
+
+  const recurrenceMatch = RECURRENCE_COMMAND.exec(normalized);
+  if (recurrenceMatch) {
+    const resourceId = Number(recurrenceMatch[2]);
+    if (!Number.isSafeInteger(resourceId) || resourceId < 1) return { action: "unknown", reason: "invalid_recurrence_id" };
+    const ruleToken = recurrenceMatch[3].toLowerCase();
+    const recurrenceRule = /^(?:nunca|no)$/u.test(ruleToken)
+      ? null
+      : /^(?:d[ií]a|diari[ao])$/u.test(ruleToken)
+        ? "daily"
+        : /^(?:semana|semanal|semanalmente)$/u.test(ruleToken)
+          ? "weekly"
+          : "monthly";
+    return {
+      action: "set_recurrence",
+      resource: /^tarea$/iu.test(recurrenceMatch[1]) ? "task" : "reminder",
+      resourceId,
+      recurrenceRule,
+    };
   }
 
   const taskListMatch = TASK_LIST.exec(normalized);

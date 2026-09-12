@@ -1,7 +1,9 @@
 import { sendMessage } from "../../telegram/client";
 import { buildOneTimeAlertKeyboard, buildPersistentAlertKeyboard } from "../../telegram/keyboards";
 import type { Env } from "../../types";
-import { advancePersistentNotification, getPersistentNotification } from "../notifications/repository";
+import { advancePersistentNotification, getPersistentNotification, initializePersistentNotification } from "../notifications/repository";
+import { createReminder } from "./repository";
+import { nextRecurringOccurrence, type RecurrenceRule } from "../recurrence";
 
 const MAX_REMINDERS_PER_RUN = 20;
 const PROCESSING_LEASE_MS = 5 * 60 * 1_000;
@@ -11,6 +13,8 @@ interface DueReminder {
   userId: number;
   chatId: number;
   title: string;
+  remindAt: string;
+  recurrenceRule: RecurrenceRule | null;
 }
 
 export async function processDueReminders(
@@ -43,6 +47,22 @@ export async function processDueReminders(
       await markReminderSent(db, reminder.id, nowIso, usePersistentKeyboard);
       if (usePersistentKeyboard) {
         await advancePersistentNotification(db, reminder.userId, "reminder", reminder.id, nowIso);
+      } else if (reminder.recurrenceRule) {
+        const nextRemindAt = nextRecurringOccurrence(reminder.remindAt, reminder.recurrenceRule, env.APP_TIMEZONE);
+        const nextId = await createReminder(db, {
+          userId: reminder.userId,
+          title: reminder.title,
+          remindAt: nextRemindAt,
+          recurrenceRule: reminder.recurrenceRule,
+          createdAt: nowIso,
+        });
+        await initializePersistentNotification(db, {
+          userId: reminder.userId,
+          resourceType: "reminder",
+          resourceId: nextId,
+          firstNotifyAt: nextRemindAt,
+          createdAt: nowIso,
+        });
       }
       sent += 1;
     } catch (error) {
@@ -58,7 +78,7 @@ export async function processDueReminders(
 async function findDueReminder(db: D1Database, nowIso: string): Promise<DueReminder | null> {
   const row = await db
     .prepare(
-      "SELECT reminders.id, reminders.user_id AS userId, users.telegram_chat_id AS chatId, reminders.title " +
+      "SELECT reminders.id, reminders.user_id AS userId, users.telegram_chat_id AS chatId, reminders.title, reminders.remind_at AS remindAt, reminders.recurrence_rule AS recurrenceRule " +
         "FROM reminders INNER JOIN users ON users.id = reminders.user_id " +
       "WHERE reminders.cancelled_at IS NULL AND reminders.remind_at <= ? AND reminders.sent_at IS NULL AND (reminders.status = 'pending' OR " +
         "(reminders.status = 'processing' AND reminders.processing_until <= ?)) " +

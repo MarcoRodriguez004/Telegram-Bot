@@ -33,8 +33,8 @@ describe("reminder repository", () => {
 
     expect(reminderId).toBe(11);
     expect(calls[0]).toEqual({
-      query: "INSERT INTO reminders (user_id, title, remind_at, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
-      values: [3, "pagar internet", "2026-09-08T15:00:00.000Z", "2026-09-07T20:00:00.000Z"],
+      query: "INSERT INTO reminders (user_id, title, remind_at, status, recurrence_rule, created_at) VALUES (?, ?, ?, 'pending', ?, ?)",
+      values: [3, "pagar internet", "2026-09-08T15:00:00.000Z", null, "2026-09-07T20:00:00.000Z"],
     });
   });
 
