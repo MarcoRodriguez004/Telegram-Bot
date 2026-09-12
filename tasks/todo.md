@@ -63,4 +63,4 @@ Decisiones pendientes para otro día:
 - [x] Implementar eliminación confirmada conservando los guardados en `Sin carpeta`.
 - [x] Implementar movimiento de guardados entre carpetas, incluyendo `Sin carpeta`.
 - [x] Mostrar carpetas vacías en un bloque separado.
-- [ ] Ejecutar smoke test de producción para avisos persistentes individuales y acciones de detener/completar/cancelar; pendiente porque esta sesión no tiene Telegram Desktop/Web conectado.
+- [x] Ejecutar smoke test de producción para avisos persistentes individuales y acciones de detener/completar/cancelar; verificado manualmente en Telegram.

@@ -170,7 +170,7 @@ La especificación aprobada está en [`docs/SPEC-TASK-REMINDER-QUERIES.md`](../d
 - [x] `Mueve el guardado 123 a Y` cambia únicamente el guardado del usuario autenticado; `Sin carpeta` permite quitar la clasificación.
 - [x] `Mis carpetas` muestra las carpetas sin contenido en un bloque separado y no las presenta como si tuvieran guardados.
 - [x] La operación de un usuario no puede leer ni modificar carpetas o guardados de otro usuario.
-- [ ] El smoke test confirma que los avisos están apagados por defecto, se pueden configurar, detener definitivamente y completar/cancelar desde Telegram. Bloqueado hasta tener Telegram Desktop/Web conectado a esta sesión.
+- [x] Smoke test confirmado manualmente en Telegram: avisos apagados por defecto, configuración individual, detener definitivamente y completar/cancelar funcionando.
 
 ### Decisión de seguridad
 
