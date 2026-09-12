@@ -34,6 +34,7 @@ Los nombres se normalizarán para evitar duplicados por mayúsculas, espacios re
 
 - `mis carpetas` muestra las carpetas separadas en tres bloques: `Imágenes`, `Archivos` y `Enlaces y notas`. Una carpeta aparece en cada bloque donde tenga elementos; no se duplica ni se divide físicamente.
 - `mis imágenes`, `mis archivos` y `mis enlaces` muestran primero el bloque de carpetas correspondiente; después de elegir una carpeta, la selección lista solo ese tipo y esa carpeta. `Sin carpeta` aparece cuando tiene elementos.
+- Las listas de imágenes se numeran (`1.-`, `2.-`, etc.) y ofrecen botones compactos en cuadrícula para abrir cada foto; el callback vuelve a validar la propiedad del guardado.
 - `mis guardados` y `/guardados` conservan compatibilidad y muestran los elementos sin carpeta y los organizados, pero la navegación por bloques permite elegir una carpeta explícita.
 - La paginación mantiene el orden actual por `notes.id DESC`, el límite de diez elementos y el comportamiento de continuación sin duplicar elementos.
 - Abrir un elemento continúa usando `/guardado_<id>` o `ver guardado <id>`. La consulta siempre incluye el usuario autenticado y la carpeta seleccionada cuando corresponda.

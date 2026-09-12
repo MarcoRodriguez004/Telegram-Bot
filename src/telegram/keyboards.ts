@@ -2,7 +2,7 @@ import type { InlineKeyboardButton, InlineKeyboardMarkup } from "./client";
 import type { ReminderListItem } from "../modules/reminders/repository";
 import type { TaskFilter, TaskListItem } from "../modules/tasks/repository";
 import type { NotificationIntervalMinutes, NotificationScope } from "../modules/notifications/repository";
-import type { SavedFolderListItem, SavedNoteKind } from "../modules/notes/repository";
+import type { SavedFolderListItem, SavedNote, SavedNoteKind } from "../modules/notes/repository";
 
 export type QueryResource = "task" | "reminder";
 export type QueryFilter = TaskFilter;
@@ -23,6 +23,7 @@ export type CallbackAction =
   | { kind: "notification_scope"; scope: NotificationScope }
   | { kind: "notification_global_set"; scope: NotificationScope; intervalMinutes: NotificationIntervalMinutes | null }
   | { kind: "edit_cancel"; resource: QueryResource }
+  | { kind: "saved_note"; id: number }
   | FolderCallbackAction;
 
 const FILTER_LABELS: Record<QueryResource, Array<{ filter: QueryFilter; label: string }>> = {
@@ -128,6 +129,16 @@ export function buildFolderConflictKeyboard(existingName: string, requestedName:
   };
 }
 
+export function buildSavedNoteKeyboard(notes: SavedNote[]): InlineKeyboardMarkup {
+  const rows: InlineKeyboardButton[][] = [];
+  notes.forEach((note, index) => {
+    const row = rows.at(-1);
+    if (!row || row.length === 4) rows.push([{ text: `${index + 1}.-`, callback_data: `pa:s:i:${note.id}` }]);
+    else row.push({ text: `${index + 1}.-`, callback_data: `pa:s:i:${note.id}` });
+  });
+  return { inline_keyboard: rows };
+}
+
 export function buildNotificationChoiceKeyboard(resource: QueryResource, id: number): InlineKeyboardMarkup {
   return {
     inline_keyboard: [
@@ -209,6 +220,10 @@ export function parseCallbackData(data: string | undefined): CallbackAction | nu
   }
   if (parts[1] === "f" && parts[2] === "c" && parts.length === 3) {
     return { kind: "folder_conflict", decision: "create_new" };
+  }
+  if (parts[1] === "s" && parts[2] === "i" && parts.length === 4) {
+    const id = Number(parts[3]);
+    return Number.isSafeInteger(id) && id > 0 ? { kind: "saved_note", id } : null;
   }
   if (parts[1] === "f" && parts[2] === "i" && parts.length === 5) {
     const noteKind = savedFolderKindFromCode(parts[3]);

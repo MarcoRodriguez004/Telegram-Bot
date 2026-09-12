@@ -76,8 +76,15 @@ describe("saved folders webhook flow", () => {
     expect(photoButton?.callback_data).toBe("pa:f:i:p:1");
 
     await callback(photoButton!.callback_data);
-    expect(sent.at(-2)?.body.text).toContain("logo");
-    expect(sent.at(-2)?.body.text).not.toContain("recibo");
+    const savedPhotos = sent.at(-2)?.body;
+    expect(savedPhotos?.text).toContain("1.- Foto");
+    expect(savedPhotos?.text).not.toContain("recibo");
+    const photoSelector = (savedPhotos?.reply_markup as { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> }).inline_keyboard
+      .flat().find((button) => button.text === "1.-");
+    expect(photoSelector?.callback_data).toBe("pa:s:i:1");
+
+    await callback(photoSelector!.callback_data);
+    expect(sent.at(-2)).toMatchObject({ method: "sendPhoto", body: { photo: "photo_large", caption: "logo" } });
   });
 
   it("creates a missing folder while saving and blocks another user's callback", async () => {

@@ -78,6 +78,7 @@ import {
   buildGlobalNotificationIntervalKeyboard,
   buildGlobalNotificationKeyboard,
   buildNotificationChoiceKeyboard,
+  buildSavedNoteKeyboard,
   buildStopConfirmationKeyboard,
   parseCallbackData,
 } from "./telegram/keyboards";
@@ -704,6 +705,24 @@ async function handleCallbackQuery(
     return;
   }
 
+  if (action.kind === "saved_note") {
+    const note = await getNote(env.PERSONAL_ASSISTANT_DB, userId, action.id);
+    if (!note) {
+      await sendMessage(env, source.chat.id, "No encontré ese guardado o ya no está disponible.", telegramFetch);
+      return;
+    }
+    if (note.file_kind && note.file_id) {
+      try {
+        await sendAttachment(env, source.chat.id, { kind: note.file_kind, fileId: note.file_id }, note.content, telegramFetch);
+      } catch {
+        await sendMessage(env, source.chat.id, `No pude enviar el archivo. Sigue guardado; intenta de nuevo con /guardado_${note.id}.`, telegramFetch);
+      }
+      return;
+    }
+    await sendMessage(env, source.chat.id, note.url && note.content !== note.url ? `${note.content}\n${note.url}` : note.content, telegramFetch);
+    return;
+  }
+
   if (action.kind === "folder_item" || action.kind === "folder_page") {
     const folderId = action.folderId;
     const repositoryFolderId = folderId === null ? null : folderId;
@@ -1159,10 +1178,13 @@ function formatSavedNotesReply(
   folderName?: string,
   folderId?: number | null,
 ): Reply {
-  const lines = notes.map((note) => {
+  const isPhotoList = kind === "photos";
+  const lines = notes.map((note, index) => {
     const itemKind = note.file_kind === "photo" ? "Foto" : note.file_kind === "document" ? "Documento" : note.url ? "Enlace" : "Nota";
     const preview = note.content.replace(/\s+/g, " ");
-    return `/guardado_${note.id} · ${itemKind} · ${preview.length > 160 ? preview.slice(0, 159) + "…" : preview}`;
+    return isPhotoList
+      ? `${index + 1}.- ${itemKind} · ${preview.length > 160 ? preview.slice(0, 159) + "…" : preview}`
+      : `/guardado_${note.id} · ${itemKind} · ${preview.length > 160 ? preview.slice(0, 159) + "…" : preview}`;
   });
   const title = kind === "photos"
     ? "📷 Imágenes guardadas · más recientes primero"
@@ -1172,7 +1194,22 @@ function formatSavedNotesReply(
         ? "🔗 Enlaces y notas · más recientes primero"
         : "📎 Mis guardados · más recientes primero";
   const selectedFolder = folderId === 0 ? "Sin carpeta" : folderName;
-  const text = [title + (selectedFolder ? ` · ${selectedFolder}` : ""), "", ...lines, "", "Toca un comando para ver el guardado."];
+  const text = [
+    title + (selectedFolder ? ` · ${selectedFolder}` : ""),
+    "",
+    ...lines,
+    "",
+    isPhotoList ? "Selecciona una foto para verla:" : "Toca un comando para ver el guardado.",
+  ];
+  if (isPhotoList) {
+    const replyMarkup = buildSavedNoteKeyboard(notes);
+    if (nextBeforeId && folderId !== undefined) {
+      replyMarkup.inline_keyboard.push(...buildFolderPageKeyboard(kind, folderId === 0 ? null : folderId ?? null, nextBeforeId).inline_keyboard);
+    } else if (nextBeforeId) {
+      text.push(`Más: /guardados_${nextBeforeId}`);
+    }
+    return { text: text.join("\n"), replyMarkup };
+  }
   if (nextBeforeId && kind !== "all" && folderId !== undefined) {
     return {
       text: text.join("\n"),

@@ -8,6 +8,7 @@ import {
   buildPersistentAlertKeyboard,
   buildFolderKeyboard,
   buildFolderConflictKeyboard,
+  buildSavedNoteKeyboard,
   parseCallbackData,
 } from "../src/telegram/keyboards";
 
@@ -116,5 +117,23 @@ describe("task and reminder inline keyboards", () => {
       kind: "folder_conflict", decision: "create_new",
     });
     expect(keyboard.inline_keyboard.flat().every((button) => button.callback_data.length <= 64)).toBe(true);
+  });
+
+  it("lays out saved-photo selectors in compact rows", () => {
+    const keyboard = buildSavedNoteKeyboard([
+      { id: 11, content: "uno", url: null, file_kind: "photo", file_id: "photo_11" },
+      { id: 12, content: "dos", url: null, file_kind: "photo", file_id: "photo_12" },
+      { id: 13, content: "tres", url: null, file_kind: "photo", file_id: "photo_13" },
+      { id: 14, content: "cuatro", url: null, file_kind: "photo", file_id: "photo_14" },
+      { id: 15, content: "cinco", url: null, file_kind: "photo", file_id: "photo_15" },
+    ]);
+
+    expect(keyboard.inline_keyboard.map((row) => row.map((button) => button.text))).toEqual([
+      ["1.-", "2.-", "3.-", "4.-"],
+      ["5.-"],
+    ]);
+    expect(parseCallbackData(keyboard.inline_keyboard[0][2].callback_data)).toEqual({
+      kind: "saved_note", id: 13,
+    });
   });
 });

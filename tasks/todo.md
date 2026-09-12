@@ -43,6 +43,7 @@ Especificación: [`docs/SPEC-SAVED-FOLDERS.md`](../docs/SPEC-SAVED-FOLDERS.md). 
 - [x] Guardar notas, enlaces, fotos y documentos dentro de una carpeta existente.
 - [x] Mostrar `mis carpetas` en bloques de imágenes, archivos y enlaces/notas.
 - [x] Mostrar `mis imágenes`, `mis archivos` y `mis enlaces` con selección de carpeta y botones.
+- [x] Numerar las listas de imágenes y añadir botones compactos en cuadrícula para abrir cada foto.
 - [x] Mantener `Sin carpeta` como categoría virtual para elementos antiguos o no clasificados.
 - [x] Validar propiedad de usuario en consultas, callbacks, guardado y paginación.
 - [x] Eliminar carpetas junto con los datos mediante `/borrar_datos CONFIRMAR`.
