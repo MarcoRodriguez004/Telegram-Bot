@@ -46,6 +46,7 @@ describe("contingency intents", () => {
 
   it("parses the on-demand CAMe check command and natural requests", () => {
     expect(parseIntent("/hoy_no_circula")).toEqual({ action: "check_contingency" });
+    expect(parseIntent("Hoy no circula")).toEqual({ action: "check_contingency" });
     expect(parseIntent("Revisa en CAMe si hay alertas")).toEqual({ action: "check_contingency" });
     expect(parseIntent("¿Hay alguna alerta de Hoy No Circula?")).toEqual({ action: "check_contingency" });
   });
