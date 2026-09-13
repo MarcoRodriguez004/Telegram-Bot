@@ -1646,10 +1646,20 @@ function formatSummary(summary: SummaryResult, range: "today" | "week" | "month"
     `📋 Resumen · ${rangeLabel}`,
     "",
     `✅ Tareas pendientes: ${summary.pendingTaskCount}`,
-    `💰 Gastos: ${formatExpenseAmount(summary.totalExpenseCents, currency)}`,
+    `✔️ Tareas completadas en el periodo: ${summary.completedTaskCount}`,
+    `❌ Tareas canceladas en el periodo: ${summary.cancelledTaskCount}`,
+    `💰 Gastos: ${formatExpenseAmount(summary.totalExpenseCents, currency)} (${summary.expenseCount})`,
     "",
-    "⏰ Recordatorios",
+    "📊 Gastos por categoría",
   ];
+
+  if (summary.expensesByCategory.length === 0) {
+    lines.push("Ninguno");
+  } else {
+    lines.push(...summary.expensesByCategory.map((entry) => `• ${entry.category}: ${formatExpenseAmount(entry.totalCents, currency)}`));
+  }
+
+  lines.push("", "⏰ Recordatorios");
 
   if (summary.upcomingReminders.length === 0) {
     lines.push("Ninguno");

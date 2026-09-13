@@ -15,9 +15,18 @@ export interface SummaryNote {
   createdAt: string;
 }
 
+export interface SummaryExpenseCategory {
+  category: string;
+  totalCents: number;
+}
+
 export interface SummaryResult {
   pendingTaskCount: number;
+  completedTaskCount: number;
+  cancelledTaskCount: number;
   totalExpenseCents: number;
+  expenseCount: number;
+  expensesByCategory: SummaryExpenseCategory[];
   upcomingReminders: SummaryReminder[];
   recentNotes: SummaryNote[];
 }
@@ -32,13 +41,36 @@ export async function getSummary(db: D1Database, input: SummaryInput): Promise<S
     .bind(input.userId)
     .first<{ count: number }>();
 
-  const expenses = await db
+  const completedTasks = await db
     .prepare(
-      "SELECT COALESCE(SUM(amount_cents), 0) AS totalCents FROM expenses " +
-        "WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?",
+      "SELECT COUNT(*) AS count FROM tasks WHERE user_id = ? AND status = 'done' AND completed_at >= ? AND completed_at < ?",
     )
     .bind(input.userId, input.startAt, input.endAt)
-    .first<{ totalCents: number }>();
+    .first<{ count: number }>();
+
+  const cancelledTasks = await db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM tasks WHERE user_id = ? AND cancelled_at >= ? AND cancelled_at < ?",
+    )
+    .bind(input.userId, input.startAt, input.endAt)
+    .first<{ count: number }>();
+
+  const expenses = await db
+    .prepare(
+      "SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS totalCents FROM expenses " +
+      "WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?",
+    )
+    .bind(input.userId, input.startAt, input.endAt)
+    .first<{ count: number; totalCents: number }>();
+
+  const expensesByCategory = await db
+    .prepare(
+      "SELECT category, SUM(amount_cents) AS totalCents FROM expenses " +
+      "WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ? " +
+      "GROUP BY category ORDER BY totalCents DESC, category ASC LIMIT 5",
+    )
+    .bind(input.userId, input.startAt, input.endAt)
+    .all<SummaryExpenseCategory>();
 
   const reminders = await db
     .prepare(
@@ -52,14 +84,21 @@ export async function getSummary(db: D1Database, input: SummaryInput): Promise<S
   const notes = await db
     .prepare(
       "SELECT content, url, created_at AS createdAt FROM notes " +
-        "WHERE user_id = ? ORDER BY created_at DESC LIMIT 3",
+        "WHERE user_id = ? ORDER BY created_at DESC LIMIT 5",
     )
     .bind(input.userId)
     .all<SummaryNote>();
 
   return {
     pendingTaskCount: Number(pendingTasks?.count ?? 0),
+    completedTaskCount: Number(completedTasks?.count ?? 0),
+    cancelledTaskCount: Number(cancelledTasks?.count ?? 0),
     totalExpenseCents: Number(expenses?.totalCents ?? 0),
+    expenseCount: Number(expenses?.count ?? 0),
+    expensesByCategory: expensesByCategory.results.map((entry) => ({
+      category: String(entry.category),
+      totalCents: Number(entry.totalCents ?? 0),
+    })),
     upcomingReminders: reminders.results,
     recentNotes: notes.results,
   };

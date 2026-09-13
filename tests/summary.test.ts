@@ -8,8 +8,8 @@ function createDb() {
         bind(..._values: unknown[]) {
           return {
             async first<T>() {
+              if (query.includes("totalCents")) return { count: 2, totalCents: 12_345 } as T;
               if (query.startsWith("SELECT COUNT(*)")) return { count: 2 } as T;
-              if (query.startsWith("SELECT COALESCE")) return { totalCents: 12_345 } as T;
               return null;
             },
             async all<T>() {
@@ -17,6 +17,9 @@ function createDb() {
                 return {
                   results: [{ title: "pagar internet", remindAt: "2026-09-08T15:00:00.000Z" }],
                 } as D1Result<T>;
+              }
+              if (query.startsWith("SELECT category")) {
+                return { results: [{ category: "hogar", totalCents: 12_345 }] } as D1Result<T>;
               }
               return {
                 results: [{ content: "renovar seguro", url: null, createdAt: "2026-09-07T20:00:00.000Z" }],
@@ -40,7 +43,11 @@ describe("summary repository", () => {
 
     expect(summary).toEqual({
       pendingTaskCount: 2,
+      completedTaskCount: 2,
+      cancelledTaskCount: 2,
       totalExpenseCents: 12_345,
+      expenseCount: 2,
+      expensesByCategory: [{ category: "hogar", totalCents: 12_345 }],
       upcomingReminders: [{ title: "pagar internet", remindAt: "2026-09-08T15:00:00.000Z" }],
       recentNotes: [{ content: "renovar seguro", url: null, createdAt: "2026-09-07T20:00:00.000Z" }],
     });
