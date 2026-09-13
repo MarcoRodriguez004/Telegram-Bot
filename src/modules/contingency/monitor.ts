@@ -6,7 +6,8 @@ import {
   saveContingencyState,
   type ContingencyState,
 } from "./repository";
-import { fetchLatestContingencyBulletin, type ContingencyBulletin } from "./source";
+import { fetchCombinedContingencyBulletin, type CombinedContingencyResult } from "./combined";
+import type { ContingencyBulletin } from "./source";
 
 const CONTINGENCY_CHECK_INTERVAL_MINUTES = 30;
 
@@ -18,7 +19,7 @@ export async function monitorContingency(
   telegramFetch: typeof fetch = fetch,
 ): Promise<boolean> {
   if (now.getUTCMinutes() % CONTINGENCY_CHECK_INTERVAL_MINUTES !== 0) return false;
-  const bulletin = await fetchLatestContingencyBulletin(sourceFetch);
+  const bulletin = (await fetchCombinedContingencyBulletin(sourceFetch)).bulletin;
   if (!bulletin) throw new Error("Official contingency bulletin could not be parsed");
 
   // Keep a parsed restriction even when the PDF does not expose plate digits.
@@ -89,6 +90,20 @@ export function formatContingencyCheck(bulletin: ContingencyBulletin | null): st
     : "No pude extraer automáticamente las restricciones del boletín; consulta la fuente oficial antes de circular.";
 
   return `🚗 Consulta CAMe / Hoy No Circula\n\n🚨 CAMe reporta la Fase I de contingencia activa.\nDía de afectación: ${day}.\n${restrictionLine}\n\nFuente oficial: ${bulletin.sourceUrl}`;
+}
+
+export function formatCombinedContingencyCheck(result: CombinedContingencyResult): string {
+  const lines = [formatContingencyCheck(result.bulletin), "", "🔎 Corroboración de fuentes oficiales:"];
+  if (result.gobMx) {
+    lines.push(`gob.mx: ${result.gobMx.active ? "reporta Fase I activa" : "reporta la Fase I suspendida"}.`);
+    lines.push(`Fuente gob.mx: ${result.gobMx.sourceUrl}`);
+  } else {
+    lines.push("gob.mx: no disponible; se utilizó CAMe como respaldo.");
+  }
+  if (result.camE && result.gobMx && result.camE.active !== result.gobMx.active) {
+    lines.push("⚠️ Las dos fuentes no coinciden. Verifica ambos boletines antes de circular.");
+  }
+  return lines.join("\n");
 }
 
 function formatAffectedDate(value: string): string {

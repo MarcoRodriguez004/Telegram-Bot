@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { ensureUser } from "../src/db/users";
 import { monitorContingency } from "../src/modules/contingency/monitor";
 import { setContingencyMode } from "../src/modules/contingency/repository";
-import { fetchLatestContingencyBulletin } from "../src/modules/contingency/source";
+import { fetchCombinedContingencyBulletin } from "../src/modules/contingency/combined";
 import type { Env } from "../src/types";
 import { createSqliteDb } from "./helpers/sqlite-db";
 
-vi.mock("../src/modules/contingency/source", () => ({
-  fetchLatestContingencyBulletin: vi.fn(),
+vi.mock("../src/modules/contingency/combined", () => ({
+  fetchCombinedContingencyBulletin: vi.fn(),
 }));
 
 function createEnv(db: D1Database): Env {
@@ -32,7 +32,7 @@ describe("contingency monitor", () => {
       fetch,
       fetch,
     )).resolves.toBe(false);
-    expect(fetchLatestContingencyBulletin).not.toHaveBeenCalled();
+    expect(fetchCombinedContingencyBulletin).not.toHaveBeenCalled();
   });
 
   it("delivers an alert to users who opted into the always mode", async () => {
@@ -51,19 +51,24 @@ describe("contingency monitor", () => {
       currency: "MXN",
     });
     await setContingencyMode(db, { userId: 2, mode: "always" });
-    vi.mocked(fetchLatestContingencyBulletin).mockResolvedValue({
-      active: true,
-      phase: "I",
-      affectedDate: "2026-04-26",
-      restriction: {
-        holograms: ["0", "00"],
-        plateLastDigits: [5, 6],
-        color: "amarillo",
-        text: "Hologramas 0 y 00 deben suspender su circulación.",
-        signature: "restriction-1",
+    vi.mocked(fetchCombinedContingencyBulletin).mockResolvedValue({
+      bulletin: {
+        active: true,
+        phase: "I",
+        affectedDate: "2026-04-26",
+        restriction: {
+          holograms: ["0", "00"],
+          plateLastDigits: [5, 6],
+          color: "amarillo",
+          text: "Hologramas 0 y 00 deben suspender su circulación.",
+          signature: "restriction-1",
+        },
+        sourceUrl: "https://aire.cdmx.gob.mx/comunicado.pdf",
+        publishedAt: "2026-09-13T04:00:00.000Z",
       },
-      sourceUrl: "https://aire.cdmx.gob.mx/comunicado.pdf",
-      publishedAt: "2026-09-13T04:00:00.000Z",
+      camE: null,
+      gobMx: null,
+      gobMxError: null,
     });
     const messages: Array<{ chatId: number; text: string }> = [];
     const telegramFetch: typeof fetch = async (_input, init) => {

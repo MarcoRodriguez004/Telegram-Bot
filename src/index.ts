@@ -22,8 +22,16 @@ import type { ReminderListItem } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { processDueNotifications } from "./modules/notifications/scheduler";
 import { monitorDatabaseStorage } from "./modules/storage/monitor";
-import { formatContingencyCheck, monitorContingency } from "./modules/contingency/monitor";
-import { fetchLatestContingencyBulletin } from "./modules/contingency/source";
+import { formatCombinedContingencyCheck, monitorContingency } from "./modules/contingency/monitor";
+import { fetchCombinedContingencyBulletin } from "./modules/contingency/combined";
+import {
+  advanceBroadcastConfirmation,
+  clearBroadcastConfirmation,
+  getBroadcastConfirmation,
+  listBroadcastDestinations,
+  startBroadcastConfirmation,
+  validateBroadcastMessage,
+} from "./modules/broadcast/repository";
 import {
   getContingencyPreferences,
   listVehicles,
@@ -148,6 +156,8 @@ const TELEGRAM_COMMANDS = [
   { command: "configuracion", description: "Configurar avisos" },
   { command: "contingencia", description: "Configurar avisos de contingencia" },
   { command: "hoy_no_circula", description: "Consultar alertas actuales de CAMe" },
+  { command: "difundir", description: "Enviar un aviso a todos los chats conocidos (administrador)" },
+  { command: "difundir_estado", description: "Difundir el estado actual de CAMe (administrador)" },
   { command: "vehiculo", description: "Registrar un vehículo" },
   { command: "vehiculos", description: "Ver tus vehículos" },
   { command: "exportar", description: "Exportar tus datos" },
@@ -173,6 +183,8 @@ const COMMAND_GUIDE = [
   { command: "/configuraciones", description: "Configura avisos persistentes y alertas CAMe.", example: "/configuraciones", natural: "Quiero configurar mis avisos y alertas" },
   { command: "/contingencia", description: "Configura avisos de Fase I y vehículos registrados.", example: "/contingencia", natural: "Avísame solo si la contingencia afecta a mi coche" },
   { command: "/hoy_no_circula", description: "Consulta el boletín actual de CAMe aunque ya se haya enviado una alerta.", example: "/hoy_no_circula", natural: "Revisa en CAMe si hay alertas" },
+  { command: "/difundir <mensaje>", description: "Prepara un aviso para todos los chats conocidos; solo administrador y requiere tres confirmaciones.", example: "/difundir Mantenimiento a las 22:00", natural: "Envía este aviso a todos" },
+  { command: "/difundir_estado", description: "Prepara una difusión del estado actual de CAMe; solo administrador y requiere tres confirmaciones.", example: "/difundir_estado", natural: "Difunde el estado actual de contingencia" },
   { command: "/vehiculo <nombre> holograma <0|00> y placa terminada en <dígito>", description: "Registra un vehículo usando solo el último dígito de la placa.", example: "/vehiculo familiar holograma 0 y placa terminada en 6", natural: "Registra mi vehículo, holograma 0 y placa terminada en 6" },
   { command: "/vehiculos", description: "Lista tus vehículos registrados.", example: "/vehiculos", natural: "¿Qué vehículos tengo?" },
   { command: "/repite ...", description: "Configura una repetición diaria, semanal o mensual.", example: "/repite tarea 1 cada semana", natural: "Repite la tarea 1 cada semana" },
@@ -332,6 +344,9 @@ async function getReply(
   if (globalResetAction) return handleGlobalResetAction(globalResetAction, update, env);
 
   if (getCommandToken(text) === "/health") return getTelegramHealthReply(update, env);
+
+  const broadcastAction = parseBroadcastAction(text);
+  if (broadcastAction) return handleBroadcastAction(broadcastAction, update, env, telegramFetch);
 
   if (isNaturalCommandsRequest(text)) return formatCommandsGuide();
 
@@ -1608,8 +1623,8 @@ function formatBotStatus(status: Awaited<ReturnType<typeof getBotStatus>>, timez
 
 async function getContingencyCheckReply(): Promise<string> {
   try {
-    const bulletin = await fetchLatestContingencyBulletin();
-    return formatContingencyCheck(bulletin);
+    const result = await fetchCombinedContingencyBulletin();
+    return formatCombinedContingencyCheck(result);
   } catch (error) {
     console.error(JSON.stringify({
       event: "contingency_check_failed",
@@ -1669,6 +1684,105 @@ function formatStorageBytes(bytes: number): string {
 }
 
 type GlobalResetAction = "start" | 1 | 2 | 3;
+
+type BroadcastAction =
+  | { kind: "start"; messageText: string }
+  | { kind: "start_current_status" }
+  | { kind: "confirm"; step: 1 | 2 | 3 };
+
+function parseBroadcastAction(text: string): BroadcastAction | null {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (/^\/difundir_estado(?:@[a-z0-9_]+)?$/iu.test(normalized)) return { kind: "start_current_status" };
+  const command = /^\/difundir(?:@[a-z0-9_]+)?(?:\s+([\s\S]+))?$/iu.exec(normalized);
+  if (command) return { kind: "start", messageText: command[1]?.trim() ?? "" };
+  const confirmation = /^CONFIRMAR DIFUSI[ÓO]N ([123])\/3$/iu.exec(normalized);
+  return confirmation ? { kind: "confirm", step: Number(confirmation[1]) as 1 | 2 | 3 } : null;
+}
+
+async function handleBroadcastAction(
+  action: BroadcastAction,
+  update: TelegramUpdate,
+  env: Env,
+  telegramFetch: typeof fetch,
+): Promise<string> {
+  const message = update.message;
+  const telegramUserId = message?.from?.id;
+  if (!message || telegramUserId === undefined) return "No pude identificar al usuario de Telegram.";
+  if (!isConfiguredAdmin(telegramUserId, env)) return "Este comando solo está disponible para el administrador.";
+
+  if (action.kind === "start_current_status") {
+    try {
+      const status = formatCombinedContingencyCheck(await fetchCombinedContingencyBulletin());
+      return startBroadcastPreview(status, telegramUserId, message.chat.id, env);
+    } catch {
+      return "⚠️ No pude consultar CAMe. No preparé ninguna difusión.";
+    }
+  }
+
+  if (action.kind === "start") {
+    if (!validateBroadcastMessage(action.messageText)) {
+      return "Escribe el mensaje después del comando. Ejemplo:\n/difundir Mantenimiento hoy a las 22:00";
+    }
+    return startBroadcastPreview(action.messageText, telegramUserId, message.chat.id, env);
+  }
+
+  const confirmation = await getBroadcastConfirmation(env.PERSONAL_ASSISTANT_DB, {
+    telegramUserId,
+    chatId: message.chat.id,
+  });
+  if (!confirmation || confirmation.step !== action.step) {
+    if (confirmation) await clearBroadcastConfirmation(env.PERSONAL_ASSISTANT_DB, telegramUserId);
+    return "Confirmación incorrecta o expirada. No se envió nada. Inicia de nuevo con /difundir o /difundir_estado.";
+  }
+
+  if (action.step === 1 || action.step === 2) {
+    const advanced = await advanceBroadcastConfirmation(env.PERSONAL_ASSISTANT_DB, {
+      telegramUserId,
+      chatId: message.chat.id,
+      expectedStep: action.step,
+    });
+    if (!advanced) {
+      await clearBroadcastConfirmation(env.PERSONAL_ASSISTANT_DB, telegramUserId);
+      return "Confirmación expirada. No se envió nada. Inicia de nuevo con /difundir.";
+    }
+    return action.step === 1
+      ? "Confirmación 2 de 3. Todavía no se envió nada. Escribe exactamente:\nCONFIRMAR DIFUSIÓN 2/3"
+      : "⚠️ Confirmación 3 de 3 (última). Se enviará el aviso a todos los chats conocidos. Escribe exactamente:\nCONFIRMAR DIFUSIÓN 3/3";
+  }
+
+  await clearBroadcastConfirmation(env.PERSONAL_ASSISTANT_DB, telegramUserId);
+  const destinations = await listBroadcastDestinations(env.PERSONAL_ASSISTANT_DB);
+  let delivered = 0;
+  let failed = 0;
+  for (const destination of destinations) {
+    try {
+      await sendMessage(env, destination.chatId, confirmation.messageText, telegramFetch);
+      delivered += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(JSON.stringify({ event: "broadcast_delivery_failed", userId: destination.userId, reason: error instanceof Error ? error.name : "delivery_failure" }));
+    }
+  }
+  return `📣 Difusión completada.\n\nEntregados: ${delivered}\nFallidos: ${failed}\nDestinatarios conocidos: ${destinations.length}`;
+}
+
+async function startBroadcastPreview(
+  messageText: string,
+  telegramUserId: number,
+  chatId: number,
+  env: Env,
+): Promise<string> {
+  const destinations = await listBroadcastDestinations(env.PERSONAL_ASSISTANT_DB);
+  if (destinations.length === 0) return "No hay chats conocidos a los que enviar la difusión.";
+  await startBroadcastConfirmation(env.PERSONAL_ASSISTANT_DB, { telegramUserId, chatId, messageText });
+  const preview = messageText.length > 800 ? `${messageText.slice(0, 799)}…` : messageText;
+  return `📣 Vista previa de difusión\n\nDestinatarios conocidos: ${destinations.length}\n\n${preview}\n\nNo se modifica ninguna configuración de alertas.\n\nConfirmación 1 de 3: escribe exactamente:\nCONFIRMAR DIFUSIÓN 1/3`;
+}
+
+function isConfiguredAdmin(telegramUserId: number, env: Env): boolean {
+  const adminUserId = parseConfiguredTelegramUserId(env.TELEGRAM_ADMIN_USER_ID ?? env.TELEGRAM_ALLOWED_USER_ID);
+  return adminUserId !== null && telegramUserId === adminUserId;
+}
 
 function parseGlobalResetAction(text: string): GlobalResetAction | null {
   const normalized = text.trim().replace(/\s+/g, " ");
