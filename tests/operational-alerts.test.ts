@@ -50,6 +50,7 @@ describe("operational alerts", () => {
     expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({ chatId: 142 });
     expect(messages[0].text).toContain("Componente: scheduler");
+    expect(messages[0].text).toContain("Hora local (America/Mexico_City): 10/09/2026, 09:00:00");
     expect(sqlite.prepare("SELECT failure_count, last_alerted_at FROM operational_alerts WHERE alert_key = 'scheduler:reminders'").get())
       .toEqual({ failure_count: 3, last_alerted_at: "2026-09-10T15:16:00.000Z" });
   });
