@@ -68,7 +68,7 @@ export async function reportOperationalFailure(
     await sendMessage(
       env,
       chatId,
-      `⚠️ Alerta operativa\nComponente: ${failure.component}\nOperación: ${failure.operation}\nFallos acumulados: ${Math.max(1, Number(row.failureCount))}${detailLine}\nHora: ${nowIso}`,
+      `⚠️ Alerta operativa\nComponente: ${failure.component}\nOperación: ${failure.operation}\nFallos acumulados: ${Math.max(1, Number(row.failureCount))}${detailLine}\nHora local ${formatOperationalTime(now, env.APP_TIMEZONE)}`,
       telegramFetch,
     );
   } catch (error) {
@@ -100,6 +100,24 @@ function sanitizeDetail(value: string | undefined): string {
     .replace(/\b\d{6,}:[A-Za-z0-9_-]+\b/gu, "[telegram-token]")
     .trim()
     .slice(0, MAX_DETAIL_LENGTH);
+}
+
+function formatOperationalTime(value: Date, timeZone: string): string {
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  };
+  try {
+    return `(${timeZone}): ${new Intl.DateTimeFormat("es-MX", options).format(value)}`;
+  } catch {
+    return `(UTC): ${new Intl.DateTimeFormat("es-MX", { ...options, timeZone: "UTC" }).format(value)}`;
+  }
 }
 
 function parseTelegramUserId(value: string | undefined): number | null {
