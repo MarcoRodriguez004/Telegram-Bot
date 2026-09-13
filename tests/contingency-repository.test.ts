@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ensureUser } from "../src/db/users";
 import {
+  getContingencyPreferences,
   listContingencyRecipients,
   listVehicles,
   registerVehicle,
@@ -49,5 +50,30 @@ describe("contingency preferences and vehicles", () => {
       plateLastDigits: [6, 7],
     }, 101);
     expect(ownerOnlyRecipients.map((recipient) => recipient.chatId)).toEqual([1001]);
+  });
+
+  it("defaults every user to always receive alerts until they opt out", async () => {
+    const { db } = createSqliteDb();
+    const userId = await ensureUser(db, {
+      telegramUserId: 303,
+      telegramChatId: 3003,
+      timezone: "America/Mexico_City",
+      currency: "MXN",
+    });
+
+    await expect(getContingencyPreferences(db, userId)).resolves.toMatchObject({
+      mode: "always",
+      enabled: true,
+    });
+    await expect(listContingencyRecipients(db, {
+      holograms: ["0", "00"],
+      plateLastDigits: [5, 6],
+    })).resolves.toMatchObject([{ userId, chatId: 3003, mode: "always" }]);
+
+    await setContingencyMode(db, { userId, mode: null });
+    await expect(listContingencyRecipients(db, {
+      holograms: ["0", "00"],
+      plateLastDigits: [5, 6],
+    })).resolves.toEqual([]);
   });
 });

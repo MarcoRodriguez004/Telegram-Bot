@@ -62,8 +62,10 @@ export async function getContingencyPreferences(db: D1Database, userId: number):
   const row = await db.prepare(
     "SELECT mode, enabled, updated_at AS updatedAt FROM contingency_preferences WHERE user_id = ?",
   ).bind(userId).first<ContingencyPreferencesRow>();
-  const mode = row?.mode === "always" || row?.mode === "vehicle" ? row.mode : null;
-  return { mode, enabled: mode !== null && row?.enabled === 1, updatedAt: row?.updatedAt ?? null };
+  const mode = row
+    ? row.mode === "always" || row.mode === "vehicle" ? row.mode : null
+    : "always";
+  return { mode, enabled: row ? mode !== null && row.enabled === 1 : true, updatedAt: row?.updatedAt ?? null };
 }
 
 export async function setContingencyMode(
@@ -84,9 +86,9 @@ export async function listContingencyRecipients(
   ownerTelegramUserId?: number,
 ): Promise<ContingencyRecipient[]> {
   const rows = await db.prepare(
-      "SELECT p.user_id AS userId, u.telegram_chat_id AS chatId, p.mode " +
-      "FROM contingency_preferences p INNER JOIN users u ON u.id = p.user_id " +
-      "WHERE p.enabled = 1 AND p.mode IS NOT NULL AND (? IS NULL OR u.telegram_user_id = ?) AND (p.mode = 'always' OR ? = 1 OR EXISTS (" +
+      "SELECT u.id AS userId, u.telegram_chat_id AS chatId, COALESCE(p.mode, 'always') AS mode " +
+      "FROM users u LEFT JOIN contingency_preferences p ON p.user_id = u.id " +
+      "WHERE (p.user_id IS NULL OR (p.enabled = 1 AND p.mode IS NOT NULL)) AND (? IS NULL OR u.telegram_user_id = ?) AND (COALESCE(p.mode, 'always') = 'always' OR ? = 1 OR EXISTS (" +
       "SELECT 1 FROM user_vehicles v WHERE v.user_id = p.user_id AND v.enabled = 1 AND v.hologram IN (?, ?) AND v.plate_last_digit IN (?, ?)" +
       ")) ORDER BY p.user_id",
   ).bind(

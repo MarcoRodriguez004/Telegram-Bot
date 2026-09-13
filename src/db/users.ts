@@ -38,5 +38,12 @@ export async function ensureUser(db: D1Database, input: EnsureUserInput): Promis
     throw new Error("User could not be created");
   }
 
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO contingency_preferences (user_id, mode, enabled, updated_at) VALUES (?, 'always', 1, ?)",
+    )
+    .bind(user.id, new Date().toISOString())
+    .run();
+
   return user.id;
 }
