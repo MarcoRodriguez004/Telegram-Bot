@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { handleRequest } from "../src/index";
+import { fetchLatestContingencyBulletin } from "../src/modules/contingency/source";
 import type { Env } from "../src/types";
 import { createSqliteDb } from "./helpers/sqlite-db";
+
+vi.mock("../src/modules/contingency/source", () => ({
+  fetchLatestContingencyBulletin: vi.fn(),
+}));
 
 function createEnv(db: D1Database, options: { openAi?: boolean } = {}) {
   const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
@@ -294,5 +299,42 @@ describe("task and reminder query webhook flow", () => {
     await post(callbackUpdate(34, "pa:g:n:a:20"), env, telegramFetch);
     expect(sqlite.prepare("SELECT tasks_enabled, tasks_interval_minutes, reminders_enabled, reminders_interval_minutes FROM notification_preferences WHERE user_id = 1").get())
       .toEqual({ tasks_enabled: 1, tasks_interval_minutes: 20, reminders_enabled: 1, reminders_interval_minutes: 20 });
+  });
+
+  it("checks the latest CAMe bulletin on demand without using monitor state", async () => {
+    const { db, sqlite } = createSqliteDb();
+    const { env, calls, telegramFetch } = createEnv(db);
+    vi.mocked(fetchLatestContingencyBulletin).mockResolvedValue({
+      active: true,
+      phase: "I",
+      affectedDate: "2026-04-26",
+      restriction: {
+        holograms: ["0", "00"],
+        plateLastDigits: [5, 6],
+        color: "amarillo",
+        text: "Hologramas 0 y 00 deben suspender su circulación.",
+        signature: "restriction-1",
+      },
+      sourceUrl: "https://aire.cdmx.gob.mx/comunicado.pdf",
+      publishedAt: "2026-04-25T20:00:00.000Z",
+    });
+
+    await post(messageUpdate(40, "/hoy_no_circula"), env, telegramFetch);
+    expect(String(calls.at(-1)?.body.text)).toContain("CAMe reporta la Fase I de contingencia activa");
+    expect(String(calls.at(-1)?.body.text)).toContain("Día de afectación: domingo, 26 de abril de 2026.");
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM contingency_state").get()).toEqual({ count: 0 });
+
+    await post(messageUpdate(41, "revisa en CAMe si hay alertas"), env, telegramFetch);
+    expect(vi.mocked(fetchLatestContingencyBulletin)).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a safe message when CAMe cannot be consulted", async () => {
+    const { calls, env, telegramFetch } = createEnv(createSqliteDb().db);
+    vi.mocked(fetchLatestContingencyBulletin).mockRejectedValueOnce(new Error("upstream details must stay private"));
+
+    await post(messageUpdate(42, "/hoy_no_circula"), env, telegramFetch);
+
+    expect(String(calls.at(-1)?.body.text)).toBe("⚠️ No pude consultar el boletín oficial de CAMe. Inténtalo de nuevo más tarde.");
+    expect(String(calls.at(-1)?.body.text)).not.toContain("upstream details");
   });
 });

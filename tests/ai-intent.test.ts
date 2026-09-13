@@ -191,6 +191,13 @@ describe("interpretMessage", () => {
     });
   });
 
+  it("normalizes an on-demand CAMe check", async () => {
+    await expect(interpretMessage("revisa en CAMe si hay alertas", {
+      apiKey: "test-key",
+      fetcher: async () => openAiResponse(candidate({ action: "check_contingency", message: null })),
+    })).resolves.toEqual({ action: "check_contingency" });
+  });
+
   it("rejects an unsafe action returned by the model", async () => {
     const result = await interpretMessage("borra todo", {
       apiKey: "test-key",

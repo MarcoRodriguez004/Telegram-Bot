@@ -33,6 +33,7 @@ const AI_INTENT_SCHEMA = {
         "list_folders",
         "get_note",
         "summary",
+        "check_contingency",
         "reply",
         "clarify",
       ],
@@ -93,6 +94,7 @@ Reglas:
 - Para gastos, amount debe conservar el número que escribió el usuario como texto; no conviertas moneda ni adivines un monto.
 - Usa reply para conversación, saludos y ayuda. Esa respuesta debe ser breve y describir solo capacidades reales del bot; no afirmes que guardaste o creaste algo.
 - Para consultar tareas o recordatorios, usa list_tasks o list_reminders. Si el usuario no indica estado, deja filter en null para que el Worker muestre botones de selección.
+- Para comprobar el boletín actual de CAMe y saber si hay una alerta de Hoy No Circula, usa check_contingency; no afirmes el resultado, el Worker hará la consulta oficial.
 - Para organizar guardados, usa create_folder solo cuando el usuario pida crear una carpeta explícitamente. Usa list_folders para «mis carpetas» o para mostrar las carpetas de un tipo. Usa list_notes para consultar guardados; kind puede ser photos, documents, links o all. Si el usuario menciona una carpeta al guardar, devuelve su nombre exacto en folderName; el Worker la creará si aún no existe o pedirá confirmación si encuentra una carpeta muy parecida. Nunca inventes un nombre de carpeta.
 - El bloque links representa enlaces y notas de texto.
 - Usa clarify cuando falte información o la petición sea ambigua. Pon la pregunta para el usuario en question e incluye en missing los campos que faltan.
@@ -238,6 +240,8 @@ function normalizeCandidate(value: unknown, options: ParseOptions): Intent | nul
       if (range === "week" || range === "month" || range === "today") return { action: "summary", range };
       return { action: "summary", range: "today" };
     }
+    case "check_contingency":
+      return { action: "check_contingency" };
     case "reply": {
       const message = getString(value, "message");
       return message && message.length <= MAX_REPLY_LENGTH ? { action: "reply", message } : null;

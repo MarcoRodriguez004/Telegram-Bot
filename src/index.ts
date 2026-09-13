@@ -22,7 +22,8 @@ import type { ReminderListItem } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { processDueNotifications } from "./modules/notifications/scheduler";
 import { monitorDatabaseStorage } from "./modules/storage/monitor";
-import { monitorContingency } from "./modules/contingency/monitor";
+import { formatContingencyCheck, monitorContingency } from "./modules/contingency/monitor";
+import { fetchLatestContingencyBulletin } from "./modules/contingency/source";
 import {
   getContingencyPreferences,
   listVehicles,
@@ -146,6 +147,7 @@ const TELEGRAM_COMMANDS = [
   { command: "configuraciones", description: "Configurar avisos y alertas" },
   { command: "configuracion", description: "Configurar avisos" },
   { command: "contingencia", description: "Configurar avisos de contingencia" },
+  { command: "hoy_no_circula", description: "Consultar alertas actuales de CAMe" },
   { command: "vehiculo", description: "Registrar un vehículo" },
   { command: "vehiculos", description: "Ver tus vehículos" },
   { command: "exportar", description: "Exportar tus datos" },
@@ -170,6 +172,7 @@ const COMMAND_GUIDE = [
   { command: "/guardado_<id>", description: "Abre un guardado específico.", example: "/guardado_123", natural: "Abre el guardado 123" },
   { command: "/configuraciones", description: "Configura avisos persistentes y alertas CAMe.", example: "/configuraciones", natural: "Quiero configurar mis avisos y alertas" },
   { command: "/contingencia", description: "Configura avisos de Fase I y vehículos registrados.", example: "/contingencia", natural: "Avísame solo si la contingencia afecta a mi coche" },
+  { command: "/hoy_no_circula", description: "Consulta el boletín actual de CAMe aunque ya se haya enviado una alerta.", example: "/hoy_no_circula", natural: "Revisa en CAMe si hay alertas" },
   { command: "/vehiculo <nombre> holograma <0|00> y placa terminada en <dígito>", description: "Registra un vehículo usando solo el último dígito de la placa.", example: "/vehiculo familiar holograma 0 y placa terminada en 6", natural: "Registra mi vehículo, holograma 0 y placa terminada en 6" },
   { command: "/vehiculos", description: "Lista tus vehículos registrados.", example: "/vehiculos", natural: "¿Qué vehículos tengo?" },
   { command: "/repite ...", description: "Configura una repetición diaria, semanal o mensual.", example: "/repite tarea 1 cada semana", natural: "Repite la tarea 1 cada semana" },
@@ -494,6 +497,7 @@ async function getReply(
     intent.action === "remove_vehicle" ||
     intent.action === "configure_contingency" ||
     intent.action === "show_contingency" ||
+    intent.action === "check_contingency" ||
     intent.action === "create_task" ||
     intent.action === "set_recurrence" ||
     intent.action === "create_reminder" ||
@@ -589,6 +593,10 @@ async function getReply(
 
     if (intent.action === "show_contingency") {
       return formatContingencySettingsReply(env.PERSONAL_ASSISTANT_DB, userId);
+    }
+
+    if (intent.action === "check_contingency") {
+      return getContingencyCheckReply();
     }
 
     if (intent.action === "list_tasks") {
@@ -1598,6 +1606,19 @@ function formatBotStatus(status: Awaited<ReturnType<typeof getBotStatus>>, timez
   return lines.join("\n");
 }
 
+async function getContingencyCheckReply(): Promise<string> {
+  try {
+    const bulletin = await fetchLatestContingencyBulletin();
+    return formatContingencyCheck(bulletin);
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "contingency_check_failed",
+      reason: error instanceof Error ? error.name : "unknown_error",
+    }));
+    return "⚠️ No pude consultar el boletín oficial de CAMe. Inténtalo de nuevo más tarde.";
+  }
+}
+
 async function formatContingencySettingsReply(db: D1Database, userId: number): Promise<BotReply> {
   const [preferences, vehicles] = await Promise.all([
     getContingencyPreferences(db, userId),
@@ -1916,7 +1937,7 @@ function getCommandReply(text: string): Reply | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• /comandos para ver el catálogo completo\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuraciones para avisos persistentes y alertas CAMe\n• /contingencia para configurar avisos de Fase I\n• /vehiculo familiar holograma 0 y placa terminada en 6\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• /comandos para ver el catálogo completo\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuraciones para avisos persistentes y alertas CAMe\n• /contingencia para configurar avisos de Fase I\n• /hoy_no_circula para corroborar alertas actuales de CAMe\n• /vehiculo familiar holograma 0 y placa terminada en 6\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
 
   if (command === "/comandos") return formatCommandsGuide();

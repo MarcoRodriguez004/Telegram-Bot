@@ -42,6 +42,7 @@ const EXPORT_COMMAND = /^(?:\/)?(?:exportar|exporta)(?:@[a-z0-9_]+)?$/iu;
 const VEHICLE_REGISTER = /^(?:\/veh[ií]culo(?:@[a-z0-9_]+)?|registra(?:r)?\s+(?:(?:mi|este|el|un)\s+)?veh[ií]culo|agrega(?:r)?\s+(?:(?:mi|este|el|un)\s+)?(?:veh[ií]culo|coche))(?:(?:\s+|[,;:])|$)(.*)$/iu;
 const VEHICLE_LIST = /^(?:\/veh[ií]culos?|(?:mis|cu[aá]les son mis)\s+(?:veh[ií]culos?|coches?))(?:@[a-z0-9_]+)?[?!.]*$/iu;
 const VEHICLE_REMOVE = /^(?:\/elimina(?:r)?_veh[ií]culo|elimina(?:r)?\s+(?:mi\s+)?veh[ií]culo)\s+(\d+)$/iu;
+const CONTINGENCY_CHECK = /^(?:\/hoy_no_circula(?:@[a-z0-9_]+)?|(?:revisa|revisar|consulta|consultar|comprueba|compruebe|verifica|verificar|corrobora|corroborar)\s+(?:(?:en|de)\s+)?(?:c[aá]me|hoy\s+no\s+circula|contingencia(?:\s+ambiental)?)(?:\s+si\s+(?:hay|existe[n]?)\s+(?:alg[uú]n(?:a)?\s+)?alerta[s]?)?|¿?\s*(?:hay|existe[n]?)\s+(?:alg[uú]n(?:a)?\s+)?(?:alerta[s]?|contingencia[s]?|restricci[oó]n(?:es)?)(?:\s+(?:de|en)\s+(?:c[aá]me|hoy\s+no\s+circula|contingencia(?:\s+ambiental)?))?\s*\??)[?!.]*$/iu;
 const CONTINGENCY_SHOW = /^(?:\/contingencia(?:@[a-z0-9_]+)?|(?:configura|configurar|mu[eé]strame|dime)\s+(?:mis\s+)?avisos\s+de\s+contingencia)[?!.]*$/iu;
 const CONTINGENCY_ALWAYS = /^(?:av[ií]same|notif[ií]came)\s+siempre\s+(?:cuando\s+)?(?:haya|se\s+active)\s+(?:la\s+)?fase\s+(?:i|1)(?:\s+de\s+contingencia)?[?!.]*$/iu;
 const CONTINGENCY_VEHICLE = /^(?:av[ií]same|notif[ií]came)\s+(?:solo\s+)?si\s+afecta\s+a\s+(?:mi\s+)?(?:veh[ií]culo|coche|auto|carro)[?!.]*$/iu;
@@ -78,6 +79,7 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
     const vehicleId = Number(vehicleRemove[1]);
     return Number.isSafeInteger(vehicleId) && vehicleId > 0 ? { action: "remove_vehicle", vehicleId } : { action: "unknown", reason: "invalid_vehicle_id" };
   }
+  if (CONTINGENCY_CHECK.test(normalized)) return { action: "check_contingency" };
   if (CONTINGENCY_ALWAYS.test(normalized)) return { action: "configure_contingency", mode: "always" };
   if (CONTINGENCY_VEHICLE.test(normalized)) return { action: "configure_contingency", mode: "vehicle" };
   if (CONTINGENCY_OFF.test(normalized)) return { action: "configure_contingency", mode: null };

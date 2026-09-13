@@ -6,7 +6,7 @@ import {
   saveContingencyState,
   type ContingencyState,
 } from "./repository";
-import { fetchLatestContingencyBulletin } from "./source";
+import { fetchLatestContingencyBulletin, type ContingencyBulletin } from "./source";
 
 export async function monitorContingency(
   db: D1Database,
@@ -70,6 +70,23 @@ function formatContingencyAlert(
   const day = affectedDate ? formatAffectedDate(affectedDate) : "no identificado en el boletín";
   const heading = previous?.active ? "🔁 Cambiaron las restricciones de la Fase I" : "🚨 Se activó la Fase I de contingencia ambiental";
   return `${heading}\n\nDía de afectación: ${day}.\nHologramas 0 y 00: terminación ${digits}${color}.\n${restriction?.text ?? "Consulta el boletín oficial para conocer la restricción completa."}\n\nFuente oficial: ${sourceUrl}`;
+}
+
+export function formatContingencyCheck(bulletin: ContingencyBulletin | null): string {
+  if (!bulletin) {
+    return "⚠️ No pude confirmar el estado actual de CAMe. Consulta el sitio oficial para verificar si existe una alerta.\n\nFuente oficial: https://aire.cdmx.gob.mx/contingencias/notas/";
+  }
+  if (!bulletin.active) {
+    return `✅ Consulta CAMe / Hoy No Circula\n\nCAMe no reporta una Fase I de contingencia activa en su boletín más reciente.\n\nFuente oficial: ${bulletin.sourceUrl}`;
+  }
+
+  const restriction = bulletin.restriction;
+  const day = bulletin.affectedDate ? formatAffectedDate(bulletin.affectedDate) : "no identificado en el boletín";
+  const restrictionLine = restriction
+    ? `Hologramas ${restriction.holograms.join(" y ")}: terminación ${restriction.plateLastDigits.length ? restriction.plateLastDigits.join(" y ") : "no identificada automáticamente"}${restriction.color ? ` (${restriction.color})` : ""}.\n${restriction.text}`
+    : "No pude extraer automáticamente las restricciones del boletín; consulta la fuente oficial antes de circular.";
+
+  return `🚗 Consulta CAMe / Hoy No Circula\n\n🚨 CAMe reporta la Fase I de contingencia activa.\nDía de afectación: ${day}.\n${restrictionLine}\n\nFuente oficial: ${bulletin.sourceUrl}`;
 }
 
 function formatAffectedDate(value: string): string {
