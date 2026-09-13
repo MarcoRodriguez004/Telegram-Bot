@@ -135,6 +135,7 @@ import {
   buildSavedNoteActionKeyboard,
   buildSavedNoteDeleteKeyboard,
   buildSavedNoteEditCancelKeyboard,
+  buildSavedNoteMoveKeyboard,
   buildSavedNoteKeyboard,
   buildStopConfirmationKeyboard,
   parseCallbackData,
@@ -789,7 +790,7 @@ async function getReply(
           await sendAttachment(env, message.chat.id, { kind: note.file_kind, fileId: note.file_id }, note.content, telegramFetch);
           await sendBotReply(env, message.chat.id, {
             text: "Puedes gestionar este guardado:",
-            replyMarkup: buildSavedNoteActionKeyboard(note.id, false),
+            replyMarkup: buildSavedNoteActionKeyboard(note.id, true),
           }, telegramFetch);
           return null;
         } catch {
@@ -799,7 +800,7 @@ async function getReply(
       }
       return {
         text: formatSavedNoteContent(note),
-        replyMarkup: buildSavedNoteActionKeyboard(note.id, !note.file_kind),
+        replyMarkup: buildSavedNoteActionKeyboard(note.id, true),
       };
     }
     if (intent.action === "summary") {
@@ -1050,10 +1051,6 @@ async function handleCallbackQuery(
       await sendMessage(env, source.chat.id, "No encontré ese guardado o ya no está disponible.", telegramFetch);
       return;
     }
-    if (note.file_kind) {
-      await sendMessage(env, source.chat.id, "Los archivos no se pueden editar; solo puedes eliminarlos.", telegramFetch);
-      return;
-    }
     await startEditSession(env.PERSONAL_ASSISTANT_DB, {
       userId,
       chatId: source.chat.id,
@@ -1062,9 +1059,54 @@ async function handleCallbackQuery(
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     });
     await sendBotReply(env, source.chat.id, {
-      text: `✏️ Escribe el nuevo contenido de la nota.\n\nContenido actual:\n${formatSavedNoteContent(note)}`,
+      text: `✏️ Escribe el nuevo contenido o descripción del guardado.\n\nContenido actual:\n${formatSavedNoteContent(note)}`,
       replyMarkup: buildSavedNoteEditCancelKeyboard(),
     }, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "saved_note_move") {
+    const note = await getNote(env.PERSONAL_ASSISTANT_DB, userId, action.id);
+    if (!note) {
+      await sendMessage(env, source.chat.id, "No encontré ese guardado o ya no está disponible.", telegramFetch);
+      return;
+    }
+    const folders = await listFolders(env.PERSONAL_ASSISTANT_DB, userId, "all");
+    if (!folders.some((folder) => folder.id === null)) {
+      folders.push({ id: null, name: "Sin carpeta", count: 0 });
+    }
+    await sendBotReply(env, source.chat.id, {
+      text: "📁 Elige la carpeta de destino:",
+      replyMarkup: buildSavedNoteMoveKeyboard(action.id, folders),
+    }, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "saved_note_move_set") {
+    const note = await getNote(env.PERSONAL_ASSISTANT_DB, userId, action.id);
+    if (!note) {
+      await sendMessage(env, source.chat.id, "No encontré ese guardado o ya no está disponible.", telegramFetch);
+      return;
+    }
+    let destinationName = "Sin carpeta";
+    if (action.folderId !== null) {
+      const folder = await getFolderById(env.PERSONAL_ASSISTANT_DB, userId, action.folderId);
+      if (!folder) {
+        await sendMessage(env, source.chat.id, "Esa carpeta ya no está disponible.", telegramFetch);
+        return;
+      }
+      destinationName = folder.name;
+    }
+    try {
+      await moveNoteToFolder(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        noteId: action.id,
+        folderId: action.folderId,
+      });
+      await sendMessage(env, source.chat.id, `✅ Guardado movido a «${destinationName}».`, telegramFetch);
+    } catch {
+      await sendMessage(env, source.chat.id, "No pude mover ese guardado.", telegramFetch);
+    }
     return;
   }
 
@@ -1213,7 +1255,7 @@ async function handleCallbackQuery(
         await sendAttachment(env, source.chat.id, { kind: note.file_kind, fileId: note.file_id }, note.content, telegramFetch);
         await sendBotReply(env, source.chat.id, {
           text: "Puedes gestionar este guardado:",
-          replyMarkup: buildSavedNoteActionKeyboard(note.id, false),
+            replyMarkup: buildSavedNoteActionKeyboard(note.id, true),
         }, telegramFetch);
       } catch {
         await sendMessage(env, source.chat.id, `No pude enviar el archivo. Sigue guardado; intenta de nuevo con /guardado_${note.id}.`, telegramFetch);
@@ -1222,7 +1264,7 @@ async function handleCallbackQuery(
     }
     await sendBotReply(env, source.chat.id, {
       text: formatSavedNoteContent(note),
-      replyMarkup: buildSavedNoteActionKeyboard(note.id, !note.file_kind),
+      replyMarkup: buildSavedNoteActionKeyboard(note.id, true),
     }, telegramFetch);
     return;
   }

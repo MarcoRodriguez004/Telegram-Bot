@@ -30,6 +30,8 @@ export type CallbackAction =
   | { kind: "saved_note_edit"; id: number }
   | { kind: "saved_note_delete"; id: number }
   | { kind: "saved_note_delete_decision"; id: number; confirmed: boolean }
+  | { kind: "saved_note_move"; id: number }
+  | { kind: "saved_note_move_set"; id: number; folderId: number | null }
   | { kind: "saved_note_edit_cancel" }
   | { kind: "edit_cancel"; resource: QueryResource }
   | { kind: "saved_note"; id: number }
@@ -151,8 +153,21 @@ export function buildSavedNoteKeyboard(notes: SavedNote[]): InlineKeyboardMarkup
 export function buildSavedNoteActionKeyboard(noteId: number, editable: boolean): InlineKeyboardMarkup {
   const row: InlineKeyboardButton[] = [];
   if (editable) row.push({ text: "✏️ Editar", callback_data: `pa:s:e:${noteId}` });
+  row.push({ text: "📁 Mover", callback_data: `pa:s:m:${noteId}` });
   row.push({ text: "🗑️ Eliminar", callback_data: `pa:s:d:${noteId}` });
   return { inline_keyboard: [row] };
+}
+
+export function buildSavedNoteMoveKeyboard(
+  noteId: number,
+  folders: SavedFolderListItem[],
+): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: folders.map((folder) => [{
+      text: `📁 ${folder.name}`,
+      callback_data: `pa:s:m:${noteId}:${folder.id ?? 0}`,
+    }]),
+  };
 }
 
 export function buildSavedNoteDeleteKeyboard(noteId: number): InlineKeyboardMarkup {
@@ -306,6 +321,17 @@ export function parseCallbackData(data: string | undefined): CallbackAction | nu
   }
   if (parts[1] === "s" && parts[2] === "x" && parts.length === 3) {
     return { kind: "saved_note_edit_cancel" };
+  }
+  if (parts[1] === "s" && parts[2] === "m" && parts.length === 4) {
+    const id = Number(parts[3]);
+    return Number.isSafeInteger(id) && id > 0 ? { kind: "saved_note_move", id } : null;
+  }
+  if (parts[1] === "s" && parts[2] === "m" && parts.length === 5) {
+    const id = Number(parts[3]);
+    const folderId = Number(parts[4]);
+    return Number.isSafeInteger(id) && id > 0 && Number.isSafeInteger(folderId) && folderId >= 0
+      ? { kind: "saved_note_move_set", id, folderId: folderId === 0 ? null : folderId }
+      : null;
   }
   if (parts[1] === "s" && ["e", "d", "y", "n"].includes(parts[2]) && parts.length === 4) {
     const id = Number(parts[3]);
