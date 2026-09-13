@@ -28,6 +28,21 @@ describe("status, search and export", () => {
     expect(results.every((result) => !result.preview.includes("otra persona"))).toBe(true);
   });
 
+  it("searches descriptions saved with photos and documents", async () => {
+    const { db, sqlite } = createSqliteDb();
+    seedUsers(sqlite);
+    sqlite.prepare("INSERT INTO notes (user_id, content, file_kind, file_id, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(1, "INE frente", "photo", "photo_ine", "2026-09-10T15:02:00.000Z");
+    sqlite.prepare("INSERT INTO notes (user_id, content, file_kind, file_id, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(1, "Recibo de luz", "document", "document_receipt", "2026-09-10T15:03:00.000Z");
+
+    const results = await searchUserData(db, { userId: 1, query: "INE" });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.kind).toBe("note");
+    expect(results[0]?.preview).toBe("INE frente");
+  });
+
   it("filters search results by type, status, folder and date, with pagination", async () => {
     const { db, sqlite } = createSqliteDb();
     seedUsers(sqlite);

@@ -37,7 +37,8 @@ const SAVED_ITEM = /^(?:ver\s+guardado\s+|\/?guardado(?:_|\s+))(\d+)(?:@[a-z0-9_
 const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const STATUS_COMMAND = /^(?:\/)?estado(?:@[a-z0-9_]+)?$/iu;
-const SEARCH_COMMAND = /^(?:\/)?(?:buscar|busca)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const SEARCH_COMMAND = /^(?:\/)?(?:buscar|busca|b[uú]squeda)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const NATURAL_SEARCH_PHRASE = /^(?:(?:cualquier|todos?|todas?)\s+)?(?:archivo(?:s)?|foto(?:s)?|imagen(?:es)?|documento(?:s)?|nota(?:s)?|guardado(?:s)?)(?:(?:\s*,|\s+(?:o|y))\s*(?:archivo(?:s)?|foto(?:s)?|imagen(?:es)?|documento(?:s)?|nota(?:s)?|guardado(?:s)?))*\s+(?:que\s+)?(?:conteng(?:a|an)|contien(?:e|en)|teng(?:a|an))\s+(.+)$/iu;
 const EXPORT_COMMAND = /^(?:\/)?(?:exportar|exporta)(?:@[a-z0-9_]+)?$/iu;
 const VEHICLE_REGISTER = /^(?:\/veh[ií]culo(?:@[a-z0-9_]+)?|registra(?:r)?\s+(?:(?:mi|este|el|un)\s+)?veh[ií]culo|agrega(?:r)?\s+(?:(?:mi|este|el|un)\s+)?(?:veh[ií]culo|coche))(?:(?:\s+|[,;:])|$)(.*)$/iu;
 const VEHICLE_LIST = /^(?:\/veh[ií]culos?|(?:mis|cu[aá]les son mis)\s+(?:veh[ií]culos?|coches?))(?:@[a-z0-9_]+)?[?!.]*$/iu;
@@ -371,7 +372,9 @@ function normalizeFolderInput(value: string): string {
 function parseSearchQuery(value: string): Intent {
   const filters = /(?:^|\s)(tipo|type|estado|status|carpeta|folder|desde|from|hasta|to|p[aá]gina|pagina|page):(?:"([^"]+)"|'([^']+)'|([^\s]+))/giu;
   const matches = [...value.matchAll(filters)];
-  const query = value.replace(filters, " ").trim().replace(/\s+/g, " ");
+  const remaining = value.replace(filters, " ").trim().replace(/\s+/g, " ");
+  const naturalMatch = NATURAL_SEARCH_PHRASE.exec(remaining);
+  const query = (naturalMatch?.[1] ?? remaining).trim().replace(/[?!.]+$/u, "");
   if (!query) return { action: "unknown", reason: "missing_search_query" };
 
   const result: Extract<Intent, { action: "search" }> = { action: "search", query };

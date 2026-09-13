@@ -27,4 +27,12 @@ describe("status and search parser", () => {
     expect(parseIntent("/buscar")).toEqual({ action: "unknown", reason: "missing_search_query" });
     expect(parseIntent("/buscar tipo:tarea")).toEqual({ action: "unknown", reason: "missing_search_query" });
   });
+
+  it("extracts the term from natural saved-data searches", () => {
+    expect(parseIntent("Búsqueda INE")).toEqual({ action: "search", query: "INE" });
+    expect(parseIntent("Busca cualquier archivo, foto o nota que contenga INE")).toEqual({
+      action: "search",
+      query: "INE",
+    });
+  });
 });
