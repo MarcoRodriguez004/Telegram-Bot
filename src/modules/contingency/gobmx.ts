@@ -92,7 +92,9 @@ function parsePublishedDate(text: string): string | null {
     agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12,
   };
   const month = months[match[2].toLowerCase()];
-  const date = new Date(Date.UTC(Number(match[3]), month - 1, Number(match[1])));
+  // The source provides only a calendar date. Noon UTC keeps that date stable
+  // when it is later formatted in America/Mexico_City.
+  const date = new Date(Date.UTC(Number(match[3]), month - 1, Number(match[1]), 12));
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 

@@ -20,6 +20,16 @@ describe("Gob.mx contingency source", () => {
     )).toMatchObject({ active: false, phase: "I" });
   });
 
+  it("keeps the publication day when a bulletin only provides a calendar date", () => {
+    const bulletin = parseGobMxBulletinHtml(
+      "<article><h1>SE SUSPENDE LA FASE I DE CONTINGENCIA AMBIENTAL</h1>" +
+        "<p>13 de septiembre de 2026. Las medidas se suspenden a partir de hoy.</p></article>",
+      "https://www.gob.mx/comisionambiental/prensa/boletin-125",
+    );
+
+    expect(bulletin?.publishedAt).toBe("2026-09-13T12:00:00.000Z");
+  });
+
   it("selects no status from a challenge page", () => {
     expect(parseGobMxBulletinHtml("<title>Challenge Validation</title>", "https://www.gob.mx/comisionambiental/archivo/prensa")).toBeNull();
   });
