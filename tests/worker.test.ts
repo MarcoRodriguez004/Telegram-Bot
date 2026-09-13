@@ -3,6 +3,7 @@ import type { Env } from "../src/types";
 import { handleRequest } from "../src/index";
 
 type SentMessage = { chat_id: number; text: string };
+type TelegramRequest = { url: string; body: Record<string, unknown> };
 
 function createFakeDb() {
   const processedUpdates = new Set<number>();
@@ -11,6 +12,9 @@ function createFakeDb() {
     processedUpdates,
     prepare(_query: string) {
       return {
+        async first<T>() {
+          return { ok: 1 } as T;
+        },
         bind(...values: unknown[]) {
           return {
             async run() {
@@ -29,6 +33,7 @@ function createFakeDb() {
 function createEnv() {
   const db = createFakeDb();
   const sentMessages: SentMessage[] = [];
+  const telegramRequests: TelegramRequest[] = [];
   const env: Env = {
     PERSONAL_ASSISTANT_DB: db as unknown as D1Database,
     TELEGRAM_BOT_TOKEN: "test-token",
@@ -38,13 +43,22 @@ function createEnv() {
     DEFAULT_CURRENCY: "MXN",
   };
   const telegramFetch: typeof fetch = async (_input, init) => {
-    sentMessages.push(JSON.parse(String(init?.body)) as SentMessage);
+    const url = String(_input);
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    telegramRequests.push({ url, body });
+    if (url.endsWith("/sendMessage")) sentMessages.push(body as SentMessage);
     return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
   };
-  return { db, env, sentMessages, telegramFetch };
+  return { db, env, sentMessages, telegramRequests, telegramFetch };
 }
 
-function telegramUpdate(updateId: number, userId = 42, chatType: "private" | "group" = "private", isBot = false) {
+function telegramUpdate(
+  updateId: number,
+  userId = 42,
+  chatType: "private" | "group" = "private",
+  isBot = false,
+  text = "/start",
+) {
   return JSON.stringify({
     update_id: updateId,
     message: {
@@ -52,7 +66,7 @@ function telegramUpdate(updateId: number, userId = 42, chatType: "private" | "gr
       date: 1_757_000_000,
       chat: { id: userId, type: chatType },
       from: { id: userId, is_bot: isBot, first_name: "Marco" },
-      text: "/start",
+      text,
     },
   });
 }
@@ -112,7 +126,7 @@ describe("Personal Assistant Worker", () => {
   });
 
   it("answers /start and does not process the same update twice", async () => {
-    const { env, db, sentMessages, telegramFetch } = createEnv();
+    const { env, db, sentMessages, telegramRequests, telegramFetch } = createEnv();
     const request = () =>
       new Request("https://bot.test/telegram/webhook", {
         method: "POST",
@@ -125,7 +139,28 @@ describe("Personal Assistant Worker", () => {
     expect(sentMessages).toHaveLength(1);
     expect(sentMessages[0]).toMatchObject({ chat_id: 42 });
     expect(sentMessages[0].text).toContain("Personal Assistant");
+    expect(telegramRequests.some((request) => request.url.endsWith("/setMyCommands"))).toBe(true);
     expect(db.processedUpdates.size).toBe(1);
+  });
+
+  it("returns operational health only to the configured admin", async () => {
+    const { env, sentMessages, telegramFetch } = createEnv();
+    const adminRequest = new Request("https://bot.test/telegram/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
+      body: telegramUpdate(10, 42, "private", false, "/health"),
+    });
+    const otherUserRequest = new Request("https://bot.test/telegram/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
+      body: telegramUpdate(11, 99, "private", false, "/health"),
+    });
+
+    await handleRequest(adminRequest, env, telegramFetch);
+    await handleRequest(otherUserRequest, env, telegramFetch);
+
+    expect(sentMessages[0].text).toContain("D1: accesible");
+    expect(sentMessages[1].text).toContain("solo está disponible");
   });
 
   it("returns bad request for malformed JSON", async () => {

@@ -91,7 +91,7 @@ import { parseIntent } from "./router/parser";
 import type { Intent } from "./router/intent";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
-import { answerCallbackQuery, sendAttachment, sendDocumentContent, sendMessage } from "./telegram/client";
+import { answerCallbackQuery, sendAttachment, sendDocumentContent, sendMessage, setMyCommands } from "./telegram/client";
 import type { InlineKeyboardMarkup } from "./telegram/client";
 import {
   buildEditCancelKeyboard,
@@ -114,6 +114,20 @@ import type { Env } from "./types";
 import type { RecurrenceRule } from "./modules/recurrence";
 
 const MAX_UPDATE_BYTES = 64 * 1024;
+
+const TELEGRAM_COMMANDS = [
+  { command: "start", description: "Iniciar el bot" },
+  { command: "help", description: "Ver ayuda y ejemplos" },
+  { command: "tarea", description: "Crear una tarea" },
+  { command: "recordar", description: "Crear un recordatorio" },
+  { command: "estado", description: "Ver tu estado" },
+  { command: "resumen", description: "Ver un resumen" },
+  { command: "buscar", description: "Buscar en tus datos" },
+  { command: "guardados", description: "Ver fotos, archivos y enlaces" },
+  { command: "configuracion", description: "Configurar avisos" },
+  { command: "exportar", description: "Exportar tus datos" },
+  { command: "importar", description: "Restaurar un JSON exportado" },
+] as const;
 
 type BotReply = {
   text: string;
@@ -220,6 +234,7 @@ export async function handleRequest(
       reply = editReply ?? await getReply(text, update, env, telegramFetch, aiFetch);
     }
     if (reply !== null) await sendBotReply(env, update.message.chat.id, reply, telegramFetch);
+    if (getCommandToken(text) === "/start") await configureTelegramCommands(env, telegramFetch);
     return new Response(null, { status: 200 });
   } catch (error) {
     console.error("Webhook processing failed", error instanceof Error ? error.message : "unknown error");
@@ -236,6 +251,8 @@ async function getReply(
 ): Promise<Reply | null> {
   const globalResetAction = parseGlobalResetAction(text);
   if (globalResetAction) return handleGlobalResetAction(globalResetAction, update, env);
+
+  if (getCommandToken(text) === "/health") return getTelegramHealthReply(update, env);
 
   const commandReply = getCommandReply(text);
   if (commandReply) return commandReply;
@@ -1593,7 +1610,7 @@ function resolvePendingListResponse(text: string, context: PendingListContext): 
 }
 
 function getCommandReply(text: string): Reply | null {
-  const command = text.split(/\s+/, 1)[0].toLowerCase().split("@")[0];
+  const command = getCommandToken(text);
 
   if (command === "/start") {
     return "👋 Bienvenido a Personal Assistant.\n\nEscribe una tarea, gasto o recordatorio en lenguaje natural. También puedes guardar notas, enlaces, fotos y documentos, organizarlos en carpetas y consultar /guardados.";
@@ -1611,6 +1628,37 @@ function getCommandReply(text: string): Reply | null {
   }
 
   return null;
+}
+
+async function configureTelegramCommands(env: Env, telegramFetch: typeof fetch): Promise<void> {
+  try {
+    await setMyCommands(env, [...TELEGRAM_COMMANDS], telegramFetch);
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "telegram_command_menu_failed",
+      reason: error instanceof Error ? error.name : "unknown_error",
+    }));
+  }
+}
+
+async function getTelegramHealthReply(update: TelegramUpdate, env: Env): Promise<string> {
+  const telegramUserId = update.message?.from?.id;
+  const adminUserId = parseConfiguredTelegramUserId(env.TELEGRAM_ADMIN_USER_ID ?? env.TELEGRAM_ALLOWED_USER_ID);
+  if (telegramUserId === undefined || adminUserId === null || telegramUserId !== adminUserId) {
+    return "Este comando solo está disponible para el administrador.";
+  }
+
+  try {
+    await env.PERSONAL_ASSISTANT_DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
+    return `✅ Bot operativo\nD1: accesible\nHora: ${new Date().toISOString()}`;
+  } catch (error) {
+    console.error(JSON.stringify({ event: "telegram_health_check_failed", reason: error instanceof Error ? error.name : "unknown_error" }));
+    return "⚠️ El bot responde, pero D1 no está disponible en este momento.";
+  }
+}
+
+function getCommandToken(text: string): string {
+  return text.split(/\s+/, 1)[0].toLowerCase().split("@")[0];
 }
 
 function notificationScopeLabel(scope: NotificationScope): string {

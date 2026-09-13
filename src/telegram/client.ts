@@ -27,6 +27,11 @@ export interface SendMessageOptions {
   replyMarkup?: InlineKeyboardMarkup;
 }
 
+export interface TelegramBotCommand {
+  command: string;
+  description: string;
+}
+
 export async function sendMessage(
   env: Env,
   chatId: number,
@@ -67,6 +72,17 @@ export async function sendAttachment(
   }, telegramFetch);
 }
 
+export async function setMyCommands(
+  env: Env,
+  commands: TelegramBotCommand[],
+  telegramFetch: typeof fetch = fetch,
+): Promise<void> {
+  await callTelegram(env, "setMyCommands", {
+    commands,
+    scope: { type: "all_private_chats" },
+  }, telegramFetch);
+}
+
 export async function sendDocumentContent(
   env: Env,
   chatId: number,
@@ -85,7 +101,7 @@ export async function sendDocumentContent(
 
 async function callTelegram(
   env: Env,
-  method: "sendMessage" | "sendPhoto" | "sendDocument" | "answerCallbackQuery",
+  method: "sendMessage" | "sendPhoto" | "sendDocument" | "answerCallbackQuery" | "setMyCommands",
   body: Record<string, unknown>,
   telegramFetch: typeof fetch,
 ): Promise<void> {
@@ -98,7 +114,7 @@ async function callTelegram(
 
 async function callTelegramRequest(
   env: Env,
-  method: "sendMessage" | "sendPhoto" | "sendDocument" | "answerCallbackQuery",
+  method: "sendMessage" | "sendPhoto" | "sendDocument" | "answerCallbackQuery" | "setMyCommands",
   init: RequestInit,
   telegramFetch: typeof fetch,
 ): Promise<void> {
