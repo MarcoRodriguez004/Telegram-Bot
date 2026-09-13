@@ -103,6 +103,7 @@ export interface InterpretMessageOptions extends ParseOptions {
   apiKey?: string;
   model?: string;
   fetcher?: typeof fetch;
+  onFailure?: (failure: { kind: "http" | "network"; status?: number }) => Promise<void> | void;
 }
 
 export async function interpretMessage(text: string, options: InterpretMessageOptions): Promise<Intent | null> {
@@ -141,6 +142,7 @@ export async function interpretMessage(text: string, options: InterpretMessageOp
 
     if (!response.ok) {
       console.error("OpenAI intent request failed", response.status);
+      await notifyAiFailure(options, { kind: "http", status: response.status });
       return null;
     }
 
@@ -160,6 +162,7 @@ export async function interpretMessage(text: string, options: InterpretMessageOp
     return normalizeCandidate(candidate, options);
   } catch (error) {
     console.error("OpenAI intent request unavailable", error instanceof Error ? error.name : "unknown");
+    await notifyAiFailure(options, { kind: "network" });
     return null;
   } finally {
     clearTimeout(timeoutId);
@@ -297,6 +300,17 @@ function normalizeNote(value: Record<string, unknown>): Intent {
   if (!rawUrl) return { action: "save_note", content, ...(folderName ? { folderName } : {}) };
   const url = normalizeHttpUrl(rawUrl);
   return url ? { action: "save_note", content, url, ...(folderName ? { folderName } : {}) } : { action: "unknown", reason: "invalid_note_url" };
+}
+
+async function notifyAiFailure(
+  options: InterpretMessageOptions,
+  failure: { kind: "http" | "network"; status?: number },
+): Promise<void> {
+  try {
+    await options.onFailure?.(failure);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "openai_failure_handler_failed", reason: error instanceof Error ? error.name : "unknown_error" }));
+  }
 }
 
 function getSavedKind(value: Record<string, unknown>): "all" | "photos" | "documents" | "links" | null {

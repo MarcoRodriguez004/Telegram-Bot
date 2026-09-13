@@ -2,6 +2,7 @@ import { sendMessage } from "../../telegram/client";
 import { buildOneTimeAlertKeyboard, buildPersistentAlertKeyboard } from "../../telegram/keyboards";
 import type { Env } from "../../types";
 import type { NotificationResource } from "./repository";
+import { reportOperationalFailure } from "../operations/alerts";
 
 const MAX_NOTIFICATIONS_PER_RUN = 20;
 const PROCESSING_LEASE_MS = 5 * 60 * 1_000;
@@ -64,6 +65,12 @@ async function processDueSnoozes(
       sent += 1;
     } catch (error) {
       console.error(JSON.stringify({ event: "telegram_snooze_delivery_failed", error: error instanceof Error ? error.message : "unknown_error" }));
+      await reportOperationalFailure(db, env, {
+        component: "scheduler",
+        operation: "snooze_delivery",
+        detail: "telegram_or_database_failure",
+        now,
+      }, telegramFetch);
       await releaseSnooze(db, snooze.id, leaseUntil);
       break;
     }
@@ -140,6 +147,12 @@ async function processResourceNotifications(
       sent += 1;
     } catch (error) {
       console.error("Persistent notification delivery failed", error instanceof Error ? error.message : "unknown error");
+      await reportOperationalFailure(db, env, {
+        component: "scheduler",
+        operation: "persistent_notification_delivery",
+        detail: "telegram_or_database_failure",
+        now,
+      }, telegramFetch);
       await releaseNotification(db, notification.id, leaseUntil);
       break;
     }

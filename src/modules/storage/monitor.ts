@@ -1,6 +1,7 @@
 import { sendMessage } from "../../telegram/client";
 import { calculateUserStorageUsage, type UserStorageUsage } from "./accounting";
 import type { Env } from "../../types";
+import { reportOperationalFailure } from "../operations/alerts";
 
 export const STORAGE_LIMIT_BYTES = 150 * 1024 * 1024;
 
@@ -47,7 +48,7 @@ export async function monitorDatabaseStorage(
     if (destination.telegramUserId === adminUserId) continue;
     const usage = usageByUser.get(destination.telegramUserId);
     const userMessage = `⚠️ La base de datos alcanzó el límite de 150 MB. Tu consumo lógico estimado es ${formatMegabytes(usage?.logicalBytes ?? 0)}. No agregues más información por ahora y contacta al programador.`;
-    await deliverStorageAlert(env, destination.chatId, userMessage, telegramFetch);
+    await deliverStorageAlert(db, env, destination.chatId, userMessage, now, telegramFetch);
   }
 
   if (adminUserId !== null) {
@@ -55,7 +56,7 @@ export async function monitorDatabaseStorage(
     const knownUsers = destinations.map((user) => String(user.telegramUserId)).join(", ") || "ninguno";
     const usageSummary = formatUsageSummary(userUsage);
     const adminMessage = `⚠️ D1 alcanzó 150 MB (${formatMegabytes(sizeBytes)}). Usuarios registrados al cruzar el umbral: ${knownUsers}.\n\nConsumo lógico estimado por usuario:\n${usageSummary}\n\nContacta al programador.`;
-    await deliverStorageAlert(env, adminDestination?.chatId ?? adminUserId, adminMessage, telegramFetch);
+    await deliverStorageAlert(db, env, adminDestination?.chatId ?? adminUserId, adminMessage, now, telegramFetch);
   }
 
   await saveStorageStatus(db, sizeBytes, true, nowIso, nowIso);
@@ -77,15 +78,23 @@ async function saveStorageStatus(
 }
 
 async function deliverStorageAlert(
+  db: D1Database,
   env: Env,
   chatId: number,
   text: string,
+  now: Date,
   telegramFetch: typeof fetch,
 ): Promise<void> {
   try {
     await sendMessage(env, chatId, text, telegramFetch);
   } catch (error) {
     console.error("Storage alert delivery failed", error instanceof Error ? error.message : "unknown error");
+    await reportOperationalFailure(db, env, {
+      component: "storage",
+      operation: "threshold_alert_delivery",
+      detail: "telegram_delivery_failure",
+      now,
+    }, telegramFetch);
   }
 }
 

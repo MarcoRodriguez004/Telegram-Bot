@@ -22,6 +22,7 @@ import type { ReminderListItem } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { processDueNotifications } from "./modules/notifications/scheduler";
 import { monitorDatabaseStorage } from "./modules/storage/monitor";
+import { reportOperationalFailure } from "./modules/operations/alerts";
 import {
   disablePersistentNotification,
   initializePersistentNotification,
@@ -142,9 +143,22 @@ const worker: ExportedHandler<Env> = {
   },
   async scheduled(controller, env) {
     const now = new Date(controller.scheduledTime);
-    await processDueReminders(env.PERSONAL_ASSISTANT_DB, env, now);
-    await processDueNotifications(env.PERSONAL_ASSISTANT_DB, env, now);
-    await monitorDatabaseStorage(env.PERSONAL_ASSISTANT_DB, env, now);
+    const db = env.PERSONAL_ASSISTANT_DB;
+    try {
+      await processDueReminders(db, env, now);
+    } catch (error) {
+      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_reminders", detail: "runtime_failure", now });
+    }
+    try {
+      await processDueNotifications(db, env, now);
+    } catch (error) {
+      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_notifications", detail: "runtime_failure", now });
+    }
+    try {
+      await monitorDatabaseStorage(db, env, now);
+    } catch (error) {
+      await reportOperationalFailure(db, env, { component: "storage", operation: "database_monitor", detail: "runtime_failure", now });
+    }
   },
 };
 
@@ -238,6 +252,11 @@ export async function handleRequest(
     return new Response(null, { status: 200 });
   } catch (error) {
     console.error("Webhook processing failed", error instanceof Error ? error.message : "unknown error");
+    await reportOperationalFailure(env.PERSONAL_ASSISTANT_DB, env, {
+      component: "webhook",
+      operation: "update_processing",
+      detail: "runtime_failure",
+    }, telegramFetch);
     return new Response("Internal error", { status: 500 });
   }
 }
@@ -360,6 +379,11 @@ async function getReply(
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
       fetcher: aiFetch,
+      onFailure: (failure) => reportOperationalFailure(env.PERSONAL_ASSISTANT_DB, env, {
+        component: "openai",
+        operation: "intent_interpretation",
+        detail: failure.status ? `http_status_${failure.status}` : failure.kind,
+      }, telegramFetch),
     });
     if (aiIntent) intent = aiIntent;
   }

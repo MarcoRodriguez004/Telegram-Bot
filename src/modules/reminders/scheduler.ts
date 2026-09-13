@@ -4,6 +4,7 @@ import type { Env } from "../../types";
 import { advancePersistentNotification, getPersistentNotification, initializePersistentNotification } from "../notifications/repository";
 import { createReminder } from "./repository";
 import { nextRecurringOccurrence, type RecurrenceRule } from "../recurrence";
+import { reportOperationalFailure } from "../operations/alerts";
 
 const MAX_REMINDERS_PER_RUN = 20;
 const PROCESSING_LEASE_MS = 5 * 60 * 1_000;
@@ -67,6 +68,12 @@ export async function processDueReminders(
       sent += 1;
     } catch (error) {
       console.error("Reminder delivery failed", error instanceof Error ? error.message : "unknown error");
+      await reportOperationalFailure(db, env, {
+        component: "scheduler",
+        operation: "reminder_delivery",
+        detail: "telegram_or_database_failure",
+        now,
+      }, telegramFetch);
       await releaseReminder(db, reminder.id);
       break;
     }
