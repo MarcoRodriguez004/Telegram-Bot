@@ -1,7 +1,7 @@
 import type { VehicleHologram } from "./repository";
 
-export const CONTINGENCY_SOURCE_INDEX = "https://www.aire.cdmx.gob.mx/contingencias/notas/";
-const SOURCE_HOST = "www.aire.cdmx.gob.mx";
+export const CONTINGENCY_SOURCE_INDEX = "https://aire.cdmx.gob.mx/contingencias/notas/";
+const SOURCE_HOST = "aire.cdmx.gob.mx";
 const MAX_INDEX_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 2 * 1024 * 1024;
 
@@ -86,7 +86,7 @@ function parseRestriction(text: string): ContingencyRestriction | null {
   if (!hologramMatch || hologramMatch.index === undefined) return null;
   const window = text.slice(hologramMatch.index, hologramMatch.index + 500);
   const color = /engomado\s+(?:color\s+)?(amarillo|rosa|rojo|verde|azul)\b/iu.exec(window)?.[1]?.toLowerCase() ?? null;
-  const digitMatch = /terminaci[oó]n(?:es)?(?:\s+de\s+(?:la\s+)?(?:placa|matr[ií]cula))?\s*[:-]?\s*([0-9](?:\s*(?:o|y|,)\s*[0-9])*)/iu.exec(window);
+  const digitMatch = /terminaci[oó]n(?:es)?(?:\s+de\s+(?:la\s+)?(?:placa|matr[ií]cula))?\s*[:-]?\s*([0-9](?:\s*(?:o|u|y|,)\s*[0-9])*)/iu.exec(window);
   const plateLastDigits = digitMatch ? [...new Set((digitMatch[1].match(/\d/g) ?? []).map(Number))] : [];
   const textEnd = window.search(/[.!?](?:\s|$)/u);
   const restrictionText = (textEnd >= 0 ? window.slice(0, textEnd + 1) : window).trim().slice(0, 600);
@@ -101,37 +101,95 @@ function parseRestriction(text: string): ContingencyRestriction | null {
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  const source = new TextDecoder("latin1").decode(bytes);
+  const streamToken = new TextEncoder().encode("stream");
+  const endStreamToken = new TextEncoder().encode("endstream");
+  const objectToken = new TextEncoder().encode("obj");
   let cursor = 0;
   let text = "";
   while (true) {
-    const streamIndex = source.indexOf("stream", cursor);
+    const streamIndex = indexOfBytes(bytes, streamToken, cursor);
     if (streamIndex < 0) break;
-    const objectStart = source.lastIndexOf("obj", streamIndex);
-    const dictionary = source.slice(objectStart, streamIndex);
-    const endStream = source.indexOf("endstream", streamIndex + 6);
+    const objectStart = lastIndexOfBytes(bytes, objectToken, streamIndex);
+    const dictionary = new TextDecoder("latin1").decode(bytes.slice(Math.max(0, objectStart), streamIndex));
+    const endStream = indexOfBytes(bytes, endStreamToken, streamIndex + streamToken.byteLength);
     if (endStream < 0) break;
     if (/\/Filter\s*\/FlateDecode/iu.test(dictionary)) {
-      let payloadStart = streamIndex + 6;
-      if (source.slice(payloadStart, payloadStart + 2) === "\r\n") payloadStart += 2;
-      else if (source[payloadStart] === "\n" || source[payloadStart] === "\r") payloadStart += 1;
+      let payloadStart = streamIndex + streamToken.byteLength;
+      if (bytes[payloadStart] === 13 && bytes[payloadStart + 1] === 10) payloadStart += 2;
+      else if (bytes[payloadStart] === 10 || bytes[payloadStart] === 13) payloadStart += 1;
       let payloadEnd = endStream;
-      while (payloadEnd > payloadStart && /[\r\n]/u.test(source[payloadEnd - 1])) payloadEnd -= 1;
-      const compressed = latin1ToBytes(source.slice(payloadStart, payloadEnd));
+      while (payloadEnd > payloadStart && (bytes[payloadEnd - 1] === 10 || bytes[payloadEnd - 1] === 13)) payloadEnd -= 1;
+      const compressed = bytes.slice(payloadStart, payloadEnd);
       try {
         const decompressed = await new Response(new Blob([compressed]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
-        text += extractLiteralPdfText(new TextDecoder("latin1").decode(decompressed));
+        const decompressedText = new TextDecoder("latin1").decode(decompressed);
+        text += extractPdfTextOperators(decompressedText);
       } catch {
         // Some official PDFs are image scans or use an unsupported encoding.
       }
     }
-    cursor = endStream + 9;
+    cursor = endStream + endStreamToken.byteLength;
   }
   return text;
 }
 
-function extractLiteralPdfText(value: string): string {
+function extractPdfTextOperators(value: string): string {
   let result = "";
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === "[") {
+      const end = findPdfArrayEnd(value, index);
+      if (end >= 0 && hasPdfOperator(value, end + 1, "TJ")) {
+        result += `${extractLiteralPdfStrings(value.slice(index + 1, end)).join("")} `;
+        index = end;
+        continue;
+      }
+    } else if (value[index] === "(") {
+      const end = findPdfLiteralEnd(value, index);
+      if (end >= 0 && hasPdfOperator(value, end + 1, "Tj")) {
+        result += `${extractLiteralPdfStrings(value.slice(index, end + 1)).join("")} `;
+        index = end;
+      }
+    }
+  }
+  return result;
+}
+
+function findPdfArrayEnd(value: string, start: number): number {
+  let arrayDepth = 1;
+  for (let index = start + 1; index < value.length; index += 1) {
+    if (value[index] === "(") {
+      const end = findPdfLiteralEnd(value, index);
+      if (end < 0) return -1;
+      index = end;
+      continue;
+    }
+    if (value[index] === "[") arrayDepth += 1;
+    else if (value[index] === "]" && --arrayDepth === 0) return index;
+  }
+  return -1;
+}
+
+function findPdfLiteralEnd(value: string, start: number): number {
+  let depth = 1;
+  for (let index = start + 1; index < value.length; index += 1) {
+    if (value[index] === "\\") {
+      index += 1;
+      continue;
+    }
+    if (value[index] === "(") depth += 1;
+    else if (value[index] === ")" && --depth === 0) return index;
+  }
+  return -1;
+}
+
+function hasPdfOperator(value: string, start: number, operator: string): boolean {
+  let index = start;
+  while (index < value.length && /\s/u.test(value[index])) index += 1;
+  return value.slice(index, index + operator.length) === operator;
+}
+
+function extractLiteralPdfStrings(value: string): string[] {
+  const strings: string[] = [];
   for (let index = 0; index < value.length; index += 1) {
     if (value[index] !== "(") continue;
     let depth = 1;
@@ -150,9 +208,9 @@ function extractLiteralPdfText(value: string): string {
         literal += character;
       }
     }
-    if (depth === 0) result += `${literal} `;
+    if (depth === 0) strings.push(literal);
   }
-  return result;
+  return strings;
 }
 
 async function fetchWithTimeout(sourceFetch: typeof fetch, input: string, init: RequestInit): Promise<Response> {
@@ -191,9 +249,22 @@ function parseDirectoryDate(match: RegExpExecArray): string | null {
   return `${match[3]}-${month}-${match[1].padStart(2, "0")}T${match[4].padStart(2, "0")}:${match[5]}:00.000Z`;
 }
 
-function latin1ToBytes(value: string): ArrayBuffer {
-  const buffer = new ArrayBuffer(value.length);
-  const bytes = new Uint8Array(buffer);
-  for (let index = 0; index < value.length; index += 1) bytes[index] = value.charCodeAt(index) & 0xff;
-  return buffer;
+function indexOfBytes(source: Uint8Array, token: Uint8Array, fromIndex: number): number {
+  outer: for (let index = Math.max(0, fromIndex); index <= source.length - token.length; index += 1) {
+    for (let offset = 0; offset < token.length; offset += 1) {
+      if (source[index + offset] !== token[offset]) continue outer;
+    }
+    return index;
+  }
+  return -1;
+}
+
+function lastIndexOfBytes(source: Uint8Array, token: Uint8Array, beforeIndex: number): number {
+  outer: for (let index = Math.min(beforeIndex - token.length, source.length - token.length); index >= 0; index -= 1) {
+    for (let offset = 0; offset < token.length; offset += 1) {
+      if (source[index + offset] !== token[offset]) continue outer;
+    }
+    return index;
+  }
+  return -1;
 }
