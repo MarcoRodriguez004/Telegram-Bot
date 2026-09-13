@@ -109,19 +109,10 @@ function parseAffectedDate(text: string, publishedAt: string | null): string | n
     "iu",
   ).exec(text);
   if (tomorrowMatch) {
-    const publicationDate = publishedAt?.slice(0, 10) ?? null;
-    const publicationYear = publicationDate ? Number(publicationDate.slice(0, 4)) : null;
-    const publicationMonth = publicationDate ? Number(publicationDate.slice(5, 7)) : null;
-    const publicationDay = publicationDate ? Number(publicationDate.slice(8, 10)) : null;
+    const day = Number(tomorrowMatch[1]);
     const month = monthNumber(tomorrowMatch[2]);
-    const year = tomorrowMatch[3]
-      ? Number(tomorrowMatch[3])
-      : publicationYear === null
-        ? null
-        : publicationMonth !== null && publicationDay !== null && (month < publicationMonth || (month === publicationMonth && Number(tomorrowMatch[1]) < publicationDay))
-          ? publicationYear + 1
-          : publicationYear;
-    return year === null ? null : toIsoDate(Number(tomorrowMatch[1]), month, year);
+    const year = inferAffectedYear(tomorrowMatch[3], day, month, publishedAt);
+    return year === null ? null : toIsoDate(day, month, year);
   }
 
   const explicitMatch = new RegExp(
@@ -135,6 +126,23 @@ function parseAffectedDate(text: string, publishedAt: string | null): string | n
 
   if (/\\b(?:el\\s+)?d[ií]a\\s+de\\s+hoy\\b/iu.test(text)) return publishedAt?.slice(0, 10) ?? null;
   return null;
+}
+
+function inferAffectedYear(
+  explicitYear: string | undefined,
+  day: number,
+  month: number,
+  publishedAt: string | null,
+): number | null {
+  if (explicitYear) return Number(explicitYear);
+  if (!publishedAt) return null;
+  const publicationDate = publishedAt.slice(0, 10);
+  const publicationYear = Number(publicationDate.slice(0, 4));
+  const publicationMonth = Number(publicationDate.slice(5, 7));
+  const publicationDay = Number(publicationDate.slice(8, 10));
+  if (![publicationYear, publicationMonth, publicationDay].every(Number.isInteger)) return null;
+  const crossesYear = month < publicationMonth || (month === publicationMonth && day < publicationDay);
+  return publicationYear + (crossesYear ? 1 : 0);
 }
 
 function monthNumber(value: string): number {
