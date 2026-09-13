@@ -89,6 +89,21 @@ describe("conversation memory", () => {
     expect(env.PERSONAL_ASSISTANT_DB).toBeDefined();
   });
 
+  it("clears conversation state and recent private-chat messages without deleting saved data", async () => {
+    const { send, sent, env } = setup();
+    await send({ text: "tarea comprar medicina" });
+    const clearResponse = await send({ text: "Cls" });
+
+    expect(clearResponse.status).toBe(200);
+    const deletion = sent.find((call) => call.method === "deleteMessages");
+    expect(deletion?.body.message_ids).toEqual([3, 2, 1]);
+    expect(sent.at(-1)?.body.text).toContain("Conversación limpiada");
+    await expect(env.PERSONAL_ASSISTANT_DB.prepare("SELECT COUNT(*) AS count FROM tasks WHERE user_id = 1").first())
+      .resolves.toEqual({ count: 1 });
+    await expect(env.PERSONAL_ASSISTANT_DB.prepare("SELECT COUNT(*) AS count FROM conversation_history WHERE user_id = 1").first())
+      .resolves.toEqual({ count: 0 });
+  });
+
   it("passes recent user and bot turns to the AI for a contextual follow-up", async () => {
     const { send, env } = setup();
     const requests: Array<Record<string, unknown>> = [];

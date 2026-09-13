@@ -33,6 +33,7 @@ export type Intent =
   | { action: "configure_contingency"; mode: "always" | "vehicle" | null }
   | { action: "show_contingency" }
   | { action: "check_contingency" }
+  | { action: "clear_conversation" }
   | { action: "delete_data"; confirmation: true }
   | { action: "reply"; message: string }
   | { action: "clarify"; question: string; missing: string[]; suggestedText?: string }

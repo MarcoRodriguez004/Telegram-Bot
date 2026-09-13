@@ -46,6 +46,7 @@ const VEHICLE_REMOVE = /^(?:\/elimina(?:r)?_veh[ií]culo|elimina(?:r)?\s+(?:mi\s
 const CONTINGENCY_CHECK = /^(?:\/hoy_no_circula(?:@[a-z0-9_]+)?|(?:revisa|revisar|consulta|consultar|comprueba|compruebe|verifica|verificar|corrobora|corroborar)\s+(?:(?:en|de)\s+)?(?:c[aá]me|hoy\s+no\s+circula|contingencia(?:\s+ambiental)?)(?:\s+si\s+(?:hay|existe[n]?)\s+(?:alg[uú]n(?:a)?\s+)?alerta[s]?)?|¿?\s*(?:hay|existe[n]?)\s+(?:alg[uú]n(?:a)?\s+)?(?:alerta[s]?|contingencia[s]?|restricci[oó]n(?:es)?)(?:\s+(?:de|en)\s+(?:c[aá]me|hoy\s+no\s+circula|contingencia(?:\s+ambiental)?))?\s*\??)[?!.]*$/iu;
 const NATURAL_HOY_NO_CIRCULA = /^¿?(?:el\s+)?hoy\s+no\s+circula[?!.]*$/iu;
 const CONTINGENCY_SHOW = /^(?:\/contingencia(?:@[a-z0-9_]+)?|(?:configura|configurar|mu[eé]strame|dime)\s+(?:mis\s+)?avisos\s+de\s+contingencia)[?!.]*$/iu;
+const CLEAR_CONVERSATION_COMMAND = /^cls$/iu;
 const CONTINGENCY_ALWAYS = /^(?:av[ií]same|notif[ií]came)\s+siempre\s+(?:cuando\s+)?(?:haya|se\s+active)\s+(?:la\s+)?fase\s+(?:i|1)(?:\s+de\s+contingencia)?[?!.]*$/iu;
 const CONTINGENCY_VEHICLE = /^(?:av[ií]same|notif[ií]came)\s+(?:solo\s+)?si\s+afecta\s+a\s+(?:mi\s+)?(?:veh[ií]culo|coche|auto|carro)[?!.]*$/iu;
 const CONTINGENCY_OFF = /^(?:no\s+me\s+avises|desactiva(?:r)?\s+(?:mis\s+)?avisos)\s+(?:de\s+)?contingencia(?:s)?[?!.]*$/iu;
@@ -66,12 +67,18 @@ export interface ParseOptions {
   savedNotesContext?: SavedNotesContext;
 }
 
+export function isClearConversationCommand(text: string): boolean {
+  return CLEAR_CONVERSATION_COMMAND.test(text.trim());
+}
+
 export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   const normalized = text.trim().replace(/\s+/g, " ");
 
   if (!normalized || normalized.length > MAX_MESSAGE_LENGTH) {
     return { action: "unknown", reason: "unsupported_message" };
   }
+
+  if (isClearConversationCommand(normalized)) return { action: "clear_conversation" };
 
   const vehicleRegister = VEHICLE_REGISTER.exec(normalized);
   if (vehicleRegister) return parseVehicleRegistration(vehicleRegister[1] ?? "");

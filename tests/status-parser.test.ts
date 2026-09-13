@@ -35,4 +35,10 @@ describe("status and search parser", () => {
       query: "INE",
     });
   });
+
+  it("recognizes only the exact console-cleanup command", () => {
+    expect(parseIntent("cls")).toEqual({ action: "clear_conversation" });
+    expect(parseIntent("Cls")).toEqual({ action: "clear_conversation" });
+    expect(parseIntent("cls ahora")).toEqual({ action: "unknown", reason: "unsupported_message" });
+  });
 });

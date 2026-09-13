@@ -88,6 +88,7 @@ import {
 import type { TaskListItem } from "./modules/tasks/repository";
 import { clearEditSession, getActiveEditSession, startEditSession } from "./modules/edit-sessions/repository";
 import {
+  clearConversationState,
   clearConversationDraft,
   clearPendingConfirmation,
   clearPendingFolderSave,
@@ -114,11 +115,11 @@ import {
 } from "./modules/conversation/history";
 import type { ConversationTurn } from "./modules/conversation/history";
 import { buildFolderConflictReply } from "./modules/notes/folder-conflict";
-import { parseIntent } from "./router/parser";
+import { isClearConversationCommand, parseIntent } from "./router/parser";
 import type { Intent } from "./router/intent";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
-import { answerCallbackQuery, downloadTelegramDocument, sendAttachment, sendDocumentContent, sendMessage, setMyCommands } from "./telegram/client";
+import { answerCallbackQuery, deleteTelegramMessages, downloadTelegramDocument, sendAttachment, sendDocumentContent, sendMessage, setMyCommands } from "./telegram/client";
 import type { InlineKeyboardMarkup } from "./telegram/client";
 import {
   buildEditCancelKeyboard,
@@ -310,6 +311,7 @@ export async function handleRequest(
       return new Response(null, { status: 200 });
     }
 
+    const clearConversationRequest = isClearConversationCommand(text);
     let userId: number | undefined;
     let conversationHistory: ConversationTurn[] = [];
     if (!text.startsWith("/")) {
@@ -321,13 +323,15 @@ export async function handleRequest(
         timezone: env.APP_TIMEZONE,
         currency: env.DEFAULT_CURRENCY,
       });
-      try {
-        conversationHistory = await getConversationHistory(env.PERSONAL_ASSISTANT_DB, {
-          userId,
-          chatId: update.message.chat.id,
-        });
-      } catch (error) {
-        console.error(JSON.stringify({ event: "conversation_history_unavailable", reason: error instanceof Error ? error.name : "unknown" }));
+      if (!clearConversationRequest) {
+        try {
+          conversationHistory = await getConversationHistory(env.PERSONAL_ASSISTANT_DB, {
+            userId,
+            chatId: update.message.chat.id,
+          });
+        } catch (error) {
+          console.error(JSON.stringify({ event: "conversation_history_unavailable", reason: error instanceof Error ? error.name : "unknown" }));
+        }
       }
     }
 
@@ -340,11 +344,11 @@ export async function handleRequest(
       reply = editReply ?? await getReply(text, update, env, telegramFetch, aiFetch, conversationHistory);
     }
     if (reply !== null) await sendBotReply(env, update.message.chat.id, reply, telegramFetch);
-    const userStillExists = !text.startsWith("/") && userId !== undefined
+    const userStillExists = !text.startsWith("/") && !clearConversationRequest && userId !== undefined
       ? await env.PERSONAL_ASSISTANT_DB.prepare("SELECT id FROM users WHERE id = ?").bind(userId).first<{ id: number }>()
       : null;
     const currentUserId = userId;
-    if (!text.startsWith("/") && userStillExists && currentUserId !== undefined) {
+    if (!text.startsWith("/") && !clearConversationRequest && userStillExists && currentUserId !== undefined) {
       try {
         await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, {
           userId: currentUserId,
@@ -413,6 +417,20 @@ async function getReply(
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
     });
+    if (isClearConversationCommand(text)) {
+      await clearConversationState(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        chatId: message.chat.id,
+      });
+      if (message.chat.type === "private" && message.message_id > 0) {
+        const messageIds = Array.from(
+          { length: Math.min(100, message.message_id) },
+          (_, index) => message.message_id - index,
+        );
+        await deleteTelegramMessages(env, message.chat.id, messageIds, telegramFetch);
+      }
+      return "🧹 Conversación limpiada. Tus tareas, recordatorios, notas, archivos, gastos y carpetas siguen intactos.";
+    }
     savedNotesContext = await getSavedNotesContext(env.PERSONAL_ASSISTANT_DB, {
       userId,
       chatId: message.chat.id,
