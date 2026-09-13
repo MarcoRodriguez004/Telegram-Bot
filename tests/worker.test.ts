@@ -23,6 +23,9 @@ function createFakeDb() {
               if (inserted) processedUpdates.add(updateId);
               return { success: true, meta: { changes: inserted ? 1 : 0 } };
             },
+            async first<T>() {
+              return { id: 1 } as T;
+            },
           };
         },
       };
@@ -140,6 +143,8 @@ describe("Personal Assistant Worker", () => {
     expect(sentMessages[0]).toMatchObject({ chat_id: 42 });
     expect(sentMessages[0].text).toContain("Personal Assistant");
     expect(telegramRequests.some((request) => request.url.endsWith("/setMyCommands"))).toBe(true);
+    const commandMenuRequest = telegramRequests.find((request) => request.url.endsWith("/setMyCommands"));
+    expect((commandMenuRequest?.body.commands as Array<{ command: string }>).some((item) => item.command === "comandos")).toBe(true);
     expect(db.processedUpdates.size).toBe(1);
   });
 
@@ -161,6 +166,35 @@ describe("Personal Assistant Worker", () => {
 
     expect(sentMessages[0].text).toContain("D1: accesible");
     expect(sentMessages[1].text).toContain("solo está disponible");
+  });
+
+  it("shows the command catalog for /comandos and natural language", async () => {
+    const commandEnv = createEnv();
+    const commandRequest = new Request("https://bot.test/telegram/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": commandEnv.env.TELEGRAM_WEBHOOK_SECRET },
+      body: telegramUpdate(20, 42, "private", false, "/comandos"),
+    });
+
+    await handleRequest(commandRequest, commandEnv.env, commandEnv.telegramFetch);
+
+    const commandText = commandEnv.sentMessages.map((message) => message.text).join("\n");
+    expect(commandText).toContain("📚 Comandos disponibles");
+    expect(commandText).toContain("/tarea");
+    expect(commandText).toContain("Ejemplo natural:");
+
+    const naturalEnv = createEnv();
+    const naturalRequest = new Request("https://bot.test/telegram/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": naturalEnv.env.TELEGRAM_WEBHOOK_SECRET },
+      body: telegramUpdate(21, 42, "private", false, "¿Qué comandos hay?"),
+    });
+
+    await handleRequest(naturalRequest, naturalEnv.env, naturalEnv.telegramFetch);
+
+    const naturalText = naturalEnv.sentMessages.map((message) => message.text).join("\n");
+    expect(naturalText).toContain("📚 Comandos disponibles");
+    expect(naturalText).toContain("/exportar");
   });
 
   it("returns bad request for malformed JSON", async () => {

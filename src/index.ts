@@ -120,6 +120,7 @@ const MAX_UPDATE_BYTES = 64 * 1024;
 const TELEGRAM_COMMANDS = [
   { command: "start", description: "Iniciar el bot" },
   { command: "help", description: "Ver ayuda y ejemplos" },
+  { command: "comandos", description: "Ver todos los comandos y ejemplos" },
   { command: "tarea", description: "Crear una tarea" },
   { command: "recordar", description: "Crear un recordatorio" },
   { command: "estado", description: "Ver tu estado" },
@@ -129,6 +130,31 @@ const TELEGRAM_COMMANDS = [
   { command: "configuracion", description: "Configurar avisos" },
   { command: "exportar", description: "Exportar tus datos" },
   { command: "importar", description: "Restaurar un JSON exportado" },
+] as const;
+
+const COMMAND_GUIDE = [
+  { command: "/start", description: "Inicia el bot y activa el menú de Telegram.", example: "/start", natural: "Hola, quiero empezar" },
+  { command: "/help", description: "Muestra una ayuda breve con ejemplos.", example: "/help", natural: "¿Cómo puedes ayudarme?" },
+  { command: "/comandos", description: "Muestra este catálogo completo.", example: "/comandos", natural: "¿Qué comandos hay?" },
+  { command: "/tarea <texto>", description: "Crea una tarea, opcionalmente con fecha y hora.", example: "/tarea pagar la luz mañana a las 18:00", natural: "Necesito una tarea para pagar la luz mañana a las 18:00" },
+  { command: "/recordar <cuándo> <texto>", description: "Crea un recordatorio para una fecha u hora.", example: "/recordar mañana a las 09:00 llamar al banco", natural: "Recuérdame llamar al banco mañana a las 9" },
+  { command: "/tareas [estado]", description: "Lista tus tareas pendientes, completadas, canceladas o todas.", example: "/tareas pendientes", natural: "Muéstrame mis tareas pendientes" },
+  { command: "/recordatorios [estado]", description: "Lista tus recordatorios por estado.", example: "/recordatorios todos", natural: "¿Qué recordatorios tengo?" },
+  { command: "/estado", description: "Muestra pendientes, avisos y almacenamiento lógico.", example: "/estado", natural: "¿Cómo va mi organización?" },
+  { command: "/resumen [hoy|semana|mes]", description: "Resume tu actividad y tus guardados.", example: "/resumen semana", natural: "Dame un resumen de esta semana" },
+  { command: "/buscar <texto>", description: "Busca coincidencias entre tus datos.", example: "/buscar tornillos", natural: "Busca tornillos entre mis datos" },
+  { command: "/gasto <monto> <categoría>", description: "Registra un gasto.", example: "/gasto 450 gasolina", natural: "Gasté 450 en gasolina" },
+  { command: "/nota <texto>", description: "Guarda una nota o un enlace.", example: "/nota renovar póliza en diciembre", natural: "Anota que debo renovar la póliza en diciembre" },
+  { command: "/guardar <enlace>", description: "Guarda un enlace; las fotos y documentos se envían con la descripción «Guarda».", example: "/guardar https://ejemplo.com", natural: "Guarda este enlace https://ejemplo.com" },
+  { command: "/guardados", description: "Muestra tus fotos, archivos, enlaces y notas guardados.", example: "/guardados", natural: "Muéstrame mis fotos" },
+  { command: "/guardado_<id>", description: "Abre un guardado específico.", example: "/guardado_123", natural: "Abre el guardado 123" },
+  { command: "/configuracion", description: "Configura avisos persistentes para tareas y recordatorios.", example: "/configuracion", natural: "Quiero configurar mis avisos" },
+  { command: "/repite ...", description: "Configura una repetición diaria, semanal o mensual.", example: "/repite tarea 1 cada semana", natural: "Repite la tarea 1 cada semana" },
+  { command: "/exportar", description: "Envía una copia JSON de tus datos.", example: "/exportar", natural: "Quiero una copia de mis datos" },
+  { command: "/importar", description: "Indica cómo restaurar un JSON exportado; el archivo se envía como documento con esta descripción.", example: "/importar", natural: "Quiero restaurar una copia de mis datos" },
+  { command: "/borrar_datos CONFIRMAR", description: "Elimina tus datos personales después de escribir la confirmación exacta.", example: "/borrar_datos CONFIRMAR", natural: "Quiero borrar mis datos" },
+  { command: "/borrar_bd", description: "Inicia el borrado de toda la base de datos; solo administrador y requiere tres confirmaciones.", example: "/borrar_bd", natural: "Necesito iniciar el borrado global con el comando exacto" },
+  { command: "/health", description: "Comprueba el estado de producción; solo administrador.", example: "/health", natural: "¿Está funcionando el bot?" },
 ] as const;
 
 type BotReply = {
@@ -275,6 +301,8 @@ async function getReply(
   if (globalResetAction) return handleGlobalResetAction(globalResetAction, update, env);
 
   if (getCommandToken(text) === "/health") return getTelegramHealthReply(update, env);
+
+  if (isNaturalCommandsRequest(text)) return formatCommandsGuide();
 
   const commandReply = getCommandReply(text);
   if (commandReply) return commandReply;
@@ -1644,8 +1672,10 @@ function getCommandReply(text: string): Reply | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• /comandos para ver el catálogo completo\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
+
+  if (command === "/comandos") return formatCommandsGuide();
 
   if (command === "/importar" || command === "/restaurar") {
     return "📥 Para restaurar tus datos, envía el archivo JSON de /exportar como documento y escribe /importar en la descripción.";
@@ -1659,6 +1689,30 @@ function getCommandReply(text: string): Reply | null {
   }
 
   return null;
+}
+
+function formatCommandsGuide(): string {
+  const lines = [
+    "📚 Comandos disponibles",
+    "",
+    "Puedes usar estos comandos o pedirme lo mismo con lenguaje natural:",
+    "Si una frase natural no se reconoce, usa el comando exacto del ejemplo.",
+    "",
+  ];
+  COMMAND_GUIDE.forEach((item, index) => {
+    lines.push(
+      `${index + 1}.- ${item.command} — ${item.description}`,
+      `   Ejemplo: ${item.example}`,
+      `   Ejemplo natural: «${item.natural}»`,
+      "",
+    );
+  });
+  return lines.join("\n").trim();
+}
+
+function isNaturalCommandsRequest(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  return /^¿?\s*(?:comandos|(?:qu[eé]|que)\s+puedo\s+hacer(?:\s+con\s+el\s+bot)?|(?:qu[eé]|que)\s+comandos?\s+(?:hay|puedo\s+usar)|cu[aá]les?\s+son\s+(?:los\s+)?comandos?|(?:mu[eé]strame|ens[eé]ñame|dime)\s+(?:los\s+)?comandos?)\s*[?!.]*$/iu.test(normalized);
 }
 
 async function restoreTelegramDocument(
