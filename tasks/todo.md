@@ -98,3 +98,15 @@ Checkpoint:
 - [x] Añadir la migración `0021_default_contingency_alerts_off.sql` para convertir las alertas CAMe en una suscripción explícita.
 - [x] Validar con 53 archivos y 248 pruebas, typecheck, lint y build de Wrangler.
 - [x] Desplegar el commit `aae0aaf` en `Dev` y `main`; CI pasó en ambas ramas y `/health` respondió correctamente.
+
+## Siguiente incremento: continuidad, consultas y CAMe
+
+Especificación: [`docs/SPEC-ASSISTANT-COMPLETION.md`](../docs/SPEC-ASSISTANT-COMPLETION.md).
+
+- [x] `conversation-memory-v2`: contexto reciente acotado, referencias y expiración por usuario/chat.
+- [x] `saved-crud`: editar descripciones de multimedia, editar texto/enlaces, eliminar y mover cualquier guardado con autorización.
+- [x] `search-v2`: filtros por tipo, estado, carpeta y fechas, paginación y continuación.
+- [x] `summary-v2`: ampliar `/resumen` con actividad, carpetas, almacenamiento y estado informativo CAMe.
+- [x] `contingency-v2`: día de afectación, fecha de publicación, corroboración de fuentes y consulta por vehículo registrado.
+
+Checkpoint de cada corte: pruebas enfocadas, suite completa, lint, typecheck y build antes de avanzar.

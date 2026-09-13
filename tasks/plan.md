@@ -234,3 +234,21 @@ Completar las mejoras prioritarias de uso diario sin almacenar archivos binarios
 - [x] `/exportar` con JSON propio y referencias de Telegram para archivos.
 - [x] Reintentos limitados, backoff y logs estructurados para errores transitorios de Telegram.
 - [x] Tests enfocados, suite completa, lint, typecheck y build ejecutados antes del siguiente despliegue.
+
+## Incremento actual: continuidad y consultas integradas
+
+La especificación detallada está en [`docs/SPEC-ASSISTANT-COMPLETION.md`](../docs/SPEC-ASSISTANT-COMPLETION.md). Este trabajo se desarrolla en `feature/assistant-completion` y se divide en cinco cortes verticales, conservando el bot compilable y probado después de cada uno.
+
+### Orden de implementación
+
+1. `conversation-memory-v2`: contexto reciente acotado, referencias y expiración.
+2. `saved-crud`: edición de metadatos, eliminación confirmada y movimiento de cualquier guardado.
+3. `search-v2`: filtros, fechas, carpetas, paginación y apertura de resultados.
+4. `summary-v2`: resumen ampliado sin activar alertas CAMe.
+5. `contingency-v2`: día de afectación, fuentes, vehículos afectados y consulta actual.
+
+### Checkpoints
+
+- Después de los cortes 1 y 2: regresión de conversaciones, guardados, carpetas y privacidad.
+- Después de los cortes 3 y 4: búsqueda y resumen aislados por usuario, con mensajes dentro del límite de Telegram.
+- Después del corte 5: parser CAMe/gob.mx, fecha de afectación y consulta manual de `/hoy_no_circula`.

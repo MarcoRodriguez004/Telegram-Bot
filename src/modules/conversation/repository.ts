@@ -383,6 +383,22 @@ export async function clearSavedNotesContext(db: D1Database, userId: number): Pr
   await db.prepare("DELETE FROM conversation_context WHERE user_id = ?").bind(userId).run();
 }
 
+export async function clearConversationState(
+  db: D1Database,
+  input: { userId: number; chatId: number },
+): Promise<void> {
+  assertIdentifiers(input.userId, input.chatId);
+  await db.batch([
+    db.prepare("DELETE FROM conversation_history WHERE user_id = ? AND chat_id = ?").bind(input.userId, input.chatId),
+    db.prepare("DELETE FROM conversation_context WHERE user_id = ? AND chat_id = ?").bind(input.userId, input.chatId),
+    db.prepare("DELETE FROM pending_conversation WHERE user_id = ? AND chat_id = ?").bind(input.userId, input.chatId),
+    db.prepare("DELETE FROM conversation_confirmations WHERE user_id = ? AND chat_id = ?").bind(input.userId, input.chatId),
+    db.prepare("DELETE FROM pending_folder_saves WHERE user_id = ? AND chat_id = ?").bind(input.userId, input.chatId),
+    db.prepare("DELETE FROM conversation_drafts WHERE user_id = ? AND chat_id = ?").bind(input.userId, input.chatId),
+    db.prepare("DELETE FROM edit_sessions WHERE user_id = ? AND chat_id = ?").bind(input.userId, input.chatId),
+  ]);
+}
+
 function assertIdentifiers(userId: number, chatId: number): void {
   if (!Number.isInteger(userId) || userId <= 0) throw new Error("Context user id is invalid");
   if (!Number.isInteger(chatId)) throw new Error("Context chat id is invalid");

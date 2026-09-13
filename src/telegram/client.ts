@@ -14,6 +14,7 @@ const MAX_TELEGRAM_ATTEMPTS = 3;
 const MAX_RETRY_DELAY_MS = 2_000;
 const MAX_TELEGRAM_TEXT_LENGTH = 4_096;
 const MAX_IMPORT_DOCUMENT_BYTES = 10 * 1024 * 1024;
+const MAX_DELETE_MESSAGE_IDS = 100;
 
 export interface InlineKeyboardButton {
   text: string;
@@ -57,6 +58,24 @@ export async function answerCallbackQuery(
   const body: Record<string, unknown> = { callback_query_id: callbackQueryId };
   if (text) body.text = text;
   await callTelegram(env, "answerCallbackQuery", body, telegramFetch);
+}
+
+export async function deleteTelegramMessages(
+  env: Env,
+  chatId: number,
+  messageIds: readonly number[],
+  telegramFetch: typeof fetch = fetch,
+): Promise<void> {
+  if (!Number.isInteger(chatId)) throw new Error("Invalid Telegram chat id");
+  const ids = [...new Set(messageIds)].filter((messageId) => Number.isInteger(messageId) && messageId > 0);
+  for (let index = 0; index < ids.length; index += MAX_DELETE_MESSAGE_IDS) {
+    const chunk = ids.slice(index, index + MAX_DELETE_MESSAGE_IDS);
+    try {
+      await callTelegram(env, "deleteMessages", { chat_id: chatId, message_ids: chunk }, telegramFetch);
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "telegram_message_cleanup_failed", reason: error instanceof Error ? error.name : "unknown" }));
+    }
+  }
 }
 
 export async function sendAttachment(
@@ -129,7 +148,7 @@ export async function sendDocumentContent(
 
 async function callTelegram(
   env: Env,
-  method: "sendMessage" | "sendPhoto" | "sendDocument" | "answerCallbackQuery" | "setMyCommands",
+  method: "sendMessage" | "sendPhoto" | "sendDocument" | "answerCallbackQuery" | "deleteMessages" | "setMyCommands",
   body: Record<string, unknown>,
   telegramFetch: typeof fetch,
 ): Promise<void> {
@@ -142,7 +161,7 @@ async function callTelegram(
 
 async function callTelegramRequest(
   env: Env,
-  method: "sendMessage" | "sendPhoto" | "sendDocument" | "answerCallbackQuery" | "setMyCommands",
+  method: "sendMessage" | "sendPhoto" | "sendDocument" | "answerCallbackQuery" | "deleteMessages" | "setMyCommands",
   init: RequestInit,
   telegramFetch: typeof fetch,
 ): Promise<void> {

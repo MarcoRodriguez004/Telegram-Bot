@@ -23,7 +23,7 @@ function setup() {
     return Response.json({ ok: true });
   };
   let nextUpdate = 1;
-  async function send(message: Record<string, unknown>) {
+  async function send(message: Record<string, unknown>, aiFetch: typeof fetch = fetch) {
     return handleRequest(new Request("https://bot.test/telegram/webhook", {
       method: "POST",
       headers: { "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
@@ -31,7 +31,7 @@ function setup() {
         message_id: nextUpdate, date: 1_757_000_000,
         chat: { id: 42, type: "private" }, from: { id: 42, is_bot: false }, ...message,
       } }),
-    }), env, telegramFetch);
+    }), env, telegramFetch, aiFetch);
   }
   return { env, send, sent };
 }
@@ -87,5 +87,61 @@ describe("conversation memory", () => {
     expect(sent.at(-1)?.body.text).toContain("Gasto registrado");
     expect(sent.at(-1)?.body.text).toContain("$450 MXN");
     expect(env.PERSONAL_ASSISTANT_DB).toBeDefined();
+  });
+
+  it("clears conversation state and recent private-chat messages without deleting saved data", async () => {
+    const { send, sent, env } = setup();
+    await send({ text: "tarea comprar medicina" });
+    const clearResponse = await send({ text: "Cls" });
+
+    expect(clearResponse.status).toBe(200);
+    const deletion = sent.find((call) => call.method === "deleteMessages");
+    expect(deletion?.body.message_ids).toEqual([3, 2, 1]);
+    expect(sent.at(-1)?.body.text).toContain("Conversación limpiada");
+    await expect(env.PERSONAL_ASSISTANT_DB.prepare("SELECT COUNT(*) AS count FROM tasks WHERE user_id = 1").first())
+      .resolves.toEqual({ count: 1 });
+    await expect(env.PERSONAL_ASSISTANT_DB.prepare("SELECT COUNT(*) AS count FROM conversation_history WHERE user_id = 1").first())
+      .resolves.toEqual({ count: 0 });
+  });
+
+  it("passes recent user and bot turns to the AI for a contextual follow-up", async () => {
+    const { send, env } = setup();
+    const requests: Array<Record<string, unknown>> = [];
+    const aiFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requests.push(body);
+      const candidate = requests.length === 1
+        ? { action: "reply", message: "¿Quieres consultar tus tareas?" }
+        : { action: "list_tasks", filter: "pending" };
+      return Response.json({ status: "completed", output_text: JSON.stringify({
+        action: candidate.action,
+        title: null,
+        when: null,
+        amount: null,
+        currency: null,
+        category: null,
+        description: null,
+        content: null,
+        url: null,
+        beforeId: null,
+        noteId: null,
+        range: null,
+        filter: "filter" in candidate ? candidate.filter : null,
+        kind: null,
+        message: "message" in candidate ? candidate.message : null,
+        suggestion: null,
+        missing: [],
+      }) });
+    };
+    env.OPENAI_API_KEY = "test-key";
+
+    await send({ text: "quiero organizar mi día" }, aiFetch);
+    await send({ text: "sí" }, aiFetch);
+
+    expect(requests[1]?.input).toEqual([
+      { role: "user", content: "quiero organizar mi día" },
+      { role: "assistant", content: "¿Quieres consultar tus tareas?" },
+      { role: "user", content: "sí" },
+    ]);
   });
 });

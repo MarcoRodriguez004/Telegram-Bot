@@ -40,7 +40,7 @@ import {
   setContingencyMode,
 } from "./modules/contingency/repository";
 import type { ContingencyMode } from "./modules/contingency/repository";
-import { reportOperationalFailure } from "./modules/operations/alerts";
+import { describeOperationalFailure, reportOperationalFailure } from "./modules/operations/alerts";
 import {
   disablePersistentNotification,
   initializePersistentNotification,
@@ -75,7 +75,7 @@ import { getSummary } from "./modules/summary/repository";
 import type { SummaryResult } from "./modules/summary/repository";
 import { exportUserData } from "./modules/export/repository";
 import { importUserData } from "./modules/export/import";
-import { getBotStatus, searchUserData } from "./modules/status/repository";
+import { getBotStatus, searchUserDataPage } from "./modules/status/repository";
 import {
   cancelTask,
   completeTask,
@@ -88,6 +88,7 @@ import {
 import type { TaskListItem } from "./modules/tasks/repository";
 import { clearEditSession, getActiveEditSession, startEditSession } from "./modules/edit-sessions/repository";
 import {
+  clearConversationState,
   clearConversationDraft,
   clearPendingConfirmation,
   clearPendingFolderSave,
@@ -108,12 +109,17 @@ import type {
   PendingConfirmationContext,
   PendingListContext,
 } from "./modules/conversation/repository";
+import {
+  getConversationHistory,
+  saveConversationTurn,
+} from "./modules/conversation/history";
+import type { ConversationTurn } from "./modules/conversation/history";
 import { buildFolderConflictReply } from "./modules/notes/folder-conflict";
-import { parseIntent } from "./router/parser";
+import { isClearConversationCommand, parseIntent } from "./router/parser";
 import type { Intent } from "./router/intent";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
-import { answerCallbackQuery, downloadTelegramDocument, sendAttachment, sendDocumentContent, sendMessage, setMyCommands } from "./telegram/client";
+import { answerCallbackQuery, deleteTelegramMessages, downloadTelegramDocument, sendAttachment, sendDocumentContent, sendMessage, setMyCommands } from "./telegram/client";
 import type { InlineKeyboardMarkup } from "./telegram/client";
 import {
   buildEditCancelKeyboard,
@@ -130,6 +136,7 @@ import {
   buildSavedNoteActionKeyboard,
   buildSavedNoteDeleteKeyboard,
   buildSavedNoteEditCancelKeyboard,
+  buildSavedNoteMoveKeyboard,
   buildSavedNoteKeyboard,
   buildStopConfirmationKeyboard,
   parseCallbackData,
@@ -174,7 +181,7 @@ const COMMAND_GUIDE = [
   { command: "/recordatorios [estado]", description: "Lista tus recordatorios por estado.", example: "/recordatorios todos", natural: "¿Qué recordatorios tengo?" },
   { command: "/estado", description: "Muestra pendientes, avisos y almacenamiento lógico.", example: "/estado", natural: "¿Cómo va mi organización?" },
   { command: "/resumen [hoy|semana|mes]", description: "Resume tu actividad y tus guardados.", example: "/resumen semana", natural: "Dame un resumen de esta semana" },
-  { command: "/buscar <texto>", description: "Busca coincidencias entre tus datos.", example: "/buscar tornillos", natural: "Busca tornillos entre mis datos" },
+  { command: "/buscar <texto> [filtros]", description: "Busca con filtros de tipo, estado, carpeta y fechas.", example: "/buscar tornillos tipo:tarea estado:pendiente", natural: "Busca tornillos entre mis tareas pendientes" },
   { command: "/gasto <monto> <categoría>", description: "Registra un gasto.", example: "/gasto 450 gasolina", natural: "Gasté 450 en gasolina" },
   { command: "/nota <texto>", description: "Guarda una nota o un enlace.", example: "/nota renovar póliza en diciembre", natural: "Anota que debo renovar la póliza en diciembre" },
   { command: "/guardar <enlace>", description: "Guarda un enlace; las fotos y documentos se envían con la descripción «Guarda».", example: "/guardar https://ejemplo.com", natural: "Guarda este enlace https://ejemplo.com" },
@@ -212,22 +219,22 @@ const worker: ExportedHandler<Env> = {
     try {
       await processDueReminders(db, env, now);
     } catch (error) {
-      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_reminders", detail: "runtime_failure", now });
+      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_reminders", detail: describeOperationalFailure(error), now });
     }
     try {
       await processDueNotifications(db, env, now);
     } catch (error) {
-      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_notifications", detail: "runtime_failure", now });
+      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_notifications", detail: describeOperationalFailure(error), now });
     }
     try {
       await monitorDatabaseStorage(db, env, now);
     } catch (error) {
-      await reportOperationalFailure(db, env, { component: "storage", operation: "database_monitor", detail: "runtime_failure", now });
+      await reportOperationalFailure(db, env, { component: "storage", operation: "database_monitor", detail: describeOperationalFailure(error), now });
     }
     try {
       await monitorContingency(db, env, now);
     } catch (error) {
-      await reportOperationalFailure(db, env, { component: "scheduler", operation: "contingency_monitor", detail: "runtime_failure", now });
+      await reportOperationalFailure(db, env, { component: "scheduler", operation: "contingency_monitor", detail: describeOperationalFailure(error), now });
     }
   },
 };
@@ -304,22 +311,64 @@ export async function handleRequest(
       return new Response(null, { status: 200 });
     }
 
-    let reply: Reply | null;
-    if (text.startsWith("/")) {
-      reply = await getReply(text, update, env, telegramFetch, aiFetch);
-    } else {
+    const clearConversationRequest = isClearConversationCommand(text);
+    let userId: number | undefined;
+    let conversationHistory: ConversationTurn[] = [];
+    if (!text.startsWith("/")) {
       const telegramUserId = update.message.from?.id;
       if (telegramUserId === undefined) return new Response(null, { status: 200 });
-      const userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
+      userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
         telegramUserId,
         telegramChatId: update.message.chat.id,
         timezone: env.APP_TIMEZONE,
         currency: env.DEFAULT_CURRENCY,
       });
+      if (!clearConversationRequest) {
+        try {
+          conversationHistory = await getConversationHistory(env.PERSONAL_ASSISTANT_DB, {
+            userId,
+            chatId: update.message.chat.id,
+          });
+        } catch (error) {
+          console.error(JSON.stringify({ event: "conversation_history_unavailable", reason: error instanceof Error ? error.name : "unknown" }));
+        }
+      }
+    }
+
+    let reply: Reply | null;
+    if (text.startsWith("/")) {
+      reply = await getReply(text, update, env, telegramFetch, aiFetch, conversationHistory);
+    } else {
+      if (userId === undefined) return new Response(null, { status: 200 });
       const editReply = await handleEditInput(text, userId, update.message.chat.id, env);
-      reply = editReply ?? await getReply(text, update, env, telegramFetch, aiFetch);
+      reply = editReply ?? await getReply(text, update, env, telegramFetch, aiFetch, conversationHistory);
     }
     if (reply !== null) await sendBotReply(env, update.message.chat.id, reply, telegramFetch);
+    const userStillExists = !text.startsWith("/") && !clearConversationRequest && userId !== undefined
+      ? await env.PERSONAL_ASSISTANT_DB.prepare("SELECT id FROM users WHERE id = ?").bind(userId).first<{ id: number }>()
+      : null;
+    const currentUserId = userId;
+    if (!text.startsWith("/") && !clearConversationRequest && userStillExists && currentUserId !== undefined) {
+      try {
+        await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, {
+          userId: currentUserId,
+          chatId: update.message.chat.id,
+          role: "user",
+          content: text,
+        });
+        const assistantText = typeof reply === "string" ? reply : reply?.text;
+        if (assistantText) {
+          await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, {
+            userId: currentUserId,
+            chatId: update.message.chat.id,
+            role: "assistant",
+            content: assistantText,
+          });
+        }
+      } catch (error) {
+        console.error(JSON.stringify({ event: "conversation_history_persist_failed", reason: error instanceof Error ? error.name : "unknown" }));
+      }
+    }
     if (getCommandToken(text) === "/start") await configureTelegramCommands(env, telegramFetch);
     return new Response(null, { status: 200 });
   } catch (error) {
@@ -327,7 +376,7 @@ export async function handleRequest(
     await reportOperationalFailure(env.PERSONAL_ASSISTANT_DB, env, {
       component: "webhook",
       operation: "update_processing",
-      detail: "runtime_failure",
+      detail: describeOperationalFailure(error),
     }, telegramFetch);
     return new Response("Internal error", { status: 500 });
   }
@@ -339,6 +388,7 @@ async function getReply(
   env: Env,
   telegramFetch: typeof fetch,
   aiFetch: typeof fetch,
+  conversationHistory: ReadonlyArray<ConversationTurn> = [],
 ): Promise<Reply | null> {
   const globalResetAction = parseGlobalResetAction(text);
   if (globalResetAction) return handleGlobalResetAction(globalResetAction, update, env);
@@ -367,6 +417,20 @@ async function getReply(
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
     });
+    if (isClearConversationCommand(text)) {
+      await clearConversationState(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        chatId: message.chat.id,
+      });
+      if (message.chat.type === "private" && message.message_id > 0) {
+        const messageIds = Array.from(
+          { length: Math.min(100, message.message_id) },
+          (_, index) => message.message_id - index,
+        );
+        await deleteTelegramMessages(env, message.chat.id, messageIds, telegramFetch);
+      }
+      return "🧹 Conversación limpiada. Tus tareas, recordatorios, notas, archivos, gastos y carpetas siguen intactos.";
+    }
     savedNotesContext = await getSavedNotesContext(env.PERSONAL_ASSISTANT_DB, {
       userId,
       chatId: message.chat.id,
@@ -455,6 +519,7 @@ async function getReply(
       model: env.OPENAI_MODEL,
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
+      conversationHistory,
       fetcher: aiFetch,
       onFailure: (failure) => reportOperationalFailure(env.PERSONAL_ASSISTANT_DB, env, {
         component: "openai",
@@ -546,11 +611,27 @@ async function getReply(
 
     if (intent.action === "search") {
       try {
-        const results = await searchUserData(env.PERSONAL_ASSISTANT_DB, { userId, query: intent.query });
-        return formatSearchResults(results, env.APP_TIMEZONE);
+        const page = await searchUserDataPage(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          query: intent.query,
+          kind: intent.kind,
+          status: intent.status,
+          folderName: intent.folderName,
+          from: intent.from,
+          to: intent.to,
+          page: intent.page,
+        });
+        return formatSearchResults(page.results, env.APP_TIMEZONE, {
+          page: page.page,
+          hasMore: page.hasMore,
+          nextCommand: buildSearchContinuation(intent, page.page + 1),
+        });
       } catch (error) {
         if (error instanceof Error && error.message === "Search query is too long") {
           return "La búsqueda no puede superar 200 caracteres.";
+        }
+        if (error instanceof Error && error.message.includes("Search date")) {
+          return "Usa fechas válidas con formato AAAA-MM-DD y un rango coherente.";
         }
         return "Escribe qué quieres buscar. Ejemplo: /buscar tornillos";
       }
@@ -757,7 +838,7 @@ async function getReply(
           await sendAttachment(env, message.chat.id, { kind: note.file_kind, fileId: note.file_id }, note.content, telegramFetch);
           await sendBotReply(env, message.chat.id, {
             text: "Puedes gestionar este guardado:",
-            replyMarkup: buildSavedNoteActionKeyboard(note.id, false),
+            replyMarkup: buildSavedNoteActionKeyboard(note.id, true),
           }, telegramFetch);
           return null;
         } catch {
@@ -767,7 +848,7 @@ async function getReply(
       }
       return {
         text: formatSavedNoteContent(note),
-        replyMarkup: buildSavedNoteActionKeyboard(note.id, !note.file_kind),
+        replyMarkup: buildSavedNoteActionKeyboard(note.id, true),
       };
     }
     if (intent.action === "summary") {
@@ -1018,10 +1099,6 @@ async function handleCallbackQuery(
       await sendMessage(env, source.chat.id, "No encontré ese guardado o ya no está disponible.", telegramFetch);
       return;
     }
-    if (note.file_kind) {
-      await sendMessage(env, source.chat.id, "Los archivos no se pueden editar; solo puedes eliminarlos.", telegramFetch);
-      return;
-    }
     await startEditSession(env.PERSONAL_ASSISTANT_DB, {
       userId,
       chatId: source.chat.id,
@@ -1030,9 +1107,54 @@ async function handleCallbackQuery(
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     });
     await sendBotReply(env, source.chat.id, {
-      text: `✏️ Escribe el nuevo contenido de la nota.\n\nContenido actual:\n${formatSavedNoteContent(note)}`,
+      text: `✏️ Escribe el nuevo contenido o descripción del guardado.\n\nContenido actual:\n${formatSavedNoteContent(note)}`,
       replyMarkup: buildSavedNoteEditCancelKeyboard(),
     }, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "saved_note_move") {
+    const note = await getNote(env.PERSONAL_ASSISTANT_DB, userId, action.id);
+    if (!note) {
+      await sendMessage(env, source.chat.id, "No encontré ese guardado o ya no está disponible.", telegramFetch);
+      return;
+    }
+    const folders = await listFolders(env.PERSONAL_ASSISTANT_DB, userId, "all");
+    if (!folders.some((folder) => folder.id === null)) {
+      folders.push({ id: null, name: "Sin carpeta", count: 0 });
+    }
+    await sendBotReply(env, source.chat.id, {
+      text: "📁 Elige la carpeta de destino:",
+      replyMarkup: buildSavedNoteMoveKeyboard(action.id, folders),
+    }, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "saved_note_move_set") {
+    const note = await getNote(env.PERSONAL_ASSISTANT_DB, userId, action.id);
+    if (!note) {
+      await sendMessage(env, source.chat.id, "No encontré ese guardado o ya no está disponible.", telegramFetch);
+      return;
+    }
+    let destinationName = "Sin carpeta";
+    if (action.folderId !== null) {
+      const folder = await getFolderById(env.PERSONAL_ASSISTANT_DB, userId, action.folderId);
+      if (!folder) {
+        await sendMessage(env, source.chat.id, "Esa carpeta ya no está disponible.", telegramFetch);
+        return;
+      }
+      destinationName = folder.name;
+    }
+    try {
+      await moveNoteToFolder(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        noteId: action.id,
+        folderId: action.folderId,
+      });
+      await sendMessage(env, source.chat.id, `✅ Guardado movido a «${destinationName}».`, telegramFetch);
+    } catch {
+      await sendMessage(env, source.chat.id, "No pude mover ese guardado.", telegramFetch);
+    }
     return;
   }
 
@@ -1181,7 +1303,7 @@ async function handleCallbackQuery(
         await sendAttachment(env, source.chat.id, { kind: note.file_kind, fileId: note.file_id }, note.content, telegramFetch);
         await sendBotReply(env, source.chat.id, {
           text: "Puedes gestionar este guardado:",
-          replyMarkup: buildSavedNoteActionKeyboard(note.id, false),
+            replyMarkup: buildSavedNoteActionKeyboard(note.id, true),
         }, telegramFetch);
       } catch {
         await sendMessage(env, source.chat.id, `No pude enviar el archivo. Sigue guardado; intenta de nuevo con /guardado_${note.id}.`, telegramFetch);
@@ -1190,7 +1312,7 @@ async function handleCallbackQuery(
     }
     await sendBotReply(env, source.chat.id, {
       text: formatSavedNoteContent(note),
-      replyMarkup: buildSavedNoteActionKeyboard(note.id, !note.file_kind),
+      replyMarkup: buildSavedNoteActionKeyboard(note.id, true),
     }, telegramFetch);
     return;
   }
@@ -1556,10 +1678,25 @@ function formatSummary(summary: SummaryResult, range: "today" | "week" | "month"
     `📋 Resumen · ${rangeLabel}`,
     "",
     `✅ Tareas pendientes: ${summary.pendingTaskCount}`,
-    `💰 Gastos: ${formatExpenseAmount(summary.totalExpenseCents, currency)}`,
+    `✔️ Tareas completadas en el periodo: ${summary.completedTaskCount}`,
+    `❌ Tareas canceladas en el periodo: ${summary.cancelledTaskCount}`,
+    `💰 Gastos: ${formatExpenseAmount(summary.totalExpenseCents, currency)} (${summary.expenseCount})`,
     "",
-    "⏰ Recordatorios",
+    `📁 Carpetas: ${summary.folderCount}`,
+    `💾 Almacenamiento lógico: ${formatStorageBytes(summary.logicalStorageBytes)}`,
+    `🚗 CAMe: ${summary.contingencyStatus === "active" ? "Fase I activa" : summary.contingencyStatus === "inactive" ? "sin Fase I activa" : "sin consulta reciente"}`,
+    ...(summary.contingencyPublishedAt ? [`   Boletín publicado: ${formatDate(summary.contingencyPublishedAt, timezone)}`] : []),
+    "",
+    "📊 Gastos por categoría",
   ];
+
+  if (summary.expensesByCategory.length === 0) {
+    lines.push("Ninguno");
+  } else {
+    lines.push(...summary.expensesByCategory.map((entry) => `• ${entry.category}: ${formatExpenseAmount(entry.totalCents, currency)}`));
+  }
+
+  lines.push("", "⏰ Recordatorios");
 
   if (summary.upcomingReminders.length === 0) {
     lines.push("Ninguno");
@@ -1663,18 +1800,38 @@ function contingencyModeLabel(mode: ContingencyMode | null): string {
   return mode === "always" ? "avisar siempre cuando se active Fase I" : mode === "vehicle" ? "avisar solo si afecta a un vehículo" : "avisos apagados";
 }
 
-function formatSearchResults(results: Awaited<ReturnType<typeof searchUserData>>, timezone: string): string {
+function formatSearchResults(
+  results: Awaited<ReturnType<typeof searchUserDataPage>>["results"],
+  timezone: string,
+  pagination?: { page: number; hasMore: boolean; nextCommand: string },
+): string {
   if (!results.length) return "🔎 No encontré coincidencias en tus datos.";
-  const lines = ["🔎 Resultados de búsqueda", "", ...results.map((result, index) => {
+  const lines = [`🔎 Resultados de búsqueda${pagination ? ` · página ${pagination.page}` : ""}`, "", ...results.map((result, index) => {
     const label = result.kind === "task" ? `Tarea ${result.id}`
       : result.kind === "reminder" ? `Recordatorio ${result.id}`
         : result.kind === "expense" ? `Gasto ${result.id}`
           : `Guardado ${result.id}`;
     const date = formatDate(result.createdAt, timezone);
-    return `${index + 1}.- ${label} · ${result.preview.replace(/\s+/g, " ")}\n   ${result.status} · ${date}`;
+    const folder = result.folderName ? ` · ${result.folderName}` : "";
+    return `${index + 1}.- ${label}${folder} · ${result.preview.replace(/\s+/g, " ")}\n   ${result.status} · ${date}`;
   })];
+  if (pagination?.hasMore) lines.push("", `Más resultados: ${pagination.nextCommand}`);
   lines.push("", "Para abrir un guardado usa /guardado_ID.");
   return lines.join("\n");
+}
+
+function buildSearchContinuation(
+  intent: Extract<Intent, { action: "search" }>,
+  page: number,
+): string {
+  const parts = [intent.query];
+  if (intent.kind) parts.push(`tipo:${intent.kind}`);
+  if (intent.status) parts.push(`estado:${intent.status}`);
+  if (intent.folderName) parts.push(`carpeta:"${intent.folderName.replace(/"/g, "")}"`);
+  if (intent.from) parts.push(`desde:${intent.from}`);
+  if (intent.to) parts.push(`hasta:${intent.to}`);
+  parts.push(`pagina:${page}`);
+  return `/buscar ${parts.join(" ")}`;
 }
 
 function formatStorageBytes(bytes: number): string {
@@ -2051,7 +2208,7 @@ function getCommandReply(text: string): Reply | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• /comandos para ver el catálogo completo\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuraciones para avisos persistentes y alertas CAMe\n• /contingencia para configurar avisos de Fase I\n• /hoy_no_circula para corroborar alertas actuales de CAMe\n• /vehiculo familiar holograma 0 y placa terminada en 6\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• /comandos para ver el catálogo completo\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /buscar tornillos tipo:tarea estado:pendiente desde:2026-09-01 hasta:2026-09-30\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuraciones para avisos persistentes y alertas CAMe\n• /contingencia para configurar avisos de Fase I\n• /hoy_no_circula para corroborar alertas actuales de CAMe\n• /vehiculo familiar holograma 0 y placa terminada en 6\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
 
   if (command === "/comandos") return formatCommandsGuide();
