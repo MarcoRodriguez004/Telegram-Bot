@@ -78,12 +78,40 @@ export interface SearchResult {
   preview: string;
   status: string;
   createdAt: string;
+  folderName?: string | null;
+}
+
+export interface SearchUserDataInput {
+  userId: number;
+  query: string;
+  limit?: number;
+  page?: number;
+  kind?: SearchResult["kind"];
+  status?: "pending" | "completed" | "cancelled" | "saved";
+  folderName?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface SearchPage {
+  results: SearchResult[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
 }
 
 export async function searchUserData(
   db: D1Database,
-  input: { userId: number; query: string; limit?: number },
+  input: SearchUserDataInput,
 ): Promise<SearchResult[]> {
+  const page = await searchUserDataPage(db, input);
+  return page.results;
+}
+
+export async function searchUserDataPage(
+  db: D1Database,
+  input: SearchUserDataInput,
+): Promise<SearchPage> {
   assertUserId(input.userId);
   const query = input.query.trim().replace(/\s+/g, " ");
   if (!query) throw new Error("Search query is required");
@@ -91,38 +119,108 @@ export async function searchUserData(
 
   const limit = input.limit ?? 10;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new Error("Search limit is invalid");
+  const page = input.page ?? 1;
+  if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw new Error("Search page is invalid");
+  if (input.folderName !== undefined && (input.folderName.trim().length === 0 || input.folderName.trim().length > 80)) {
+    throw new Error("Search folder is invalid");
+  }
+  const from = input.from === undefined ? undefined : searchDateBoundary(input.from, false);
+  const to = input.to === undefined ? undefined : searchDateBoundary(input.to, true);
+  if (from && to && from >= to) throw new Error("Search date range is invalid");
 
   const pattern = `%${escapeLikePattern(query.toLocaleLowerCase("es-MX"))}%`;
-  const result = await db.prepare(
-    `SELECT kind, id, preview, status, createdAt
-       FROM (
-         SELECT 'task' AS kind, id, title AS preview, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' ELSE status END AS status, created_at AS createdAt
-           FROM tasks
-          WHERE user_id = ? AND LOWER(title) LIKE ? ESCAPE '\\'
-         UNION ALL
-         SELECT 'reminder' AS kind, id, title AS preview, CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' ELSE status END AS status, created_at AS createdAt
-           FROM reminders
-          WHERE user_id = ? AND LOWER(title) LIKE ? ESCAPE '\\'
-         UNION ALL
-         SELECT 'expense' AS kind, id, category || CASE WHEN description IS NULL OR description = '' THEN '' ELSE ': ' || description END AS preview, 'saved' AS status, created_at AS createdAt
-           FROM expenses
-          WHERE user_id = ? AND LOWER(category || ' ' || COALESCE(description, '')) LIKE ? ESCAPE '\\'
-         UNION ALL
-         SELECT 'note' AS kind, id, content AS preview, 'saved' AS status, created_at AS createdAt
-           FROM notes
-          WHERE user_id = ? AND LOWER(content || ' ' || COALESCE(url, '')) LIKE ? ESCAPE '\\'
-       )
-      ORDER BY createdAt DESC, id DESC
-      LIMIT ?`,
-  ).bind(input.userId, pattern, input.userId, pattern, input.userId, pattern, input.userId, pattern, limit).all<SearchResult>();
+  const conditions = ["LOWER(searchText) LIKE ? ESCAPE '\\'"];
+  const values: Array<string | number> = [pattern];
+  if (input.kind) {
+    conditions.push("kind = ?");
+    values.push(input.kind);
+  }
+  if (input.status) {
+    conditions.push("status = ?");
+    values.push(input.status);
+  }
+  if (input.folderName !== undefined) {
+    const folderName = input.folderName.trim().toLocaleLowerCase("es-MX");
+    conditions.push("kind = 'note'");
+    if (/^sin\s+carpeta$/iu.test(folderName)) {
+      conditions.push("folderName IS NULL");
+    } else {
+      conditions.push("LOWER(folderName) = ?");
+      values.push(folderName);
+    }
+  }
+  if (from) {
+    conditions.push("createdAt >= ?");
+    values.push(from);
+  }
+  if (to) {
+    conditions.push("createdAt < ?");
+    values.push(to);
+  }
 
-  return result.results.map((entry) => ({
+  const result = await db.prepare(
+    `SELECT kind, id, preview, status, createdAt, folderName
+       FROM (
+         SELECT 'task' AS kind,
+                id,
+                title AS preview,
+                CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'done' THEN 'completed' ELSE 'pending' END AS status,
+                created_at AS createdAt,
+                NULL AS folderName,
+                title AS searchText
+           FROM tasks
+          WHERE user_id = ?
+         UNION ALL
+         SELECT 'reminder' AS kind,
+                id,
+                title AS preview,
+                CASE WHEN cancelled_at IS NOT NULL THEN 'cancelled' WHEN status = 'sent' THEN 'completed' ELSE 'pending' END AS status,
+                created_at AS createdAt,
+                NULL AS folderName,
+                title AS searchText
+           FROM reminders
+          WHERE user_id = ?
+         UNION ALL
+         SELECT 'expense' AS kind,
+                id,
+                category || CASE WHEN description IS NULL OR description = '' THEN '' ELSE ': ' || description END AS preview,
+                'saved' AS status,
+                created_at AS createdAt,
+                NULL AS folderName,
+                category || ' ' || COALESCE(description, '') AS searchText
+           FROM expenses
+          WHERE user_id = ?
+         UNION ALL
+         SELECT 'note' AS kind,
+                n.id,
+                n.content AS preview,
+                'saved' AS status,
+                n.created_at AS createdAt,
+                f.name AS folderName,
+                n.content || ' ' || COALESCE(n.url, '') AS searchText
+           FROM notes n
+           LEFT JOIN saved_folders f ON f.id = n.folder_id AND f.user_id = n.user_id
+          WHERE n.user_id = ?
+       )
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY createdAt DESC, id DESC
+      LIMIT ? OFFSET ?`,
+  ).bind(input.userId, input.userId, input.userId, input.userId, ...values, limit + 1, (page - 1) * limit).all<SearchResult>();
+
+  const rows = result.results.slice(0, limit);
+  return {
+    results: rows.map((entry) => ({
     ...entry,
     id: Number(entry.id),
     preview: String(entry.preview),
     status: String(entry.status),
     createdAt: String(entry.createdAt),
-  }));
+    ...(entry.folderName === null || entry.folderName === undefined ? {} : { folderName: String(entry.folderName) }),
+    })),
+    page,
+    limit,
+    hasMore: result.results.length > limit,
+  };
 }
 
 function escapeLikePattern(value: string): string {
@@ -131,6 +229,15 @@ function escapeLikePattern(value: string): string {
 
 function assertUserId(userId: number): void {
   if (!Number.isSafeInteger(userId) || userId < 1) throw new Error("User id is invalid");
+}
+
+function searchDateBoundary(value: string, exclusiveEnd: boolean): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value) || !Number.isFinite(Date.parse(`${value}T00:00:00.000Z`))) {
+    throw new Error("Search date is invalid");
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (exclusiveEnd) date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString();
 }
 
 function normalizeCount(value: number | undefined): number {

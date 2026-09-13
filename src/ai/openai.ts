@@ -104,6 +104,7 @@ Reglas:
 export interface InterpretMessageOptions extends ParseOptions {
   apiKey?: string;
   model?: string;
+  conversationHistory?: ReadonlyArray<{ role: "user" | "assistant"; content: string }>;
   fetcher?: typeof fetch;
   onFailure?: (failure: { kind: "http" | "network"; status?: number }) => Promise<void> | void;
 }
@@ -127,7 +128,7 @@ export async function interpretMessage(text: string, options: InterpretMessageOp
       body: JSON.stringify({
         model: options.model?.trim() || DEFAULT_MODEL,
         instructions: buildInstructions(options),
-        input: message,
+        input: buildModelInput(message, options.conversationHistory),
         text: {
           format: {
             type: "json_schema",
@@ -304,6 +305,17 @@ function normalizeNote(value: Record<string, unknown>): Intent {
   if (!rawUrl) return { action: "save_note", content, ...(folderName ? { folderName } : {}) };
   const url = normalizeHttpUrl(rawUrl);
   return url ? { action: "save_note", content, url, ...(folderName ? { folderName } : {}) } : { action: "unknown", reason: "invalid_note_url" };
+}
+
+function buildModelInput(
+  message: string,
+  history: ReadonlyArray<{ role: "user" | "assistant"; content: string }> | undefined,
+): string | Array<{ role: "user" | "assistant"; content: string }> {
+  const turns = (history ?? [])
+    .filter((turn) => (turn.role === "user" || turn.role === "assistant") && typeof turn.content === "string" && turn.content.trim())
+    .slice(-12)
+    .map((turn) => ({ role: turn.role, content: turn.content.trim() }));
+  return turns.length ? [...turns, { role: "user", content: message }] : message;
 }
 
 async function notifyAiFailure(

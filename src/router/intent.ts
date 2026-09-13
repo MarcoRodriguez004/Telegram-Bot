@@ -16,7 +16,16 @@ export type Intent =
   | { action: "get_note"; noteId: number }
   | { action: "summary"; range: "today" | "week" | "month" }
   | { action: "status" }
-  | { action: "search"; query: string }
+  | {
+      action: "search";
+      query: string;
+      kind?: "task" | "reminder" | "expense" | "note";
+      status?: "pending" | "completed" | "cancelled" | "saved";
+      folderName?: string;
+      from?: string;
+      to?: string;
+      page?: number;
+    }
   | { action: "export_data" }
   | { action: "register_vehicle"; label?: string; hologram: "0" | "00"; plateLastDigit: number }
   | { action: "list_vehicles" }
@@ -24,6 +33,7 @@ export type Intent =
   | { action: "configure_contingency"; mode: "always" | "vehicle" | null }
   | { action: "show_contingency" }
   | { action: "check_contingency" }
+  | { action: "clear_conversation" }
   | { action: "delete_data"; confirmation: true }
   | { action: "reply"; message: string }
   | { action: "clarify"; question: string; missing: string[]; suggestedText?: string }

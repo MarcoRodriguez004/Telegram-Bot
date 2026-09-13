@@ -122,7 +122,7 @@ describe("saved attachments", () => {
     await send({ text: "nota póliza pendiente" });
     await send({ text: "/guardado_1" });
     expect((sent.at(-1)?.body.reply_markup as { inline_keyboard: Array<Array<{ text: string }>> }).inline_keyboard.flat().map((button) => button.text))
-      .toEqual(["✏️ Editar", "🗑️ Eliminar"]);
+      .toEqual(["✏️ Editar", "📁 Mover", "🗑️ Eliminar"]);
     await click("pa:s:e:1");
     await send({ text: "póliza renovada" });
     expect(sqlite.prepare("SELECT content FROM notes WHERE id = 1").get()).toMatchObject({ content: "póliza renovada" });
@@ -130,6 +130,24 @@ describe("saved attachments", () => {
     await click("pa:s:d:1");
     await click("pa:s:y:1");
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM notes WHERE id = 1").get()).toMatchObject({ count: 0 });
+  });
+
+  it("edits a media description and moves the saved item to another folder", async () => {
+    const { send, click, sent, sqlite } = setup();
+    await send({ text: "Crea la carpeta Documentos" });
+    await send({ document, caption: "Guarda recibo" });
+    await send({ text: "/guardado_1" });
+    expect((sent.at(-1)?.body.reply_markup as { inline_keyboard: Array<Array<{ text: string }>> }).inline_keyboard.flat().map((button) => button.text))
+      .toEqual(["✏️ Editar", "📁 Mover", "🗑️ Eliminar"]);
+
+    await click("pa:s:e:1");
+    await send({ text: "recibo actualizado" });
+    expect(sqlite.prepare("SELECT content FROM notes WHERE id = 1").get()).toMatchObject({ content: "recibo actualizado" });
+
+    await send({ text: "/guardado_1" });
+    await click("pa:s:m:1");
+    await click("pa:s:m:1:1");
+    expect(sqlite.prepare("SELECT folder_id FROM notes WHERE id = 1").get()).toMatchObject({ folder_id: 1 });
   });
 
   it("does not expose another user's saved file", async () => {

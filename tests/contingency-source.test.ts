@@ -55,6 +55,16 @@ describe("official contingency bulletin parsing", () => {
     expect(bulletin).toMatchObject({ affectedDate: "2026-09-13" });
   });
 
+  it("extracts an affected day written with only a weekday and date", () => {
+    const bulletin = parseContingencyText(
+      "SE ACTIVA LA FASE I DE CONTINGENCIA AMBIENTAL. El jueves 17 de septiembre deberán suspender su circulación los vehículos con holograma 0 y 00.",
+      "https://aire.cdmx.gob.mx/comunicado.pdf",
+      "2026-09-16T20:00:00.000Z",
+    );
+
+    expect(bulletin).toMatchObject({ affectedDate: "2026-09-17" });
+  });
+
   it("uses the publication date for an explicit day of today", () => {
     const bulletin = parseContingencyText(
       "SE ACTIVA LA FASE I de contingencia ambiental. Las medidas aplican el día de hoy.",
@@ -71,6 +81,15 @@ describe("official contingency bulletin parsing", () => {
       "https://www.aire.cdmx.gob.mx/contingencias/notas/comunicado43.pdf",
       "2026-09-13T10:00:00.000Z",
     )).toMatchObject({ active: false, phase: "I" });
+  });
+
+  it("recognizes a suspension bulletin that does not repeat the phase number", () => {
+    expect(parseContingencyText(
+      "SE SUSPENDE LA CONTINGENCIA AMBIENTAL ATMOSFÉRICA POR OZONO EN LA ZONA METROPOLITANA DEL VALLE DE MÉXICO. " +
+        "Las medidas se suspenden a partir de las 15:00 horas del día de hoy.",
+      "https://aire.cdmx.gob.mx/contingencias/notas/comunicado44_09122026.pdf",
+      "2026-09-13T21:00:00.000Z",
+    )).toMatchObject({ active: false, phase: "I", affectedDate: "2026-09-13" });
   });
 
   it("recognizes an active phase when the action follows the phase name", () => {

@@ -37,7 +37,8 @@ const SAVED_ITEM = /^(?:ver\s+guardado\s+|\/?guardado(?:_|\s+))(\d+)(?:@[a-z0-9_
 const LINK_COMMAND = /^(?:\/)?(?:guardar|guarda|enlace|link)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const STATUS_COMMAND = /^(?:\/)?estado(?:@[a-z0-9_]+)?$/iu;
-const SEARCH_COMMAND = /^(?:\/)?(?:buscar|busca)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const SEARCH_COMMAND = /^(?:\/)?(?:buscar|busca|b[uú]squeda)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
+const NATURAL_SEARCH_PHRASE = /^(?:(?:cualquier|todos?|todas?)\s+)?(?:archivo(?:s)?|foto(?:s)?|imagen(?:es)?|documento(?:s)?|nota(?:s)?|guardado(?:s)?)(?:(?:\s*,|\s+(?:o|y))\s*(?:archivo(?:s)?|foto(?:s)?|imagen(?:es)?|documento(?:s)?|nota(?:s)?|guardado(?:s)?))*\s+(?:que\s+)?(?:conteng(?:a|an)|contien(?:e|en)|teng(?:a|an))\s+(.+)$/iu;
 const EXPORT_COMMAND = /^(?:\/)?(?:exportar|exporta)(?:@[a-z0-9_]+)?$/iu;
 const VEHICLE_REGISTER = /^(?:\/veh[ií]culo(?:@[a-z0-9_]+)?|registra(?:r)?\s+(?:(?:mi|este|el|un)\s+)?veh[ií]culo|agrega(?:r)?\s+(?:(?:mi|este|el|un)\s+)?(?:veh[ií]culo|coche))(?:(?:\s+|[,;:])|$)(.*)$/iu;
 const VEHICLE_LIST = /^(?:\/veh[ií]culos?|(?:mis|cu[aá]les son mis)\s+(?:veh[ií]culos?|coches?))(?:@[a-z0-9_]+)?[?!.]*$/iu;
@@ -45,6 +46,7 @@ const VEHICLE_REMOVE = /^(?:\/elimina(?:r)?_veh[ií]culo|elimina(?:r)?\s+(?:mi\s
 const CONTINGENCY_CHECK = /^(?:\/hoy_no_circula(?:@[a-z0-9_]+)?|(?:revisa|revisar|consulta|consultar|comprueba|compruebe|verifica|verificar|corrobora|corroborar)\s+(?:(?:en|de)\s+)?(?:c[aá]me|hoy\s+no\s+circula|contingencia(?:\s+ambiental)?)(?:\s+si\s+(?:hay|existe[n]?)\s+(?:alg[uú]n(?:a)?\s+)?alerta[s]?)?|¿?\s*(?:hay|existe[n]?)\s+(?:alg[uú]n(?:a)?\s+)?(?:alerta[s]?|contingencia[s]?|restricci[oó]n(?:es)?)(?:\s+(?:de|en)\s+(?:c[aá]me|hoy\s+no\s+circula|contingencia(?:\s+ambiental)?))?\s*\??)[?!.]*$/iu;
 const NATURAL_HOY_NO_CIRCULA = /^¿?(?:el\s+)?hoy\s+no\s+circula[?!.]*$/iu;
 const CONTINGENCY_SHOW = /^(?:\/contingencia(?:@[a-z0-9_]+)?|(?:configura|configurar|mu[eé]strame|dime)\s+(?:mis\s+)?avisos\s+de\s+contingencia)[?!.]*$/iu;
+const CLEAR_CONVERSATION_COMMAND = /^cls$/iu;
 const CONTINGENCY_ALWAYS = /^(?:av[ií]same|notif[ií]came)\s+siempre\s+(?:cuando\s+)?(?:haya|se\s+active)\s+(?:la\s+)?fase\s+(?:i|1)(?:\s+de\s+contingencia)?[?!.]*$/iu;
 const CONTINGENCY_VEHICLE = /^(?:av[ií]same|notif[ií]came)\s+(?:solo\s+)?si\s+afecta\s+a\s+(?:mi\s+)?(?:veh[ií]culo|coche|auto|carro)[?!.]*$/iu;
 const CONTINGENCY_OFF = /^(?:no\s+me\s+avises|desactiva(?:r)?\s+(?:mis\s+)?avisos)\s+(?:de\s+)?contingencia(?:s)?[?!.]*$/iu;
@@ -65,12 +67,18 @@ export interface ParseOptions {
   savedNotesContext?: SavedNotesContext;
 }
 
+export function isClearConversationCommand(text: string): boolean {
+  return CLEAR_CONVERSATION_COMMAND.test(text.trim());
+}
+
 export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   const normalized = text.trim().replace(/\s+/g, " ");
 
   if (!normalized || normalized.length > MAX_MESSAGE_LENGTH) {
     return { action: "unknown", reason: "unsupported_message" };
   }
+
+  if (isClearConversationCommand(normalized)) return { action: "clear_conversation" };
 
   const vehicleRegister = VEHICLE_REGISTER.exec(normalized);
   if (vehicleRegister) return parseVehicleRegistration(vehicleRegister[1] ?? "");
@@ -195,8 +203,7 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
 
   const searchMatch = SEARCH_COMMAND.exec(normalized);
   if (searchMatch) {
-    const query = searchMatch[1]?.trim();
-    return query ? { action: "search", query } : { action: "unknown", reason: "missing_search_query" };
+    return parseSearchQuery(searchMatch[1] ?? "");
   }
 
   if (EXPORT_COMMAND.test(normalized)) return { action: "export_data" };
@@ -367,6 +374,76 @@ function parseRenameFolder(currentName: string, newName: string): Intent {
 
 function normalizeFolderInput(value: string): string {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function parseSearchQuery(value: string): Intent {
+  const filters = /(?:^|\s)(tipo|type|estado|status|carpeta|folder|desde|from|hasta|to|p[aá]gina|pagina|page):(?:"([^"]+)"|'([^']+)'|([^\s]+))/giu;
+  const matches = [...value.matchAll(filters)];
+  const remaining = value.replace(filters, " ").trim().replace(/\s+/g, " ");
+  const naturalMatch = NATURAL_SEARCH_PHRASE.exec(remaining);
+  const query = (naturalMatch?.[1] ?? remaining).trim().replace(/[?!.]+$/u, "");
+  if (!query) return { action: "unknown", reason: "missing_search_query" };
+
+  const result: Extract<Intent, { action: "search" }> = { action: "search", query };
+  for (const match of matches) {
+    const key = (match[1] ?? "").toLocaleLowerCase("es-MX");
+    const filterValue = (match[2] ?? match[3] ?? match[4] ?? "").trim();
+    if (!filterValue) return { action: "unknown", reason: "invalid_search_filter" };
+    if (key === "tipo" || key === "type") {
+      const kind = parseSearchKind(filterValue);
+      if (!kind) return { action: "unknown", reason: "invalid_search_filter" };
+      result.kind = kind;
+    } else if (key === "estado" || key === "status") {
+      const status = parseSearchStatus(filterValue);
+      if (!status) return { action: "unknown", reason: "invalid_search_filter" };
+      result.status = status;
+    } else if (key === "carpeta" || key === "folder") {
+      result.folderName = filterValue;
+    } else if (key === "desde" || key === "from") {
+      if (!isSearchDate(filterValue)) return { action: "unknown", reason: "invalid_search_filter" };
+      result.from = filterValue;
+    } else if (key === "hasta" || key === "to") {
+      if (!isSearchDate(filterValue)) return { action: "unknown", reason: "invalid_search_filter" };
+      result.to = filterValue;
+    } else {
+      const page = Number(filterValue);
+      if (!Number.isSafeInteger(page) || page < 1 || page > 1000) {
+        return { action: "unknown", reason: "invalid_search_filter" };
+      }
+      result.page = page;
+    }
+  }
+  return result;
+}
+
+function parseSearchKind(value: string): Extract<Intent, { action: "search" }>['kind'] {
+  const normalized = value.toLocaleLowerCase("es-MX");
+  return normalized === "tarea" || normalized === "tareas" || normalized === "task" || normalized === "tasks"
+    ? "task"
+    : normalized === "recordatorio" || normalized === "recordatorios" || normalized === "reminder" || normalized === "reminders"
+      ? "reminder"
+      : normalized === "gasto" || normalized === "gastos" || normalized === "expense" || normalized === "expenses"
+        ? "expense"
+        : normalized === "nota" || normalized === "notas" || normalized === "enlace" || normalized === "enlaces" || normalized === "link" || normalized === "links" || normalized === "archivo" || normalized === "archivos" || normalized === "documento" || normalized === "documentos" || normalized === "foto" || normalized === "fotos" || normalized === "imagen" || normalized === "imagenes" || normalized === "imágenes" || normalized === "guardado" || normalized === "guardados"
+          ? "note"
+          : undefined;
+}
+
+function parseSearchStatus(value: string): Extract<Intent, { action: "search" }>['status'] {
+  const normalized = value.toLocaleLowerCase("es-MX");
+  return normalized === "pendiente" || normalized === "pendientes" || normalized === "pending"
+    ? "pending"
+    : normalized === "completada" || normalized === "completadas" || normalized === "completado" || normalized === "completados" || normalized === "done" || normalized === "completed"
+      ? "completed"
+      : normalized === "cancelada" || normalized === "canceladas" || normalized === "cancelado" || normalized === "cancelados" || normalized === "cancelled"
+        ? "cancelled"
+        : normalized === "guardado" || normalized === "guardados" || normalized === "saved"
+          ? "saved"
+          : undefined;
+}
+
+function isSearchDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/u.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00.000Z`));
 }
 
 function savedKindFromLabel(label: string): "photos" | "documents" | "links" | null {

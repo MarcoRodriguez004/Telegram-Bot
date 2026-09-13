@@ -51,10 +51,11 @@ export function parseContingencyText(
 ): ContingencyBulletin | null {
   const text = normalizeSourceText(input);
   const phase = /\bFASE\s+(?:I|1)\b/iu.test(text);
-  if (!phase) return null;
+  const endedContingency = /\b(?:SE\s+)?(?:SUSPENDE|LEVANTA|FINALIZA|TERMINA)\s+LA\s+CONTINGENCIA\s+AMBIENTAL\b/iu.test(text);
+  if (!phase && !endedContingency) return null;
 
-  const ended = /(?:SE\s+)?(?:SUSPENDE|LEVANTA|FINALIZA|TERMINA)\b[\s\S]{0,140}\bFASE\s+(?:I|1)\b|\bFASE\s+(?:I|1)\b[\s\S]{0,180}(?:SUSPENDE|LEVANTA|FINALIZA|TERMINA)\b/iu.test(text);
-  const active = !ended && (
+  const ended = endedContingency || /(?:SE\s+)?(?:SUSPENDE|LEVANTA|FINALIZA|TERMINA)\b[\s\S]{0,140}\bFASE\s+(?:I|1)\b|\bFASE\s+(?:I|1)\b[\s\S]{0,180}(?:SUSPENDE|LEVANTA|FINALIZA|TERMINA)\b/iu.test(text);
+  const active = phase && !ended && (
     /(?:SE\s+)?(?:ACTIVA|MANTIENE|CONTIN(?:Ú|U)A|CONTINUA)[\s\S]{0,140}\bFASE\s+(?:I|1)\b/iu.test(text)
     || /\bFASE\s+(?:I|1)\b[\s\S]{0,140}(?:SE\s+)?(?:ACTIVA|MANTIENE|CONTIN(?:Ú|U)A|CONTINUA)\b/iu.test(text)
   );
@@ -116,6 +117,15 @@ function parseAffectedDate(text: string, publishedAt: string | null): string | n
     const month = monthNumber(tomorrowMatch[2]);
     const year = inferAffectedYear(tomorrowMatch[3], day, month, publishedAt);
     return year === null ? null : toIsoDate(day, month, year);
+  }
+
+  const weekdayDateMatch = new RegExp(
+    `\\b(?:el\\s+)?(?:${weekdayNames})\\s+(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+(?:de|del)\\s+(\\d{4}))?`,
+    "iu",
+  ).exec(text);
+  if (weekdayDateMatch) {
+    const year = weekdayDateMatch[3] ? Number(weekdayDateMatch[3]) : inferAffectedYear(undefined, Number(weekdayDateMatch[1]), monthNumber(weekdayDateMatch[2]), publishedAt);
+    return year === null ? null : toIsoDate(Number(weekdayDateMatch[1]), monthNumber(weekdayDateMatch[2]), year);
   }
 
   const explicitMatch = new RegExp(
