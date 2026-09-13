@@ -26,7 +26,9 @@ export async function monitorContingency(
   const saved = await saveContingencyState(db, {
     active: bulletin.active,
     phase: bulletin.phase,
-    restrictionSignature: restriction?.signature ?? null,
+    restrictionSignature: restriction
+      ? JSON.stringify({ signature: restriction.signature, affectedDate: bulletin.affectedDate })
+      : null,
     restrictionsText: restriction?.text ?? null,
     sourceUrl: bulletin.sourceUrl,
     publishedAt: bulletin.publishedAt,
@@ -37,7 +39,7 @@ export async function monitorContingency(
   const shouldNotify = (bulletin.active && restriction !== null) || Boolean(saved.previous?.active && !bulletin.active);
   if (!shouldNotify) return true;
   const recipients = await listContingencyRecipients(db, bulletin.active ? restriction : null);
-  const message = formatContingencyAlert(bulletin.active, restriction, saved.previous, bulletin.sourceUrl);
+  const message = formatContingencyAlert(bulletin.active, restriction, saved.previous, bulletin.sourceUrl, bulletin.affectedDate);
   for (const recipient of recipients) {
     try {
       await sendMessage(env, recipient.chatId, message, telegramFetch);
@@ -58,12 +60,26 @@ function formatContingencyAlert(
   restriction: { holograms: string[]; plateLastDigits: number[]; color: string | null; text: string } | null,
   previous: ContingencyState | null,
   sourceUrl: string,
+  affectedDate: string | null,
 ): string {
   if (!active) {
     return `✅ La CAMe informó que terminó la Fase I de contingencia ambiental.\n\nFuente oficial: ${sourceUrl}`;
   }
   const digits = restriction?.plateLastDigits.join(" y ") ?? "no identificadas automáticamente";
   const color = restriction?.color ? ` (${restriction.color})` : "";
+  const day = affectedDate ? formatAffectedDate(affectedDate) : "no identificado en el boletín";
   const heading = previous?.active ? "🔁 Cambiaron las restricciones de la Fase I" : "🚨 Se activó la Fase I de contingencia ambiental";
-  return `${heading}\n\nHologramas 0 y 00: terminación ${digits}${color}.\n${restriction?.text ?? "Consulta el boletín oficial para conocer la restricción completa."}\n\nFuente oficial: ${sourceUrl}`;
+  return `${heading}\n\nDía de afectación: ${day}.\nHologramas 0 y 00: terminación ${digits}${color}.\n${restriction?.text ?? "Consulta el boletín oficial para conocer la restricción completa."}\n\nFuente oficial: ${sourceUrl}`;
+}
+
+function formatAffectedDate(value: string): string {
+  const date = new Date(`${value}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return "no identificado en el boletín";
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: "UTC",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }

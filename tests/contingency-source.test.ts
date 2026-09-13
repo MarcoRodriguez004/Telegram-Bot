@@ -33,6 +33,17 @@ describe("official contingency bulletin parsing", () => {
     });
   });
 
+  it("extracts the affected day when the alert is published the day before", () => {
+    const bulletin = parseContingencyText(
+      "SE ACTIVA LA FASE I DE CONTINGENCIA AMBIENTAL. " +
+        "Mañana domingo 26 de abril, deberán suspender su circulación los vehículos con holograma de verificación 0 y 00, engomado amarillo, terminación de placa 5 u 6.",
+      "https://www.aire.cdmx.gob.mx/contingencias/notas/comunicado34_04252026.pdf",
+      "2026-04-25T20:00:00.000Z",
+    );
+
+    expect(bulletin).toMatchObject({ affectedDate: "2026-04-26" });
+  });
+
   it("recognizes a suspension without reporting an active restriction", () => {
     expect(parseContingencyText(
       "SE SUSPENDE LA FASE I DE CONTINGENCIA AMBIENTAL ATMOSFÉRICA.",

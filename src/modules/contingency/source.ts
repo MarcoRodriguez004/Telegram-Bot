@@ -17,6 +17,7 @@ export interface ContingencyBulletin {
   active: boolean;
   phase: "I";
   restriction: ContingencyRestriction | null;
+  affectedDate: string | null;
   sourceUrl: string;
   publishedAt: string | null;
 }
@@ -58,7 +59,8 @@ export function parseContingencyText(
   if (!active && !ended) return null;
 
   const restriction = parseRestriction(text);
-  return { active, phase: "I", restriction, sourceUrl, publishedAt };
+  const affectedDate = parseAffectedDate(text, publishedAt);
+  return { active, phase: "I", restriction, affectedDate, sourceUrl, publishedAt };
 }
 
 export function parseLatestPdfLink(html: string): { url: string; publishedAt: string | null } | null {
@@ -98,6 +100,57 @@ function parseRestriction(text: string): ContingencyRestriction | null {
     text: restrictionText,
     signature: JSON.stringify({ holograms, plateLastDigits, color, text: restrictionText }),
   };
+}
+
+function parseAffectedDate(text: string, publishedAt: string | null): string | null {
+  const monthNames = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
+  const tomorrowMatch = new RegExp(
+    `\\bma[ñn]ana\\b[\\s,]*(?:(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\\s+)?(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+de\\s+(\\d{4}))?`,
+    "iu",
+  ).exec(text);
+  if (tomorrowMatch) {
+    const publicationDate = publishedAt?.slice(0, 10) ?? null;
+    const publicationYear = publicationDate ? Number(publicationDate.slice(0, 4)) : null;
+    const publicationMonth = publicationDate ? Number(publicationDate.slice(5, 7)) : null;
+    const publicationDay = publicationDate ? Number(publicationDate.slice(8, 10)) : null;
+    const month = monthNumber(tomorrowMatch[2]);
+    const year = tomorrowMatch[3]
+      ? Number(tomorrowMatch[3])
+      : publicationYear === null
+        ? null
+        : publicationMonth !== null && publicationDay !== null && (month < publicationMonth || (month === publicationMonth && Number(tomorrowMatch[1]) < publicationDay))
+          ? publicationYear + 1
+          : publicationYear;
+    return year === null ? null : toIsoDate(Number(tomorrowMatch[1]), month, year);
+  }
+
+  const explicitMatch = new RegExp(
+    `\\b(?:el\\s+)?d[ií]a\\s+(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+de\\s+(\\d{4}))?`,
+    "iu",
+  ).exec(text);
+  if (explicitMatch) {
+    const year = explicitMatch[3] ? Number(explicitMatch[3]) : publishedAt ? Number(publishedAt.slice(0, 4)) : null;
+    return year === null ? null : toIsoDate(Number(explicitMatch[1]), monthNumber(explicitMatch[2]), year);
+  }
+
+  if (/\\b(?:el\\s+)?d[ií]a\\s+de\\s+hoy\\b/iu.test(text)) return publishedAt?.slice(0, 10) ?? null;
+  return null;
+}
+
+function monthNumber(value: string): number {
+  const months: Record<string, number> = {
+    enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
+    julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10,
+    noviembre: 11, diciembre: 12,
+  };
+  return months[value.toLowerCase()] ?? 0;
+}
+
+function toIsoDate(day: number, month: number, year: number): string | null {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+    ? `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+    : null;
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {

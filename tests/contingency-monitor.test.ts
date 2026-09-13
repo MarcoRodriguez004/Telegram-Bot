@@ -38,6 +38,7 @@ describe("contingency monitor", () => {
     vi.mocked(fetchLatestContingencyBulletin).mockResolvedValue({
       active: true,
       phase: "I",
+      affectedDate: "2026-04-26",
       restriction: {
         holograms: ["0", "00"],
         plateLastDigits: [5, 6],
@@ -65,5 +66,6 @@ describe("contingency monitor", () => {
 
     expect(messages.map((message) => message.chatId)).toEqual([1001, 2002]);
     expect(messages[0]?.text).toContain("Se activó la Fase I");
+    expect(messages[0]?.text).toContain("Día de afectación: domingo, 26 de abril de 2026.");
   });
 });
