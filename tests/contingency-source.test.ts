@@ -94,4 +94,34 @@ describe("official contingency bulletin parsing", () => {
     await expect(result).resolves.toBe("rejected");
     vi.useRealTimers();
   });
+
+  it("skips compressed image streams while extracting bulletin text", async () => {
+    const image = deflateSync(Buffer.alloc(2_000, 0xaa));
+    const text = deflateSync(Buffer.from("(SE MANTIENE LA FASE I DE CONTINGENCIA.) Tj", "latin1"));
+    const pdf = Buffer.concat([
+      Buffer.from("%PDF-1.4\n1 0 obj\n<< /Subtype /Image /Filter /FlateDecode >>\nstream\n"),
+      image,
+      Buffer.from("\nendstream\nendobj\n2 0 obj\n<< /Filter /FlateDecode >>\nstream\n"),
+      text,
+      Buffer.from("\nendstream\nendobj\n"),
+    ]);
+    const sourceFetch: typeof fetch = async (input) => input === CONTINGENCY_SOURCE_INDEX
+      ? new Response("<tr><td><a href=\"comunicado99_09122026.pdf\">boletín</a></td><td>12-Sep-2026 21:00</td></tr>")
+      : new Response(pdf, { headers: { "content-type": "application/pdf" } });
+    const OriginalDecompressionStream = globalThis.DecompressionStream;
+    let decompressionCalls = 0;
+    globalThis.DecompressionStream = class extends OriginalDecompressionStream {
+      constructor(format: CompressionFormat) {
+        decompressionCalls += 1;
+        super(format);
+      }
+    };
+
+    try {
+      await expect(fetchLatestContingencyBulletin(sourceFetch)).resolves.toMatchObject({ active: true, phase: "I" });
+      expect(decompressionCalls).toBe(1);
+    } finally {
+      globalThis.DecompressionStream = OriginalDecompressionStream;
+    }
+  });
 });

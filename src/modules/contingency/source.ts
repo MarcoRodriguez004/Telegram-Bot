@@ -5,6 +5,7 @@ const SOURCE_HOST = "aire.cdmx.gob.mx";
 const MAX_INDEX_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 2 * 1024 * 1024;
 const SOURCE_BODY_TIMEOUT_MS = 10_000;
+const MAX_DECOMPRESSED_TEXT_BYTES = 512 * 1024;
 
 export interface ContingencyRestriction {
   holograms: VehicleHologram[];
@@ -168,6 +169,7 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   const objectToken = new TextEncoder().encode("obj");
   let cursor = 0;
   let text = "";
+  let decompressedTextBytes = 0;
   while (true) {
     const streamIndex = indexOfBytes(bytes, streamToken, cursor);
     if (streamIndex < 0) break;
@@ -175,7 +177,7 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     const dictionary = new TextDecoder("latin1").decode(bytes.slice(Math.max(0, objectStart), streamIndex));
     const endStream = indexOfBytes(bytes, endStreamToken, streamIndex + streamToken.byteLength);
     if (endStream < 0) break;
-    if (/\/Filter\s*\/FlateDecode/iu.test(dictionary)) {
+    if (/\/Filter\s*\/FlateDecode/iu.test(dictionary) && !/\/Subtype\s*\/Image\b/iu.test(dictionary)) {
       let payloadStart = streamIndex + streamToken.byteLength;
       if (bytes[payloadStart] === 13 && bytes[payloadStart + 1] === 10) payloadStart += 2;
       else if (bytes[payloadStart] === 10 || bytes[payloadStart] === 13) payloadStart += 1;
@@ -184,6 +186,8 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
       const compressed = bytes.slice(payloadStart, payloadEnd);
       try {
         const decompressed = await new Response(new Blob([compressed]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
+        decompressedTextBytes += decompressed.byteLength;
+        if (decompressedTextBytes > MAX_DECOMPRESSED_TEXT_BYTES) break;
         const decompressedText = new TextDecoder("latin1").decode(decompressed);
         text += extractPdfTextOperators(decompressedText);
       } catch {
