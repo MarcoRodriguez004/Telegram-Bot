@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getBotStatus, searchUserData } from "../src/modules/status/repository";
+import { getBotStatus, searchUserData, searchUserDataPage } from "../src/modules/status/repository";
 import { exportUserData } from "../src/modules/export/repository";
 import { createSqliteDb } from "./helpers/sqlite-db";
 
@@ -26,6 +26,44 @@ describe("status, search and export", () => {
     expect(results).toHaveLength(2);
     expect(results.map((result) => result.kind)).toEqual(["note", "task"]);
     expect(results.every((result) => !result.preview.includes("otra persona"))).toBe(true);
+  });
+
+  it("filters search results by type, status, folder and date, with pagination", async () => {
+    const { db, sqlite } = createSqliteDb();
+    seedUsers(sqlite);
+    sqlite.prepare("INSERT INTO saved_folders (user_id, name, normalized_name, created_at) VALUES (1, 'Documentos personales', 'documentos personales', '2026-09-01T00:00:00.000Z')").run();
+    sqlite.prepare("INSERT INTO tasks (user_id, title, status, created_at) VALUES (1, 'revisar tornillos', 'pending', '2026-09-10T15:00:00.000Z')").run();
+    sqlite.prepare("INSERT INTO tasks (user_id, title, status, created_at) VALUES (1, 'tornillos terminados', 'done', '2026-09-11T15:00:00.000Z')").run();
+    sqlite.prepare("INSERT INTO notes (user_id, content, folder_id, created_at) VALUES (1, 'manual de tornillos', 1, '2026-09-12T15:00:00.000Z')").run();
+    sqlite.prepare("INSERT INTO notes (user_id, content, created_at) VALUES (1, 'tornillos sin carpeta', '2026-09-12T16:00:00.000Z')").run();
+
+    const filtered = await searchUserDataPage(db, {
+      userId: 1,
+      query: "tornillos",
+      kind: "task",
+      status: "pending",
+      from: "2026-09-10",
+      to: "2026-09-10",
+      limit: 1,
+    });
+    expect(filtered.results).toHaveLength(1);
+    expect(filtered.results[0]?.preview).toBe("revisar tornillos");
+    expect(filtered.hasMore).toBe(false);
+
+    const folderResults = await searchUserDataPage(db, {
+      userId: 1,
+      query: "tornillos",
+      kind: "note",
+      folderName: "documentos personales",
+    });
+    expect(folderResults.results.map((result) => result.preview)).toEqual(["manual de tornillos"]);
+
+    const firstPage = await searchUserDataPage(db, { userId: 1, query: "tornillos", limit: 1, page: 1 });
+    expect(firstPage.results).toHaveLength(1);
+    expect(firstPage.hasMore).toBe(true);
+    const secondPage = await searchUserDataPage(db, { userId: 1, query: "tornillos", limit: 1, page: 2 });
+    expect(secondPage.results).toHaveLength(1);
+    expect(secondPage.results[0]?.id).not.toBe(firstPage.results[0]?.id);
   });
 
   it("reports pending work and logical storage without exposing another user", async () => {

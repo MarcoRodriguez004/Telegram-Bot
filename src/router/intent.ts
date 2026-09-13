@@ -16,7 +16,16 @@ export type Intent =
   | { action: "get_note"; noteId: number }
   | { action: "summary"; range: "today" | "week" | "month" }
   | { action: "status" }
-  | { action: "search"; query: string }
+  | {
+      action: "search";
+      query: string;
+      kind?: "task" | "reminder" | "expense" | "note";
+      status?: "pending" | "completed" | "cancelled" | "saved";
+      folderName?: string;
+      from?: string;
+      to?: string;
+      page?: number;
+    }
   | { action: "export_data" }
   | { action: "register_vehicle"; label?: string; hologram: "0" | "00"; plateLastDigit: number }
   | { action: "list_vehicles" }

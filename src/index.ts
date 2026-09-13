@@ -75,7 +75,7 @@ import { getSummary } from "./modules/summary/repository";
 import type { SummaryResult } from "./modules/summary/repository";
 import { exportUserData } from "./modules/export/repository";
 import { importUserData } from "./modules/export/import";
-import { getBotStatus, searchUserData } from "./modules/status/repository";
+import { getBotStatus, searchUserDataPage } from "./modules/status/repository";
 import {
   cancelTask,
   completeTask,
@@ -579,11 +579,27 @@ async function getReply(
 
     if (intent.action === "search") {
       try {
-        const results = await searchUserData(env.PERSONAL_ASSISTANT_DB, { userId, query: intent.query });
-        return formatSearchResults(results, env.APP_TIMEZONE);
+        const page = await searchUserDataPage(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          query: intent.query,
+          kind: intent.kind,
+          status: intent.status,
+          folderName: intent.folderName,
+          from: intent.from,
+          to: intent.to,
+          page: intent.page,
+        });
+        return formatSearchResults(page.results, env.APP_TIMEZONE, {
+          page: page.page,
+          hasMore: page.hasMore,
+          nextCommand: buildSearchContinuation(intent, page.page + 1),
+        });
       } catch (error) {
         if (error instanceof Error && error.message === "Search query is too long") {
           return "La búsqueda no puede superar 200 caracteres.";
+        }
+        if (error instanceof Error && error.message.includes("Search date")) {
+          return "Usa fechas válidas con formato AAAA-MM-DD y un rango coherente.";
         }
         return "Escribe qué quieres buscar. Ejemplo: /buscar tornillos";
       }
@@ -1737,18 +1753,38 @@ function contingencyModeLabel(mode: ContingencyMode | null): string {
   return mode === "always" ? "avisar siempre cuando se active Fase I" : mode === "vehicle" ? "avisar solo si afecta a un vehículo" : "avisos apagados";
 }
 
-function formatSearchResults(results: Awaited<ReturnType<typeof searchUserData>>, timezone: string): string {
+function formatSearchResults(
+  results: Awaited<ReturnType<typeof searchUserDataPage>>["results"],
+  timezone: string,
+  pagination?: { page: number; hasMore: boolean; nextCommand: string },
+): string {
   if (!results.length) return "🔎 No encontré coincidencias en tus datos.";
-  const lines = ["🔎 Resultados de búsqueda", "", ...results.map((result, index) => {
+  const lines = [`🔎 Resultados de búsqueda${pagination ? ` · página ${pagination.page}` : ""}`, "", ...results.map((result, index) => {
     const label = result.kind === "task" ? `Tarea ${result.id}`
       : result.kind === "reminder" ? `Recordatorio ${result.id}`
         : result.kind === "expense" ? `Gasto ${result.id}`
           : `Guardado ${result.id}`;
     const date = formatDate(result.createdAt, timezone);
-    return `${index + 1}.- ${label} · ${result.preview.replace(/\s+/g, " ")}\n   ${result.status} · ${date}`;
+    const folder = result.folderName ? ` · ${result.folderName}` : "";
+    return `${index + 1}.- ${label}${folder} · ${result.preview.replace(/\s+/g, " ")}\n   ${result.status} · ${date}`;
   })];
+  if (pagination?.hasMore) lines.push("", `Más resultados: ${pagination.nextCommand}`);
   lines.push("", "Para abrir un guardado usa /guardado_ID.");
   return lines.join("\n");
+}
+
+function buildSearchContinuation(
+  intent: Extract<Intent, { action: "search" }>,
+  page: number,
+): string {
+  const parts = [intent.query];
+  if (intent.kind) parts.push(`tipo:${intent.kind}`);
+  if (intent.status) parts.push(`estado:${intent.status}`);
+  if (intent.folderName) parts.push(`carpeta:"${intent.folderName.replace(/"/g, "")}"`);
+  if (intent.from) parts.push(`desde:${intent.from}`);
+  if (intent.to) parts.push(`hasta:${intent.to}`);
+  parts.push(`pagina:${page}`);
+  return `/buscar ${parts.join(" ")}`;
 }
 
 function formatStorageBytes(bytes: number): string {

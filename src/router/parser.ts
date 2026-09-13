@@ -195,8 +195,7 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
 
   const searchMatch = SEARCH_COMMAND.exec(normalized);
   if (searchMatch) {
-    const query = searchMatch[1]?.trim();
-    return query ? { action: "search", query } : { action: "unknown", reason: "missing_search_query" };
+    return parseSearchQuery(searchMatch[1] ?? "");
   }
 
   if (EXPORT_COMMAND.test(normalized)) return { action: "export_data" };
@@ -367,6 +366,74 @@ function parseRenameFolder(currentName: string, newName: string): Intent {
 
 function normalizeFolderInput(value: string): string {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function parseSearchQuery(value: string): Intent {
+  const filters = /(?:^|\s)(tipo|type|estado|status|carpeta|folder|desde|from|hasta|to|p[aá]gina|pagina|page):(?:"([^"]+)"|'([^']+)'|([^\s]+))/giu;
+  const matches = [...value.matchAll(filters)];
+  const query = value.replace(filters, " ").trim().replace(/\s+/g, " ");
+  if (!query) return { action: "unknown", reason: "missing_search_query" };
+
+  const result: Extract<Intent, { action: "search" }> = { action: "search", query };
+  for (const match of matches) {
+    const key = (match[1] ?? "").toLocaleLowerCase("es-MX");
+    const filterValue = (match[2] ?? match[3] ?? match[4] ?? "").trim();
+    if (!filterValue) return { action: "unknown", reason: "invalid_search_filter" };
+    if (key === "tipo" || key === "type") {
+      const kind = parseSearchKind(filterValue);
+      if (!kind) return { action: "unknown", reason: "invalid_search_filter" };
+      result.kind = kind;
+    } else if (key === "estado" || key === "status") {
+      const status = parseSearchStatus(filterValue);
+      if (!status) return { action: "unknown", reason: "invalid_search_filter" };
+      result.status = status;
+    } else if (key === "carpeta" || key === "folder") {
+      result.folderName = filterValue;
+    } else if (key === "desde" || key === "from") {
+      if (!isSearchDate(filterValue)) return { action: "unknown", reason: "invalid_search_filter" };
+      result.from = filterValue;
+    } else if (key === "hasta" || key === "to") {
+      if (!isSearchDate(filterValue)) return { action: "unknown", reason: "invalid_search_filter" };
+      result.to = filterValue;
+    } else {
+      const page = Number(filterValue);
+      if (!Number.isSafeInteger(page) || page < 1 || page > 1000) {
+        return { action: "unknown", reason: "invalid_search_filter" };
+      }
+      result.page = page;
+    }
+  }
+  return result;
+}
+
+function parseSearchKind(value: string): Extract<Intent, { action: "search" }>['kind'] {
+  const normalized = value.toLocaleLowerCase("es-MX");
+  return normalized === "tarea" || normalized === "tareas" || normalized === "task" || normalized === "tasks"
+    ? "task"
+    : normalized === "recordatorio" || normalized === "recordatorios" || normalized === "reminder" || normalized === "reminders"
+      ? "reminder"
+      : normalized === "gasto" || normalized === "gastos" || normalized === "expense" || normalized === "expenses"
+        ? "expense"
+        : normalized === "nota" || normalized === "notas" || normalized === "enlace" || normalized === "enlaces" || normalized === "link" || normalized === "links" || normalized === "archivo" || normalized === "archivos" || normalized === "documento" || normalized === "documentos" || normalized === "foto" || normalized === "fotos" || normalized === "imagen" || normalized === "imagenes" || normalized === "imágenes" || normalized === "guardado" || normalized === "guardados"
+          ? "note"
+          : undefined;
+}
+
+function parseSearchStatus(value: string): Extract<Intent, { action: "search" }>['status'] {
+  const normalized = value.toLocaleLowerCase("es-MX");
+  return normalized === "pendiente" || normalized === "pendientes" || normalized === "pending"
+    ? "pending"
+    : normalized === "completada" || normalized === "completadas" || normalized === "completado" || normalized === "completados" || normalized === "done" || normalized === "completed"
+      ? "completed"
+      : normalized === "cancelada" || normalized === "canceladas" || normalized === "cancelado" || normalized === "cancelados" || normalized === "cancelled"
+        ? "cancelled"
+        : normalized === "guardado" || normalized === "guardados" || normalized === "saved"
+          ? "saved"
+          : undefined;
+}
+
+function isSearchDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/u.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00.000Z`));
 }
 
 function savedKindFromLabel(label: string): "photos" | "documents" | "links" | null {
