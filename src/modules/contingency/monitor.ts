@@ -8,6 +8,8 @@ import {
 } from "./repository";
 import { fetchLatestContingencyBulletin, type ContingencyBulletin } from "./source";
 
+const CONTINGENCY_CHECK_INTERVAL_MINUTES = 30;
+
 export async function monitorContingency(
   db: D1Database,
   env: Env,
@@ -15,7 +17,7 @@ export async function monitorContingency(
   sourceFetch: typeof fetch = fetch,
   telegramFetch: typeof fetch = fetch,
 ): Promise<boolean> {
-  if (now.getUTCMinutes() % 15 !== 0) return false;
+  if (now.getUTCMinutes() % CONTINGENCY_CHECK_INTERVAL_MINUTES !== 0) return false;
   const bulletin = await fetchLatestContingencyBulletin(sourceFetch);
   if (!bulletin) throw new Error("Official contingency bulletin could not be parsed");
 

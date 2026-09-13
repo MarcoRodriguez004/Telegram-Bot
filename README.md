@@ -12,7 +12,7 @@ Las decisiones arquitectónicas están registradas en [ADR-001](docs/decisions/0
 
 ## Estado
 
-Ya existen capacidades funcionales en TypeScript para tareas, recordatorios, gastos, notas/enlaces, `/resumen` y `/borrar_datos CONFIRMAR`. El Worker guarda la acción en D1 y confirma la creación; un Cron Trigger revisa cada minuto los recordatorios vencidos y los envía a Telegram. También incluye `/health`, webhook autenticado, uso multiusuario en chats privados con datos aislados por usuario, deduplicación de `update_id`, migraciones D1, pruebas Vitest y quality gate local/CI. El mismo Cron revisa el tamaño de D1 y avisa al alcanzar 150 MB, incluyendo un desglose lógico estimado por usuario. El prototipo Python se conserva como referencia durante la migración.
+Ya existen capacidades funcionales en TypeScript para tareas, recordatorios, gastos, notas/enlaces, `/resumen` y `/borrar_datos CONFIRMAR`. El Worker guarda la acción en D1 y confirma la creación; un Cron Trigger revisa cada minuto los recordatorios vencidos y los envía a Telegram, y consulta CAMe cada 30 minutos cuando las alertas están habilitadas. También incluye `/health`, webhook autenticado, uso multiusuario en chats privados con datos aislados por usuario, deduplicación de `update_id`, migraciones D1, pruebas Vitest y quality gate local/CI. El mismo Cron revisa el tamaño de D1 y avisa al alcanzar 150 MB, incluyendo un desglose lógico estimado por usuario. El prototipo Python se conserva como referencia durante la migración.
 
 El parser actual es deliberadamente determinista y conservador, pero ya acepta frases naturales acotadas para recordatorios con hora, gastos con categoría/descripción e historial de gastos. No inventa un monto cuando falta.
 

@@ -22,6 +22,19 @@ function createEnv(db: D1Database): Env {
 }
 
 describe("contingency monitor", () => {
+  it("does not fetch CAMe between the 30-minute checks", async () => {
+    const { db } = createSqliteDb();
+
+    await expect(monitorContingency(
+      db,
+      createEnv(db),
+      new Date("2026-09-13T04:15:00.000Z"),
+      fetch,
+      fetch,
+    )).resolves.toBe(false);
+    expect(fetchLatestContingencyBulletin).not.toHaveBeenCalled();
+  });
+
   it("delivers an alert to users who opted into the always mode", async () => {
     const { db } = createSqliteDb();
     await ensureUser(db, {
@@ -62,7 +75,7 @@ describe("contingency monitor", () => {
     await monitorContingency(
       db,
       createEnv(db),
-      new Date("2026-09-13T04:45:00.000Z"),
+      new Date("2026-09-13T04:30:00.000Z"),
       fetch,
       telegramFetch,
     );
