@@ -82,6 +82,19 @@ WITH owned_bytes AS (
   FROM notification_preferences
   UNION ALL
   SELECT user_id,
+    48 + 16
+      + length(CAST(COALESCE(mode, '') AS BLOB))
+      + length(CAST(COALESCE(updated_at, '') AS BLOB)) AS logical_bytes
+  FROM contingency_preferences
+  UNION ALL
+  SELECT user_id,
+    56 + 24
+      + length(CAST(COALESCE(label, '') AS BLOB))
+      + length(CAST(COALESCE(hologram, '') AS BLOB))
+      + length(CAST(COALESCE(created_at, '') AS BLOB)) AS logical_bytes
+  FROM user_vehicles
+  UNION ALL
+  SELECT user_id,
     72 + 32
       + length(CAST(COALESCE(resource_type, '') AS BLOB))
       + length(CAST(COALESCE(next_notify_at, '') AS BLOB))

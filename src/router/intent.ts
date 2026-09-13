@@ -18,6 +18,11 @@ export type Intent =
   | { action: "status" }
   | { action: "search"; query: string }
   | { action: "export_data" }
+  | { action: "register_vehicle"; label?: string; hologram: "0" | "00"; plateLastDigit: number }
+  | { action: "list_vehicles" }
+  | { action: "remove_vehicle"; vehicleId: number }
+  | { action: "configure_contingency"; mode: "always" | "vehicle" | null }
+  | { action: "show_contingency" }
   | { action: "delete_data"; confirmation: true }
   | { action: "reply"; message: string }
   | { action: "clarify"; question: string; missing: string[]; suggestedText?: string }

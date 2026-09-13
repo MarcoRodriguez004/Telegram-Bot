@@ -3,6 +3,7 @@ import type { ReminderListItem } from "../modules/reminders/repository";
 import type { TaskFilter, TaskListItem } from "../modules/tasks/repository";
 import type { NotificationIntervalMinutes, NotificationScope } from "../modules/notifications/repository";
 import type { SavedFolderListItem, SavedNote, SavedNoteKind } from "../modules/notes/repository";
+import type { UserVehicle } from "../modules/contingency/repository";
 
 export type QueryResource = "task" | "reminder";
 export type QueryFilter = TaskFilter;
@@ -23,6 +24,8 @@ export type CallbackAction =
   | { kind: "snooze_set"; resource: QueryResource; id: number; delayMinutes: NotificationIntervalMinutes }
   | { kind: "notification_scope"; scope: NotificationScope }
   | { kind: "notification_global_set"; scope: NotificationScope; intervalMinutes: NotificationIntervalMinutes | null }
+  | { kind: "contingency_mode"; mode: "always" | "vehicle" | null }
+  | { kind: "contingency_remove_vehicle"; vehicleId: number }
   | { kind: "edit_cancel"; resource: QueryResource }
   | { kind: "saved_note"; id: number }
   | FolderCallbackAction;
@@ -216,6 +219,25 @@ export function buildGlobalNotificationIntervalKeyboard(scope: NotificationScope
   };
 }
 
+export function buildContingencyModeKeyboard(): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: "Avisar siempre", callback_data: "pa:c:m:a" }],
+      [{ text: "Solo si afecta a mi vehículo", callback_data: "pa:c:m:v" }],
+      [{ text: "Desactivar avisos", callback_data: "pa:c:m:0" }],
+    ],
+  };
+}
+
+export function buildContingencyVehiclesKeyboard(vehicles: UserVehicle[]): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: vehicles.map((vehicle) => [{
+      text: `Eliminar ${vehicle.label}`,
+      callback_data: `pa:c:r:${vehicle.id}`,
+    }]),
+  };
+}
+
 export function buildEditCancelKeyboard(resource: QueryResource): InlineKeyboardMarkup {
   return { inline_keyboard: [[{ text: "Cancelar edición", callback_data: `pa:${resourceCode(resource)}:e:x` }]] };
 }
@@ -232,6 +254,14 @@ export function parseCallbackData(data: string | undefined): CallbackAction | nu
     const scope = parseNotificationScope(parts[3]);
     const intervalMinutes = parseNotificationInterval(parts[4]);
     return scope && intervalMinutes !== undefined ? { kind: "notification_global_set", scope, intervalMinutes } : null;
+  }
+  if (parts[1] === "c" && parts[2] === "m" && parts.length === 4) {
+    const mode = parts[3] === "a" ? "always" : parts[3] === "v" ? "vehicle" : parts[3] === "0" ? null : undefined;
+    return mode !== undefined ? { kind: "contingency_mode", mode } : null;
+  }
+  if (parts[1] === "c" && parts[2] === "r" && parts.length === 4) {
+    const vehicleId = Number(parts[3]);
+    return Number.isSafeInteger(vehicleId) && vehicleId > 0 ? { kind: "contingency_remove_vehicle", vehicleId } : null;
   }
   if (parts[1] === "f" && parts[2] === "u" && parts.length === 3) {
     return { kind: "folder_conflict", decision: "use_existing" };

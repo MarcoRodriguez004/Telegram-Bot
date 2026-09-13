@@ -22,6 +22,15 @@ import type { ReminderListItem } from "./modules/reminders/repository";
 import { processDueReminders } from "./modules/reminders/scheduler";
 import { processDueNotifications } from "./modules/notifications/scheduler";
 import { monitorDatabaseStorage } from "./modules/storage/monitor";
+import { monitorContingency } from "./modules/contingency/monitor";
+import {
+  getContingencyPreferences,
+  listVehicles,
+  registerVehicle,
+  removeVehicle,
+  setContingencyMode,
+} from "./modules/contingency/repository";
+import type { ContingencyMode } from "./modules/contingency/repository";
 import { reportOperationalFailure } from "./modules/operations/alerts";
 import {
   disablePersistentNotification,
@@ -105,6 +114,8 @@ import {
   buildGlobalNotificationIntervalKeyboard,
   buildGlobalNotificationKeyboard,
   buildNotificationChoiceKeyboard,
+  buildContingencyModeKeyboard,
+  buildContingencyVehiclesKeyboard,
   buildSavedNoteKeyboard,
   buildStopConfirmationKeyboard,
   parseCallbackData,
@@ -128,6 +139,9 @@ const TELEGRAM_COMMANDS = [
   { command: "buscar", description: "Buscar en tus datos" },
   { command: "guardados", description: "Ver fotos, archivos y enlaces" },
   { command: "configuracion", description: "Configurar avisos" },
+  { command: "contingencia", description: "Configurar avisos de contingencia" },
+  { command: "vehiculo", description: "Registrar un vehículo" },
+  { command: "vehiculos", description: "Ver tus vehículos" },
   { command: "exportar", description: "Exportar tus datos" },
   { command: "importar", description: "Restaurar un JSON exportado" },
 ] as const;
@@ -149,6 +163,9 @@ const COMMAND_GUIDE = [
   { command: "/guardados", description: "Muestra tus fotos, archivos, enlaces y notas guardados.", example: "/guardados", natural: "Muéstrame mis fotos" },
   { command: "/guardado_<id>", description: "Abre un guardado específico.", example: "/guardado_123", natural: "Abre el guardado 123" },
   { command: "/configuracion", description: "Configura avisos persistentes para tareas y recordatorios.", example: "/configuracion", natural: "Quiero configurar mis avisos" },
+  { command: "/contingencia", description: "Configura avisos de Fase I y vehículos registrados.", example: "/contingencia", natural: "Avísame solo si la contingencia afecta a mi coche" },
+  { command: "/vehiculo <nombre> holograma <0|00> y placa terminada en <dígito>", description: "Registra un vehículo usando solo el último dígito de la placa.", example: "/vehiculo familiar holograma 0 y placa terminada en 6", natural: "Registra mi vehículo, holograma 0 y placa terminada en 6" },
+  { command: "/vehiculos", description: "Lista tus vehículos registrados.", example: "/vehiculos", natural: "¿Qué vehículos tengo?" },
   { command: "/repite ...", description: "Configura una repetición diaria, semanal o mensual.", example: "/repite tarea 1 cada semana", natural: "Repite la tarea 1 cada semana" },
   { command: "/exportar", description: "Envía una copia JSON de tus datos.", example: "/exportar", natural: "Quiero una copia de mis datos" },
   { command: "/importar", description: "Indica cómo restaurar un JSON exportado; el archivo se envía como documento con esta descripción.", example: "/importar", natural: "Quiero restaurar una copia de mis datos" },
@@ -185,6 +202,11 @@ const worker: ExportedHandler<Env> = {
       await monitorDatabaseStorage(db, env, now);
     } catch (error) {
       await reportOperationalFailure(db, env, { component: "storage", operation: "database_monitor", detail: "runtime_failure", now });
+    }
+    try {
+      await monitorContingency(db, env, now);
+    } catch (error) {
+      await reportOperationalFailure(db, env, { component: "scheduler", operation: "contingency_monitor", detail: "runtime_failure", now });
     }
   },
 };
@@ -461,6 +483,11 @@ async function getReply(
     intent.action === "status" ||
     intent.action === "search" ||
     intent.action === "export_data" ||
+    intent.action === "register_vehicle" ||
+    intent.action === "list_vehicles" ||
+    intent.action === "remove_vehicle" ||
+    intent.action === "configure_contingency" ||
+    intent.action === "show_contingency" ||
     intent.action === "create_task" ||
     intent.action === "set_recurrence" ||
     intent.action === "create_reminder" ||
@@ -515,6 +542,47 @@ async function getReply(
         console.error(JSON.stringify({ event: "data_export_failed", userId, reason: error instanceof Error ? error.message : "unknown" }));
         return "No pude preparar la exportación. Inténtalo de nuevo más tarde.";
       }
+    }
+
+    if (intent.action === "register_vehicle") {
+      try {
+        const vehicle = await registerVehicle(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          label: intent.label,
+          hologram: intent.hologram,
+          plateLastDigit: intent.plateLastDigit,
+        });
+        const preferences = await getContingencyPreferences(env.PERSONAL_ASSISTANT_DB, userId);
+        return {
+          text: `🚗 Vehículo registrado\n\n${vehicle.label}\nHolograma: ${vehicle.hologram}\nÚltimo dígito de placa: ${vehicle.plateLastDigit}\n\n${preferences.enabled ? `Modo actual: ${contingencyModeLabel(preferences.mode)}` : "Los avisos de contingencia están apagados. Elige una configuración si deseas activarlos."}`,
+          replyMarkup: buildContingencyModeKeyboard(),
+        };
+      } catch {
+        return "No pude registrar el vehículo. Usa holograma 0 o 00 y un último dígito de placa del 0 al 9.";
+      }
+    }
+
+    if (intent.action === "list_vehicles") {
+      return formatContingencySettingsReply(env.PERSONAL_ASSISTANT_DB, userId);
+    }
+
+    if (intent.action === "remove_vehicle") {
+      const removed = await removeVehicle(env.PERSONAL_ASSISTANT_DB, { userId, vehicleId: intent.vehicleId });
+      return removed ? "✅ Vehículo eliminado de tus avisos de contingencia." : "No encontré ese vehículo en tu cuenta.";
+    }
+
+    if (intent.action === "configure_contingency") {
+      if (intent.mode === "vehicle" && (await listVehicles(env.PERSONAL_ASSISTANT_DB, userId)).length === 0) {
+        return { text: "Para avisarte solo cuando afecte a tu vehículo, primero registra uno. Ejemplo:\n\nRegistra mi vehículo, holograma 0 y placa terminada en 6", replyMarkup: buildContingencyModeKeyboard() };
+      }
+      await setContingencyMode(env.PERSONAL_ASSISTANT_DB, { userId, mode: intent.mode });
+      return intent.mode
+        ? `✅ Avisos de contingencia configurados: ${contingencyModeLabel(intent.mode)}.`
+        : "✅ Avisos de contingencia desactivados.";
+    }
+
+    if (intent.action === "show_contingency") {
+      return formatContingencySettingsReply(env.PERSONAL_ASSISTANT_DB, userId);
     }
 
     if (intent.action === "list_tasks") {
@@ -853,6 +921,14 @@ async function getReply(
     return "Para borrar tus datos escribe exactamente: /borrar_datos CONFIRMAR";
   }
 
+  if (intent.action === "unknown" && intent.reason === "invalid_vehicle_details") {
+    return "Indica el vehículo así: /vehiculo familiar holograma 0 y placa terminada en 6. Solo guardo el holograma y el último dígito de la placa.";
+  }
+
+  if (intent.action === "unknown" && intent.reason === "invalid_vehicle_id") {
+    return "Indica el número del vehículo que aparece en /vehiculos.";
+  }
+
   return "No entendí ese mensaje. Puedes consultar /guardados o ver ejemplos en /help.";
 }
 
@@ -917,6 +993,34 @@ async function handleCallbackQuery(
         : `Avisos persistentes activados cada ${action.intervalMinutes} minutos para ${notificationScopeLabel(action.scope)}.`,
       telegramFetch,
     );
+    return;
+  }
+
+  if (action.kind === "contingency_mode") {
+    if (action.mode === "vehicle" && (await listVehicles(env.PERSONAL_ASSISTANT_DB, userId)).length === 0) {
+      await sendBotReply(env, source.chat.id, {
+        text: "Para avisarte solo cuando afecte a tu vehículo, primero registra uno. Ejemplo:\n\nRegistra mi vehículo, holograma 0 y placa terminada en 6",
+        replyMarkup: buildContingencyModeKeyboard(),
+      }, telegramFetch);
+      return;
+    }
+    await setContingencyMode(env.PERSONAL_ASSISTANT_DB, { userId, mode: action.mode });
+    await sendMessage(
+      env,
+      source.chat.id,
+      action.mode ? `✅ Avisos de contingencia configurados: ${contingencyModeLabel(action.mode)}.` : "✅ Avisos de contingencia desactivados.",
+      telegramFetch,
+    );
+    return;
+  }
+
+  if (action.kind === "contingency_remove_vehicle") {
+    const removed = await removeVehicle(env.PERSONAL_ASSISTANT_DB, { userId, vehicleId: action.vehicleId });
+    if (!removed) {
+      await sendMessage(env, source.chat.id, "No encontré ese vehículo o ya estaba eliminado.", telegramFetch);
+      return;
+    }
+    await sendBotReply(env, source.chat.id, await formatContingencySettingsReply(env.PERSONAL_ASSISTANT_DB, userId), telegramFetch);
     return;
   }
 
@@ -1387,6 +1491,35 @@ function formatBotStatus(status: Awaited<ReturnType<typeof getBotStatus>>, timez
   return lines.join("\n");
 }
 
+async function formatContingencySettingsReply(db: D1Database, userId: number): Promise<BotReply> {
+  const [preferences, vehicles] = await Promise.all([
+    getContingencyPreferences(db, userId),
+    listVehicles(db, userId),
+  ]);
+  const lines = [
+    "🚗 Avisos de contingencia",
+    "",
+    `Estado: ${preferences.enabled ? `Activos · ${contingencyModeLabel(preferences.mode)}` : "Apagados"}`,
+    "",
+    "Vehículos registrados:",
+    ...(vehicles.length
+      ? vehicles.map((vehicle, index) => `${index + 1}.- ${vehicle.label} · holograma ${vehicle.hologram} · placa terminada en ${vehicle.plateLastDigit}`)
+      : ["Ninguno. Ejemplo: «Registra mi vehículo, holograma 0 y placa terminada en 6»." ]),
+    "",
+    "Elige cómo quieres recibir avisos de Fase I:",
+  ];
+  const modeKeyboard = buildContingencyModeKeyboard();
+  const vehicleKeyboard = buildContingencyVehiclesKeyboard(vehicles);
+  return {
+    text: lines.join("\n"),
+    replyMarkup: { inline_keyboard: [...modeKeyboard.inline_keyboard, ...vehicleKeyboard.inline_keyboard] },
+  };
+}
+
+function contingencyModeLabel(mode: ContingencyMode | null): string {
+  return mode === "always" ? "avisar siempre cuando se active Fase I" : mode === "vehicle" ? "avisar solo si afecta a un vehículo" : "avisos apagados";
+}
+
 function formatSearchResults(results: Awaited<ReturnType<typeof searchUserData>>, timezone: string): string {
   if (!results.length) return "🔎 No encontré coincidencias en tus datos.";
   const lines = ["🔎 Resultados de búsqueda", "", ...results.map((result, index) => {
@@ -1672,7 +1805,7 @@ function getCommandReply(text: string): Reply | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• /comandos para ver el catálogo completo\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• /comandos para ver el catálogo completo\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuracion para avisos persistentes\n• /contingencia para configurar avisos de Fase I\n• /vehiculo familiar holograma 0 y placa terminada en 6\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
 
   if (command === "/comandos") return formatCommandsGuide();

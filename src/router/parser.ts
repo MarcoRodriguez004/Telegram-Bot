@@ -39,6 +39,13 @@ const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const STATUS_COMMAND = /^(?:\/)?estado(?:@[a-z0-9_]+)?$/iu;
 const SEARCH_COMMAND = /^(?:\/)?(?:buscar|busca)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const EXPORT_COMMAND = /^(?:\/)?(?:exportar|exporta)(?:@[a-z0-9_]+)?$/iu;
+const VEHICLE_REGISTER = /^(?:\/veh[ií]culo(?:@[a-z0-9_]+)?|registra(?:r)?\s+(?:mi\s+)?veh[ií]culo|agrega(?:r)?\s+(?:mi\s+)?(?:veh[ií]culo|coche))(?:(?:\s+|[,;:])|$)(.*)$/iu;
+const VEHICLE_LIST = /^(?:\/veh[ií]culos?|(?:mis|cu[aá]les son mis)\s+(?:veh[ií]culos?|coches?))(?:@[a-z0-9_]+)?[?!.]*$/iu;
+const VEHICLE_REMOVE = /^(?:\/elimina(?:r)?_veh[ií]culo|elimina(?:r)?\s+(?:mi\s+)?veh[ií]culo)\s+(\d+)$/iu;
+const CONTINGENCY_SHOW = /^(?:\/contingencia(?:@[a-z0-9_]+)?|(?:configura|configurar|mu[eé]strame|dime)\s+(?:mis\s+)?avisos\s+de\s+contingencia)[?!.]*$/iu;
+const CONTINGENCY_ALWAYS = /^(?:av[ií]same|notif[ií]came)\s+siempre\s+(?:cuando\s+)?(?:haya|se\s+active)\s+(?:la\s+)?fase\s+(?:i|1)(?:\s+de\s+contingencia)?[?!.]*$/iu;
+const CONTINGENCY_VEHICLE = /^(?:av[ií]same|notif[ií]came)\s+(?:solo\s+)?si\s+afecta\s+a\s+(?:mi\s+)?(?:veh[ií]culo|coche|auto|carro)[?!.]*$/iu;
+const CONTINGENCY_OFF = /^(?:no\s+me\s+avises|desactiva(?:r)?\s+(?:mis\s+)?avisos)\s+(?:de\s+)?contingencia(?:s)?[?!.]*$/iu;
 const RECURRENCE_COMMAND = /^(?:\/)?repite\s+(tarea|recordatorio)\s+(\d+)\s+(?:(?:cada)\s+)?(d[ií]a|diario|diaria|semana|semanal|semanalmente|mes|mensual|mensualmente|nunca|no)$/iu;
 const DELETE_DATA_COMMAND = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?\s+CONFIRMAR$/u;
 const DELETE_DATA_PREFIX = /^(?:\/)?borrar_datos(?:@[a-z0-9_]+)?(?:\s+.*)?$/iu;
@@ -62,6 +69,19 @@ export function parseIntent(text: string, options: ParseOptions = {}): Intent {
   if (!normalized || normalized.length > MAX_MESSAGE_LENGTH) {
     return { action: "unknown", reason: "unsupported_message" };
   }
+
+  const vehicleRegister = VEHICLE_REGISTER.exec(normalized);
+  if (vehicleRegister) return parseVehicleRegistration(vehicleRegister[1] ?? "");
+  if (VEHICLE_LIST.test(normalized)) return { action: "list_vehicles" };
+  const vehicleRemove = VEHICLE_REMOVE.exec(normalized);
+  if (vehicleRemove) {
+    const vehicleId = Number(vehicleRemove[1]);
+    return Number.isSafeInteger(vehicleId) && vehicleId > 0 ? { action: "remove_vehicle", vehicleId } : { action: "unknown", reason: "invalid_vehicle_id" };
+  }
+  if (CONTINGENCY_ALWAYS.test(normalized)) return { action: "configure_contingency", mode: "always" };
+  if (CONTINGENCY_VEHICLE.test(normalized)) return { action: "configure_contingency", mode: "vehicle" };
+  if (CONTINGENCY_OFF.test(normalized)) return { action: "configure_contingency", mode: null };
+  if (CONTINGENCY_SHOW.test(normalized)) return { action: "show_contingency" };
 
   const folderRename = FOLDER_RENAME.exec(normalized);
   if (folderRename) {
@@ -316,6 +336,19 @@ function parseCreateFolder(name: string): Intent {
   if (!normalizedName) return { action: "unknown", reason: "missing_folder_name" };
   if (normalizedName.length > MAX_FOLDER_NAME_LENGTH) return { action: "unknown", reason: "folder_name_too_long" };
   return { action: "create_folder", name: normalizedName };
+}
+
+function parseVehicleRegistration(payload: string): Intent {
+  const normalized = payload.trim().replace(/^[,;:\s]+/u, "").replace(/\s+/g, " ");
+  const match = /^(?:(.+?)\s+)?holograma\s*(00|0)\s*(?:,?\s*y\s*)?(?:placa|placas)(?:\s+(?:terminad[ao]s?|final(?:es)?))?(?:\s+(?:en|con))?\s*([0-9])$/iu.exec(normalized);
+  if (!match) return { action: "unknown", reason: "invalid_vehicle_details" };
+  const label = match[1]?.trim().replace(/^[,;]+|[,;]+$/g, "").trim();
+  return {
+    action: "register_vehicle",
+    ...(label ? { label: label.slice(0, 50) } : {}),
+    hologram: match[2] === "00" ? "00" : "0",
+    plateLastDigit: Number(match[3]),
+  };
 }
 
 function parseRenameFolder(currentName: string, newName: string): Intent {

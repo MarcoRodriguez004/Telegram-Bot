@@ -8,6 +8,8 @@ import {
   buildPersistentAlertKeyboard,
   buildFolderKeyboard,
   buildFolderConflictKeyboard,
+  buildContingencyModeKeyboard,
+  buildContingencyVehiclesKeyboard,
   buildSavedNoteKeyboard,
   parseCallbackData,
 } from "../src/telegram/keyboards";
@@ -87,6 +89,23 @@ describe("task and reminder inline keyboards", () => {
   it("labels the global stop according to its scope", () => {
     expect(buildGlobalNotificationIntervalKeyboard("all").inline_keyboard[0][0].text).toBe("Parar todos los avisos");
     expect(buildGlobalNotificationIntervalKeyboard("task").inline_keyboard[0][0].text).toBe("Parar avisos de todas las tareas");
+  });
+
+  it("builds contingency mode controls without exposing a full plate", () => {
+    const keyboard = buildContingencyModeKeyboard();
+    expect(keyboard.inline_keyboard.flat().map((button) => button.text)).toEqual([
+      "Avisar siempre", "Solo si afecta a mi vehículo", "Desactivar avisos",
+    ]);
+    expect(parseCallbackData("pa:c:m:v")).toEqual({ kind: "contingency_mode", mode: "vehicle" });
+    expect(parseCallbackData("pa:c:m:0")).toEqual({ kind: "contingency_mode", mode: null });
+    expect(buildContingencyVehiclesKeyboard([{
+      id: 4,
+      label: "familiar",
+      hologram: "0",
+      plateLastDigit: 6,
+      enabled: true,
+      createdAt: "2026-09-12T00:00:00.000Z",
+    }]).inline_keyboard[0][0].text).toBe("Eliminar familiar");
   });
 
   it("keeps folder names out of callbacks and supports virtual Sin carpeta", () => {

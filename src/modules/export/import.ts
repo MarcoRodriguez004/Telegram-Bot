@@ -4,6 +4,7 @@ import type { NotificationIntervalMinutes, NotificationResource } from "../notif
 import { createFolder, createNote } from "../notes/repository";
 import { createReminder } from "../reminders/repository";
 import { createTask } from "../tasks/repository";
+import { registerVehicle, setContingencyMode } from "../contingency/repository";
 import type { RecurrenceRule } from "../recurrence";
 import { normalizeHttpUrl } from "../../shared/urls";
 import { MAX_EXPENSE_CENTS } from "../../shared/money";
@@ -22,6 +23,7 @@ export interface ImportResult {
   expenses: number;
   notes: number;
   persistentNotifications: number;
+  vehicles: number;
 }
 
 export interface AlreadyImportedResult {
@@ -152,6 +154,26 @@ export async function importUserData(
     persistentNotifications += 1;
   }
 
+  for (const vehicle of data.vehicles ?? []) {
+    const createdVehicle = await registerVehicle(db, {
+      userId: input.userId,
+      label: vehicle.label,
+      hologram: vehicle.hologram,
+      plateLastDigit: vehicle.plateLastDigit,
+      createdAt: vehicle.createdAt,
+    });
+    if (!vehicle.enabled) {
+      await db.prepare("UPDATE user_vehicles SET enabled = 0 WHERE user_id = ? AND id = ?").bind(input.userId, createdVehicle.id).run();
+    }
+  }
+  if (data.contingencyPreferences) {
+    await setContingencyMode(db, {
+      userId: input.userId,
+      mode: data.contingencyPreferences.enabled ? data.contingencyPreferences.mode : null,
+      now: data.contingencyPreferences.updatedAt,
+    });
+  }
+
   await db.prepare(
     "INSERT INTO data_imports (user_id, exported_at, source_telegram_user_id, imported_at) VALUES (?, ?, ?, ?)",
   ).bind(input.userId, data.exportedAt, data.user.telegramUserId, importedAt).run();
@@ -164,6 +186,7 @@ export async function importUserData(
     expenses: data.expenses.length,
     notes: data.notes.length,
     persistentNotifications,
+    vehicles: data.vehicles?.length ?? 0,
   };
 }
 
@@ -239,7 +262,31 @@ function validateExportData(value: unknown): ExportData {
     };
   });
 
-  return { exportedAt, user: { telegramUserId, timezone, currency, createdAt }, folders, tasks, reminders, expenses, notes, notificationDefaults, persistentNotifications };
+  let contingencyPreferences: ExportData["contingencyPreferences"] = null;
+  if (value.contingencyPreferences !== null && value.contingencyPreferences !== undefined) {
+    const preferences = requireRecord(value.contingencyPreferences, "Contingency preferences");
+    const mode = preferences.mode === null ? null : readEnum(preferences.mode, "Contingency mode", ["always", "vehicle"] as const);
+    contingencyPreferences = {
+      mode,
+      enabled: readBoolean(preferences.enabled, "Contingency enabled"),
+      updatedAt: parseDateString(preferences.updatedAt, "Contingency preferences date"),
+    };
+  }
+  const vehicles = (value.vehicles === undefined ? [] : readArray(value.vehicles, "vehicles")).map((item) => {
+    const row = requireRecord(item, "Vehicle");
+    const plateLastDigit = row.plateLastDigit;
+    if (!Number.isInteger(plateLastDigit) || (plateLastDigit as number) < 0 || (plateLastDigit as number) > 9) throw new Error("Vehicle plate digit is invalid");
+    return {
+      id: readPositiveInteger(row.id, "Vehicle id"),
+      label: readString(row.label, "Vehicle label", 50),
+      hologram: readEnum(row.hologram, "Vehicle hologram", ["0", "00"] as const),
+      plateLastDigit: plateLastDigit as number,
+      enabled: readBoolean(row.enabled, "Vehicle enabled"),
+      createdAt: parseDateString(row.createdAt, "Vehicle creation date"),
+    };
+  });
+
+  return { exportedAt, user: { telegramUserId, timezone, currency, createdAt }, folders, tasks, reminders, expenses, notes, notificationDefaults, persistentNotifications, contingencyPreferences, vehicles };
 }
 
 function readArray(value: unknown, label: string): unknown[] {

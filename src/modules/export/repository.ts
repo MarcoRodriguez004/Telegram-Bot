@@ -60,6 +60,19 @@ export interface ExportData {
     lastNotifiedAt: string | null;
     createdAt: string;
   }>;
+  contingencyPreferences?: {
+    mode: "always" | "vehicle" | null;
+    enabled: boolean;
+    updatedAt: string;
+  } | null;
+  vehicles?: Array<{
+    id: number;
+    label: string;
+    hologram: "0" | "00";
+    plateLastDigit: number;
+    enabled: boolean;
+    createdAt: string;
+  }>;
 }
 
 export async function exportUserData(
@@ -72,7 +85,7 @@ export async function exportUserData(
   ).bind(input.userId).first<ExportData["user"]>();
   if (!user) throw new Error("User not found");
 
-  const [folders, tasks, reminders, expenses, notes, defaults, persistentNotifications] = await Promise.all([
+  const [folders, tasks, reminders, expenses, notes, defaults, persistentNotifications, contingencyPreferences, vehicles] = await Promise.all([
     db.prepare("SELECT id, name, created_at AS createdAt FROM saved_folders WHERE user_id = ? ORDER BY id")
       .bind(input.userId).all<ExportData["folders"][number]>(),
     db.prepare(
@@ -104,6 +117,11 @@ export async function exportUserData(
               last_notified_at AS lastNotifiedAt, created_at AS createdAt
          FROM persistent_notifications WHERE user_id = ? ORDER BY id`,
     ).bind(input.userId).all<ExportData["persistentNotifications"][number]>(),
+    db.prepare("SELECT mode, enabled, updated_at AS updatedAt FROM contingency_preferences WHERE user_id = ?")
+      .bind(input.userId).first<ExportData["contingencyPreferences"]>(),
+    db.prepare(
+      "SELECT id, label, hologram, plate_last_digit AS plateLastDigit, enabled, created_at AS createdAt FROM user_vehicles WHERE user_id = ? ORDER BY id",
+    ).bind(input.userId).all<NonNullable<ExportData["vehicles"]>[number]>(),
   ]);
 
   return {
@@ -127,6 +145,19 @@ export async function exportUserData(
       enabled: Boolean(notification.enabled),
       resourceId: Number(notification.resourceId),
       intervalMinutes: Number(notification.intervalMinutes),
+    })),
+    contingencyPreferences: contingencyPreferences
+      ? {
+          mode: contingencyPreferences.mode === "always" || contingencyPreferences.mode === "vehicle" ? contingencyPreferences.mode : null,
+          enabled: Boolean(contingencyPreferences.enabled),
+          updatedAt: contingencyPreferences.updatedAt,
+        }
+      : null,
+    vehicles: vehicles.results.map((vehicle) => ({
+      ...vehicle,
+      id: Number(vehicle.id),
+      plateLastDigit: Number(vehicle.plateLastDigit),
+      enabled: Boolean(vehicle.enabled),
     })),
   };
 }

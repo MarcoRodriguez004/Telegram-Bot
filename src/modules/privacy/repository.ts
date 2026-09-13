@@ -26,6 +26,8 @@ export async function deleteUserData(db: D1Database, telegramUserId: number): Pr
     db.prepare("DELETE FROM persistent_notifications WHERE user_id = ?").bind(user.id),
     db.prepare("DELETE FROM notification_snoozes WHERE user_id = ?").bind(user.id),
     db.prepare("DELETE FROM notification_preferences WHERE user_id = ?").bind(user.id),
+    db.prepare("DELETE FROM user_vehicles WHERE user_id = ?").bind(user.id),
+    db.prepare("DELETE FROM contingency_preferences WHERE user_id = ?").bind(user.id),
     db.prepare("DELETE FROM edit_sessions WHERE user_id = ?").bind(user.id),
     db.prepare("DELETE FROM conversation_context WHERE user_id = ?").bind(user.id),
     db.prepare("DELETE FROM pending_conversation WHERE user_id = ?").bind(user.id),
