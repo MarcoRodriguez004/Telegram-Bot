@@ -1,5 +1,5 @@
 import { deflateSync } from "node:zlib";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CONTINGENCY_SOURCE_INDEX, fetchLatestContingencyBulletin, parseContingencyText, parseLatestPdfLink } from "../src/modules/contingency/source";
 
 describe("official contingency bulletin parsing", () => {
@@ -78,5 +78,20 @@ describe("official contingency bulletin parsing", () => {
 
   it("ignores unrelated official documents", () => {
     expect(parseContingencyText("Boletín informativo sobre calidad del aire.", "https://example.com/a.pdf", "2026-09-12T00:00:00.000Z")).toBeNull();
+  });
+
+  it("does not wait forever when the official PDF body stalls", async () => {
+    vi.useFakeTimers();
+    const stalledBody = new ReadableStream<Uint8Array>({
+      start() {},
+    });
+    const sourceFetch: typeof fetch = async (input) => input === CONTINGENCY_SOURCE_INDEX
+      ? new Response("<tr><td><a href=\"comunicado99_09122026.pdf\">boletín</a></td><td>12-Sep-2026 21:00</td></tr>")
+      : new Response(stalledBody, { headers: { "content-type": "application/pdf" } });
+    const result = fetchLatestContingencyBulletin(sourceFetch).then(() => "settled", () => "rejected");
+    await vi.advanceTimersByTimeAsync(10_001);
+
+    await expect(result).resolves.toBe("rejected");
+    vi.useRealTimers();
   });
 });

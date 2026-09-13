@@ -4,6 +4,7 @@ export const CONTINGENCY_SOURCE_INDEX = "https://aire.cdmx.gob.mx/contingencias/
 const SOURCE_HOST = "aire.cdmx.gob.mx";
 const MAX_INDEX_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 2 * 1024 * 1024;
+const SOURCE_BODY_TIMEOUT_MS = 10_000;
 
 export interface ContingencyRestriction {
   holograms: VehicleHologram[];
@@ -290,9 +291,47 @@ async function fetchWithTimeout(sourceFetch: typeof fetch, input: string, init: 
 async function readLimited(response: Response, maxBytes: number): Promise<Uint8Array> {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw new Error("Official contingency document is too large");
-  const buffer = new Uint8Array(await response.arrayBuffer());
-  if (buffer.byteLength > maxBytes) throw new Error("Official contingency document is too large");
-  return buffer;
+  const reader = response.body?.getReader();
+  if (!reader) return new Uint8Array(await response.arrayBuffer());
+
+  const body = readResponseBody(reader, maxBytes);
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const bodyTimeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      void reader.cancel().catch(() => undefined);
+      reject(new Error("Official contingency response body timed out"));
+    }, SOURCE_BODY_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([body, bodyTimeout]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    await body.catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
+async function readResponseBody(reader: ReadableStreamDefaultReader<Uint8Array>, maxBytes: number): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel();
+      throw new Error("Official contingency document is too large");
+    }
+    chunks.push(value);
+  }
+
+  const result = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
 }
 
 function normalizeSourceText(value: string): string {
