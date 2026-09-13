@@ -43,5 +43,11 @@ describe("contingency preferences and vehicles", () => {
       plateLastDigits: [],
     });
     expect(unknownDigitsRecipients.map((recipient) => recipient.chatId)).toEqual([2002]);
+
+    const ownerOnlyRecipients = await listContingencyRecipients(db, {
+      holograms: ["0", "00"],
+      plateLastDigits: [6, 7],
+    }, 101);
+    expect(ownerOnlyRecipients.map((recipient) => recipient.chatId)).toEqual([1001]);
   });
 });

@@ -81,14 +81,17 @@ export async function setContingencyMode(
 export async function listContingencyRecipients(
   db: D1Database,
   restriction: { holograms: VehicleHologram[]; plateLastDigits: number[] } | null,
+  ownerTelegramUserId?: number,
 ): Promise<ContingencyRecipient[]> {
   const rows = await db.prepare(
       "SELECT p.user_id AS userId, u.telegram_chat_id AS chatId, p.mode " +
       "FROM contingency_preferences p INNER JOIN users u ON u.id = p.user_id " +
-      "WHERE p.enabled = 1 AND p.mode IS NOT NULL AND (p.mode = 'always' OR ? = 1 OR EXISTS (" +
+      "WHERE p.enabled = 1 AND p.mode IS NOT NULL AND (? IS NULL OR u.telegram_user_id = ?) AND (p.mode = 'always' OR ? = 1 OR EXISTS (" +
       "SELECT 1 FROM user_vehicles v WHERE v.user_id = p.user_id AND v.enabled = 1 AND v.hologram IN (?, ?) AND v.plate_last_digit IN (?, ?)" +
       ")) ORDER BY p.user_id",
   ).bind(
+    ownerTelegramUserId ?? null,
+    ownerTelegramUserId ?? null,
     restriction ? 0 : 1,
     restriction?.holograms[0] ?? "0",
     restriction?.holograms[1] ?? "00",

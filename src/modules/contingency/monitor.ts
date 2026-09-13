@@ -36,7 +36,12 @@ export async function monitorContingency(
 
   const shouldNotify = (bulletin.active && restriction !== null) || Boolean(saved.previous?.active && !bulletin.active);
   if (!shouldNotify) return true;
-  const recipients = await listContingencyRecipients(db, bulletin.active ? restriction : null);
+  const ownerTelegramUserId = parseConfiguredTelegramUserId(env.TELEGRAM_ADMIN_USER_ID ?? env.TELEGRAM_ALLOWED_USER_ID);
+  // Contingency delivery is temporarily owner-only. Fail closed if the owner
+  // is not configured instead of falling back to every user's preference.
+  const recipients = ownerTelegramUserId === null
+    ? []
+    : await listContingencyRecipients(db, bulletin.active ? restriction : null, ownerTelegramUserId);
   const message = formatContingencyAlert(bulletin.active, restriction, saved.previous, bulletin.sourceUrl);
   for (const recipient of recipients) {
     try {
@@ -66,4 +71,10 @@ function formatContingencyAlert(
   const color = restriction?.color ? ` (${restriction.color})` : "";
   const heading = previous?.active ? "🔁 Cambiaron las restricciones de la Fase I" : "🚨 Se activó la Fase I de contingencia ambiental";
   return `${heading}\n\nHologramas 0 y 00: terminación ${digits}${color}.\n${restriction?.text ?? "Consulta el boletín oficial para conocer la restricción completa."}\n\nFuente oficial: ${sourceUrl}`;
+}
+
+function parseConfiguredTelegramUserId(value: string | undefined): number | null {
+  if (!value || !/^\d+$/u.test(value.trim())) return null;
+  const id = Number(value.trim());
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
