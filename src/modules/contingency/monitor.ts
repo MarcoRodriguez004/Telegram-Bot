@@ -74,7 +74,8 @@ function formatContingencyAlert(
   publishedAt: string | null,
 ): string {
   if (!active) {
-    return `✅ La CAMe informó que terminó la Fase I de contingencia ambiental.\n\nBoletín publicado: ${formatPublishedDate(publishedAt)}\nFuente oficial: ${sourceUrl}`;
+    const day = affectedDate ? formatAffectedDate(affectedDate) : "no identificado en el boletín";
+    return `✅ La CAMe informó que se suspendió la Fase I de contingencia ambiental.\nDía de suspensión: ${day}.\n\nBoletín publicado: ${formatPublishedDate(publishedAt)}\nFuente oficial: ${sourceUrl}`;
   }
   const digits = restriction?.plateLastDigits.join(" y ") ?? "no identificadas automáticamente";
   const color = restriction?.color ? ` (${restriction.color})` : "";

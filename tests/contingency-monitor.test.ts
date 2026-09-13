@@ -90,4 +90,62 @@ describe("contingency monitor", () => {
     expect(messages[0]?.text).toContain("Día de afectación: domingo, 26 de abril de 2026.");
     expect(messages[0]?.text).toContain("Boletín publicado:");
   });
+
+  it("notifies the same recipients when CAMe suspends an active contingency", async () => {
+    const { db } = createSqliteDb();
+    await ensureUser(db, {
+      telegramUserId: 101,
+      telegramChatId: 1001,
+      timezone: "America/Mexico_City",
+      currency: "MXN",
+    });
+    await setContingencyMode(db, { userId: 1, mode: "always" });
+    vi.mocked(fetchCombinedContingencyBulletin)
+      .mockResolvedValueOnce({
+        bulletin: {
+          active: true,
+          phase: "I",
+          affectedDate: "2026-09-13",
+          restriction: {
+            holograms: ["0", "00"],
+            plateLastDigits: [7, 8],
+            color: "rosa",
+            text: "Hologramas 0 y 00 deben suspender su circulación.",
+            signature: "restriction-rosa-7-8",
+          },
+          sourceUrl: "https://aire.cdmx.gob.mx/comunicado43.pdf",
+          publishedAt: "2026-09-13T12:17:00.000Z",
+        },
+        camE: null,
+        gobMx: null,
+        gobMxError: null,
+      })
+      .mockResolvedValueOnce({
+        bulletin: {
+          active: false,
+          phase: "I",
+          affectedDate: "2026-09-13",
+          restriction: null,
+          sourceUrl: "https://aire.cdmx.gob.mx/comunicado44.pdf",
+          publishedAt: "2026-09-13T21:00:00.000Z",
+        },
+        camE: null,
+        gobMx: null,
+        gobMxError: null,
+      });
+    const messages: Array<{ chatId: number; text: string }> = [];
+    const telegramFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { chat_id: number; text: string };
+      messages.push({ chatId: body.chat_id, text: body.text });
+      return Response.json({ ok: true });
+    };
+
+    await monitorContingency(db, createEnv(db), new Date("2026-09-13T12:30:00.000Z"), fetch, telegramFetch);
+    await monitorContingency(db, createEnv(db), new Date("2026-09-13T21:30:00.000Z"), fetch, telegramFetch);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.chatId).toBe(1001);
+    expect(messages[1]?.text).toContain("se suspendió la Fase I de contingencia ambiental");
+    expect(messages[1]?.text).toContain("Boletín publicado:");
+  });
 });
