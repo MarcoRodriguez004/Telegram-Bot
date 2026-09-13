@@ -106,8 +106,9 @@ function parseRestriction(text: string): ContingencyRestriction | null {
 
 function parseAffectedDate(text: string, publishedAt: string | null): string | null {
   const monthNames = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
+  const weekdayNames = "lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo";
   const tomorrowMatch = new RegExp(
-    `\\bma[ñn]ana\\b[\\s,]*(?:(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\\s+)?(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+de\\s+(\\d{4}))?`,
+    `\\bma[ñn]ana\\b[\\s,]*(?:(?:${weekdayNames})\\s+)?(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+(?:de|del)\\s+(\\d{4}))?`,
     "iu",
   ).exec(text);
   if (tomorrowMatch) {
@@ -118,7 +119,7 @@ function parseAffectedDate(text: string, publishedAt: string | null): string | n
   }
 
   const explicitMatch = new RegExp(
-    `\\b(?:el\\s+)?d[ií]a\\s+(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+de\\s+(\\d{4}))?`,
+    `\\b(?:el\\s+)?d[ií]a\\s+(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+(?:de|del)\\s+(\\d{4}))?`,
     "iu",
   ).exec(text);
   if (explicitMatch) {
@@ -126,7 +127,18 @@ function parseAffectedDate(text: string, publishedAt: string | null): string | n
     return year === null ? null : toIsoDate(Number(explicitMatch[1]), monthNumber(explicitMatch[2]), year);
   }
 
-  if (/\\b(?:el\\s+)?d[ií]a\\s+de\\s+hoy\\b/iu.test(text)) return publishedAt?.slice(0, 10) ?? null;
+  const todayMatch = new RegExp(
+    `\\bhoy\\b[\\s,]*(?:(?:${weekdayNames})\\s+)?(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+(?:de|del)\\s+(\\d{4}))?`,
+    "iu",
+  ).exec(text);
+  if (todayMatch) {
+    const day = Number(todayMatch[1]);
+    const month = monthNumber(todayMatch[2]);
+    const year = inferAffectedYear(todayMatch[3], day, month, publishedAt);
+    return year === null ? null : toIsoDate(day, month, year);
+  }
+
+  if (/\b(?:el\s+)?d[ií]a\s+de\s+hoy\b/iu.test(text)) return publishedAt?.slice(0, 10) ?? null;
   return null;
 }
 

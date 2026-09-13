@@ -44,6 +44,27 @@ describe("official contingency bulletin parsing", () => {
     expect(bulletin).toMatchObject({ affectedDate: "2026-04-26" });
   });
 
+  it("extracts the affected day when the bulletin says today with a weekday", () => {
+    const bulletin = parseContingencyText(
+      "CONTINÚA LA FASE I DE CONTINGENCIA AMBIENTAL. " +
+        "Hoy domingo 13 de septiembre, deberán suspender su circulación los vehículos con holograma de verificación 0 y 00, engomado rosa, terminación de placa 7 u 8.",
+      "https://www.aire.cdmx.gob.mx/contingencias/notas/comunicado43_09122026.pdf",
+      "2026-09-12T20:00:00.000Z",
+    );
+
+    expect(bulletin).toMatchObject({ affectedDate: "2026-09-13" });
+  });
+
+  it("uses the publication date for an explicit day of today", () => {
+    const bulletin = parseContingencyText(
+      "SE ACTIVA LA FASE I de contingencia ambiental. Las medidas aplican el día de hoy.",
+      "https://www.aire.cdmx.gob.mx/contingencias/notas/comunicado43.pdf",
+      "2026-09-13T10:00:00.000Z",
+    );
+
+    expect(bulletin).toMatchObject({ affectedDate: "2026-09-13" });
+  });
+
   it("recognizes a suspension without reporting an active restriction", () => {
     expect(parseContingencyText(
       "SE SUSPENDE LA FASE I DE CONTINGENCIA AMBIENTAL ATMOSFÉRICA.",
