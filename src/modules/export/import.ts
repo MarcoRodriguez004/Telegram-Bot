@@ -40,6 +40,8 @@ export async function importUserData(
   if (existing) return { alreadyImported: true };
 
   const importedAt = parseDate(input.importedAt ?? new Date().toISOString(), "Import date");
+  await db.prepare("UPDATE users SET timezone = ?, currency = ? WHERE id = ?")
+    .bind(data.user.timezone, data.user.currency, input.userId).run();
   const folderIds = new Map<number, number>();
   for (const folder of data.folders) {
     const created = await createFolder(db, {
@@ -106,7 +108,7 @@ export async function importUserData(
       content: note.content,
       url: note.url ?? undefined,
       createdAt: note.createdAt,
-      folderId: note.folderId === null ? null : folderIds.get(note.folderId) ?? null,
+      folderId: note.folderId === null ? null : folderIds.get(note.folderId)!,
       attachment: note.fileKind && note.fileId ? { kind: note.fileKind as "photo" | "document", fileId: note.fileId } : undefined,
     });
   }
@@ -171,7 +173,7 @@ function validateExportData(value: unknown): ExportData {
   const user = isRecord(value.user) ? value.user : null;
   if (!user) throw new Error("Export user is invalid");
   const telegramUserId = readPositiveInteger(user.telegramUserId, "Export Telegram user id");
-  const timezone = readString(user.timezone, "Export timezone", 100);
+  const timezone = readTimezone(user.timezone);
   const currency = readCurrency(user.currency, "Export currency");
   const createdAt = parseDateString(user.createdAt, "Export user creation date");
 
@@ -216,9 +218,13 @@ function validateExportData(value: unknown): ExportData {
     const folderId = row.folderId === null ? null : readPositiveInteger(row.folderId, "Note folder id");
     return { id: readPositiveInteger(row.id, "Note id"), content: readString(row.content, "Note content", 1_000), url, folderId, fileKind, fileId, createdAt: parseDateString(row.createdAt, "Note creation date") };
   });
+  const knownFolderIds = new Set(folders.map((folder) => folder.id));
+  if (notes.some((note) => note.folderId !== null && !knownFolderIds.has(note.folderId))) {
+    throw new Error("Note folder reference is invalid");
+  }
 
   let notificationDefaults: ExportData["notificationDefaults"] = null;
-  if (value.notificationDefaults !== null) {
+  if (value.notificationDefaults !== null && value.notificationDefaults !== undefined) {
     const defaults = requireRecord(value.notificationDefaults, "Notification defaults");
     notificationDefaults = {
       tasksEnabled: readBoolean(defaults.tasksEnabled, "Task notification default"), tasksIntervalMinutes: readInterval(defaults.tasksIntervalMinutes, "Task notification interval"),
@@ -287,6 +293,16 @@ function readCurrency(value: unknown, label: string): string {
   const currency = readString(value, label, 3).toUpperCase();
   if (!/^[A-Z]{3}$/u.test(currency)) throw new Error(`${label} is invalid`);
   return currency;
+}
+
+function readTimezone(value: unknown): string {
+  const timezone = readString(value, "Export timezone", 100);
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+  } catch {
+    throw new Error("Export timezone is invalid");
+  }
+  return timezone;
 }
 
 function readStatus(value: unknown, label: string): "pending" | "completed" | "cancelled" {
