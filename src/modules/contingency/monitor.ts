@@ -74,7 +74,7 @@ function formatContingencyAlert(
   publishedAt: string | null,
 ): string {
   if (!active) {
-    const day = affectedDate ? formatAffectedDate(affectedDate) : "no identificado en el boletín";
+    const day = publishedAt ? formatPublishedDay(publishedAt) : affectedDate ? formatAffectedDate(affectedDate) : "no identificado en el boletín";
     return `✅ La CAMe informó que se suspendió la Fase I de contingencia ambiental.\nDía de suspensión: ${day}.\n\nBoletín publicado: ${formatPublishedDate(publishedAt)}\nFuente oficial: ${sourceUrl}`;
   }
   const digits = restriction?.plateLastDigits.join(" y ") ?? "no identificadas automáticamente";
@@ -149,5 +149,17 @@ function formatPublishedDate(value: string | null): string {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+  }).format(date);
+}
+
+function formatPublishedDay(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "no identificado en el boletín";
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: "America/Mexico_City",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   }).format(date);
 }

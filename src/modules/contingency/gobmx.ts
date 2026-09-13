@@ -30,12 +30,16 @@ export function parseGobMxBulletinHtml(html: string, sourceUrl: string, publishe
 }
 
 function findLatestContingencyArticle(html: string): string | null {
-  const linkPattern = /<a\b[^>]*href=["']([^"']*\/comisionambiental\/prensa\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu;
-  for (const match of html.matchAll(linkPattern)) {
-    const title = stripTags(match[2] ?? "");
+  const normalizedHtml = html.replace(/\\([/"'])/gu, "$1");
+  const anchorPattern = /<a\b([^>]*)>([\s\S]*?)<\/a>/giu;
+  for (const match of normalizedHtml.matchAll(anchorPattern)) {
+    const attributes = match[1] ?? "";
+    const href = /\bhref=["']([^"']*\/comisionambiental\/prensa\/[^"']+)["']/iu.exec(attributes)?.[1];
+    if (!href) continue;
+    const title = stripTags(decodeHtmlEntities(`${attributes} ${match[2] ?? ""}`));
     if (!/(?:contingencia|hoy\s+no\s+circula|fase\s+i)/iu.test(title)) continue;
     try {
-      const url = new URL(decodeHtmlEntities(match[1]), GOBMX_CONTINGENCY_ARCHIVE);
+      const url = new URL(decodeHtmlEntities(href), GOBMX_CONTINGENCY_ARCHIVE);
       if (url.hostname !== GOBMX_HOST || url.pathname.includes("/archivo/")) continue;
       return url.toString();
     } catch {
