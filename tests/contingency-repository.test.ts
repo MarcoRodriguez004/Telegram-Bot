@@ -52,7 +52,7 @@ describe("contingency preferences and vehicles", () => {
     expect(ownerOnlyRecipients.map((recipient) => recipient.chatId)).toEqual([1001]);
   });
 
-  it("defaults every user to always receive alerts until they opt out", async () => {
+  it("keeps contingency alerts off until the user opts in", async () => {
     const { db } = createSqliteDb();
     const userId = await ensureUser(db, {
       telegramUserId: 303,
@@ -63,17 +63,17 @@ describe("contingency preferences and vehicles", () => {
 
     await expect(getContingencyPreferences(db, userId)).resolves.toMatchObject({
       mode: "always",
-      enabled: true,
+      enabled: false,
     });
     await expect(listContingencyRecipients(db, {
       holograms: ["0", "00"],
       plateLastDigits: [5, 6],
-    })).resolves.toMatchObject([{ userId, chatId: 3003, mode: "always" }]);
+    })).resolves.toEqual([]);
 
-    await setContingencyMode(db, { userId, mode: null });
+    await setContingencyMode(db, { userId, mode: "always" });
     await expect(listContingencyRecipients(db, {
       holograms: ["0", "00"],
       plateLastDigits: [5, 6],
-    })).resolves.toEqual([]);
+    })).resolves.toMatchObject([{ userId, chatId: 3003, mode: "always" }]);
   });
 });

@@ -15,6 +15,7 @@ import {
   buildSavedNoteDeleteKeyboard,
   buildSavedNoteEditCancelKeyboard,
   parseCallbackData,
+  buildConfigurationKeyboard,
 } from "../src/telegram/keyboards";
 
 describe("task and reminder inline keyboards", () => {
@@ -92,6 +93,14 @@ describe("task and reminder inline keyboards", () => {
   it("labels the global stop according to its scope", () => {
     expect(buildGlobalNotificationIntervalKeyboard("all").inline_keyboard[0][0].text).toBe("Parar todos los avisos");
     expect(buildGlobalNotificationIntervalKeyboard("task").inline_keyboard[0][0].text).toBe("Parar avisos de todas las tareas");
+  });
+
+  it("exposes a clear CAMe section from the configuration menu", () => {
+    const keyboard = buildConfigurationKeyboard();
+    const button = keyboard.inline_keyboard.flat().find((candidate) => candidate.text === "🚗 Alertas CAMe y Hoy No Circula");
+
+    expect(button).toBeDefined();
+    expect(parseCallbackData(button?.callback_data)).toEqual({ kind: "contingency_settings" });
   });
 
   it("builds contingency mode controls without exposing a full plate", () => {

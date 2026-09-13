@@ -24,6 +24,7 @@ export type CallbackAction =
   | { kind: "snooze_set"; resource: QueryResource; id: number; delayMinutes: NotificationIntervalMinutes }
   | { kind: "notification_scope"; scope: NotificationScope }
   | { kind: "notification_global_set"; scope: NotificationScope; intervalMinutes: NotificationIntervalMinutes | null }
+  | { kind: "contingency_settings" }
   | { kind: "contingency_mode"; mode: "always" | "vehicle" | null }
   | { kind: "contingency_remove_vehicle"; vehicleId: number }
   | { kind: "saved_note_edit"; id: number }
@@ -216,12 +217,15 @@ export function buildStopConfirmationKeyboard(resource: QueryResource, id: numbe
   };
 }
 
-export function buildGlobalNotificationKeyboard(): InlineKeyboardMarkup {
+export function buildConfigurationKeyboard(): InlineKeyboardMarkup {
   return {
     inline_keyboard: [[
       { text: "Todas las tareas", callback_data: "pa:g:s:t" },
       { text: "Todos los recordatorios", callback_data: "pa:g:s:r" },
-    ], [{ text: "Tareas y recordatorios", callback_data: "pa:g:s:a" }]],
+    ], [{ text: "Tareas y recordatorios", callback_data: "pa:g:s:a" }], [{
+      text: "🚗 Alertas CAMe y Hoy No Circula",
+      callback_data: "pa:c:s",
+    }]],
   };
 }
 
@@ -278,6 +282,9 @@ export function parseCallbackData(data: string | undefined): CallbackAction | nu
     const scope = parseNotificationScope(parts[3]);
     const intervalMinutes = parseNotificationInterval(parts[4]);
     return scope && intervalMinutes !== undefined ? { kind: "notification_global_set", scope, intervalMinutes } : null;
+  }
+  if (parts[1] === "c" && parts[2] === "s" && parts.length === 3) {
+    return { kind: "contingency_settings" };
   }
   if (parts[1] === "c" && parts[2] === "m" && parts.length === 4) {
     const mode = parts[3] === "a" ? "always" : parts[3] === "v" ? "vehicle" : parts[3] === "0" ? null : undefined;

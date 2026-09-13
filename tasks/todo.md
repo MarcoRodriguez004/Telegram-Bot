@@ -92,8 +92,9 @@ Checkpoint:
 
 - [x] Añadir botones dinámicos para editar y eliminar notas y enlaces guardados; eliminar requiere confirmación y las operaciones quedan aisladas por usuario.
 - [x] Mantener los archivos multimedia como guardados eliminables, pero no editables.
-- [x] Activar por defecto los avisos de contingencia para todos los usuarios cuando CAMe publique Fase I con restricciones para hologramas 0 y 00.
+- [x] Mantener apagadas por defecto las alertas CAMe y permitir activarlas desde `/configuraciones`.
 - [x] Eliminar el filtro temporal exclusivo del administrador; se conserva la opción individual de apagar avisos o recibir solo los que afecten a un vehículo registrado.
-- [x] Añadir la migración `0020_default_contingency_alerts.sql` para activar el modo `always` a usuarios existentes sin configuración y establecerlo para usuarios nuevos.
+- [x] Añadir la migración histórica `0020_default_contingency_alerts.sql` para crear la preferencia CAMe de usuarios existentes y nuevos.
+- [x] Añadir la migración `0021_default_contingency_alerts_off.sql` para convertir las alertas CAMe en una suscripción explícita.
 - [x] Validar con 53 archivos y 248 pruebas, typecheck, lint y build de Wrangler.
 - [x] Desplegar el commit `aae0aaf` en `Dev` y `main`; CI pasó en ambas ramas y `/health` respondió correctamente.

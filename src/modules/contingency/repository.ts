@@ -65,7 +65,7 @@ export async function getContingencyPreferences(db: D1Database, userId: number):
   const mode = row
     ? row.mode === "always" || row.mode === "vehicle" ? row.mode : null
     : "always";
-  return { mode, enabled: row ? mode !== null && row.enabled === 1 : true, updatedAt: row?.updatedAt ?? null };
+  return { mode, enabled: row ? mode !== null && row.enabled === 1 : false, updatedAt: row?.updatedAt ?? null };
 }
 
 export async function setContingencyMode(
@@ -88,7 +88,7 @@ export async function listContingencyRecipients(
   const rows = await db.prepare(
       "SELECT u.id AS userId, u.telegram_chat_id AS chatId, COALESCE(p.mode, 'always') AS mode " +
       "FROM users u LEFT JOIN contingency_preferences p ON p.user_id = u.id " +
-      "WHERE (p.user_id IS NULL OR (p.enabled = 1 AND p.mode IS NOT NULL)) AND (? IS NULL OR u.telegram_user_id = ?) AND (COALESCE(p.mode, 'always') = 'always' OR ? = 1 OR EXISTS (" +
+      "WHERE p.enabled = 1 AND p.mode IS NOT NULL AND (? IS NULL OR u.telegram_user_id = ?) AND (p.mode = 'always' OR ? = 1 OR EXISTS (" +
       "SELECT 1 FROM user_vehicles v WHERE v.user_id = p.user_id AND v.enabled = 1 AND v.hologram IN (?, ?) AND v.plate_last_digit IN (?, ?)" +
       ")) ORDER BY p.user_id",
   ).bind(

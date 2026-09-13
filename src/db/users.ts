@@ -40,7 +40,7 @@ export async function ensureUser(db: D1Database, input: EnsureUserInput): Promis
 
   await db
     .prepare(
-      "INSERT OR IGNORE INTO contingency_preferences (user_id, mode, enabled, updated_at) VALUES (?, 'always', 1, ?)",
+      "INSERT OR IGNORE INTO contingency_preferences (user_id, mode, enabled, updated_at) VALUES (?, 'always', 0, ?)",
     )
     .bind(user.id, new Date().toISOString())
     .run();

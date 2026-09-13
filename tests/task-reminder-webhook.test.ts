@@ -270,19 +270,28 @@ describe("task and reminder query webhook flow", () => {
     expect(String(calls.at(-1)?.body.text)).toContain("semanal");
   });
 
-  it("offers global alert configuration and applies it to both resource types", async () => {
+  it("offers the configuration menu and lets the user open CAMe alerts", async () => {
     const { db, sqlite } = createSqliteDb();
     const { env, calls, telegramFetch } = createEnv(db);
 
-    await post(messageUpdate(30, "/configuracion"), env, telegramFetch);
-    expect(String(calls[0].body.text)).toContain("Configuración de avisos persistentes");
-    expect(JSON.stringify(calls[0].body.reply_markup)).toContain("Tareas y recordatorios");
+    await post(messageUpdate(30, "/configuraciones"), env, telegramFetch);
+    expect(String(calls[0].body.text)).toContain("Configuraciones");
+    expect(JSON.stringify(calls[0].body.reply_markup)).toContain("Alertas CAMe y Hoy No Circula");
 
-    await post(callbackUpdate(31, "pa:g:s:a"), env, telegramFetch);
+    await post(callbackUpdate(31, "pa:c:s"), env, telegramFetch);
+    expect(String(calls.at(-2)?.body.text)).toContain("🚗 Alertas CAMe y Hoy No Circula");
+    expect(String(calls.at(-2)?.body.text)).toContain("Estado: Apagados");
+
+    await post(callbackUpdate(32, "pa:c:m:a"), env, telegramFetch);
+    expect(String(calls.at(-2)?.body.text)).toContain("Alertas CAMe configuradas");
+    expect(sqlite.prepare("SELECT enabled, mode FROM contingency_preferences WHERE user_id = 1").get())
+      .toEqual({ enabled: 1, mode: "always" });
+
+    await post(callbackUpdate(33, "pa:g:s:a"), env, telegramFetch);
     expect(String(calls.at(-2)?.body.text)).toContain("tareas y recordatorios");
     expect(JSON.stringify(calls.at(-2)?.body.reply_markup)).toContain("Activar cada 20 minutos");
 
-    await post(callbackUpdate(32, "pa:g:n:a:20"), env, telegramFetch);
+    await post(callbackUpdate(34, "pa:g:n:a:20"), env, telegramFetch);
     expect(sqlite.prepare("SELECT tasks_enabled, tasks_interval_minutes, reminders_enabled, reminders_interval_minutes FROM notification_preferences WHERE user_id = 1").get())
       .toEqual({ tasks_enabled: 1, tasks_interval_minutes: 20, reminders_enabled: 1, reminders_interval_minutes: 20 });
   });

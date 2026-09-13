@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ensureUser } from "../src/db/users";
 import { monitorContingency } from "../src/modules/contingency/monitor";
+import { setContingencyMode } from "../src/modules/contingency/repository";
 import { fetchLatestContingencyBulletin } from "../src/modules/contingency/source";
 import type { Env } from "../src/types";
 import { createSqliteDb } from "./helpers/sqlite-db";
@@ -21,7 +22,7 @@ function createEnv(db: D1Database): Env {
 }
 
 describe("contingency monitor", () => {
-  it("delivers the default always alert to every user", async () => {
+  it("delivers an alert to users who opted into the always mode", async () => {
     const { db } = createSqliteDb();
     await ensureUser(db, {
       telegramUserId: 101,
@@ -29,12 +30,14 @@ describe("contingency monitor", () => {
       timezone: "America/Mexico_City",
       currency: "MXN",
     });
+    await setContingencyMode(db, { userId: 1, mode: "always" });
     await ensureUser(db, {
       telegramUserId: 202,
       telegramChatId: 2002,
       timezone: "America/Mexico_City",
       currency: "MXN",
     });
+    await setContingencyMode(db, { userId: 2, mode: "always" });
     vi.mocked(fetchLatestContingencyBulletin).mockResolvedValue({
       active: true,
       phase: "I",
