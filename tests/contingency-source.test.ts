@@ -83,6 +83,15 @@ describe("official contingency bulletin parsing", () => {
     )).toMatchObject({ active: false, phase: "I" });
   });
 
+  it("recognizes a suspension bulletin that does not repeat the phase number", () => {
+    expect(parseContingencyText(
+      "SE SUSPENDE LA CONTINGENCIA AMBIENTAL ATMOSFÉRICA POR OZONO EN LA ZONA METROPOLITANA DEL VALLE DE MÉXICO. " +
+        "Las medidas se suspenden a partir de las 15:00 horas del día de hoy.",
+      "https://aire.cdmx.gob.mx/contingencias/notas/comunicado44_09122026.pdf",
+      "2026-09-13T21:00:00.000Z",
+    )).toMatchObject({ active: false, phase: "I", affectedDate: "2026-09-13" });
+  });
+
   it("recognizes an active phase when the action follows the phase name", () => {
     expect(parseContingencyText(
       "La Fase I de contingencia ambiental se mantiene por ozono.",

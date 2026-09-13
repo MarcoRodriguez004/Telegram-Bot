@@ -20,6 +20,13 @@ interface AdminDestination {
   chatId: number;
 }
 
+export function describeOperationalFailure(error: unknown): string {
+  const raw = error instanceof Error
+    ? `${error.name}: ${error.message}`
+    : String(error ?? "unknown_error");
+  return sanitizeDetail(raw) || "unknown_error";
+}
+
 export async function reportOperationalFailure(
   db: D1Database,
   env: Env,
@@ -89,6 +96,8 @@ function sanitizeDetail(value: string | undefined): string {
     })
     .join("")
     .replace(/\s+/g, " ")
+    .replace(/https?:\/\/\S+/giu, "[url]")
+    .replace(/\b\d{6,}:[A-Za-z0-9_-]+\b/gu, "[telegram-token]")
     .trim()
     .slice(0, MAX_DETAIL_LENGTH);
 }

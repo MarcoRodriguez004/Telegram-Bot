@@ -40,7 +40,7 @@ import {
   setContingencyMode,
 } from "./modules/contingency/repository";
 import type { ContingencyMode } from "./modules/contingency/repository";
-import { reportOperationalFailure } from "./modules/operations/alerts";
+import { describeOperationalFailure, reportOperationalFailure } from "./modules/operations/alerts";
 import {
   disablePersistentNotification,
   initializePersistentNotification,
@@ -219,22 +219,22 @@ const worker: ExportedHandler<Env> = {
     try {
       await processDueReminders(db, env, now);
     } catch (error) {
-      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_reminders", detail: "runtime_failure", now });
+      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_reminders", detail: describeOperationalFailure(error), now });
     }
     try {
       await processDueNotifications(db, env, now);
     } catch (error) {
-      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_notifications", detail: "runtime_failure", now });
+      await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_notifications", detail: describeOperationalFailure(error), now });
     }
     try {
       await monitorDatabaseStorage(db, env, now);
     } catch (error) {
-      await reportOperationalFailure(db, env, { component: "storage", operation: "database_monitor", detail: "runtime_failure", now });
+      await reportOperationalFailure(db, env, { component: "storage", operation: "database_monitor", detail: describeOperationalFailure(error), now });
     }
     try {
       await monitorContingency(db, env, now);
     } catch (error) {
-      await reportOperationalFailure(db, env, { component: "scheduler", operation: "contingency_monitor", detail: "runtime_failure", now });
+      await reportOperationalFailure(db, env, { component: "scheduler", operation: "contingency_monitor", detail: describeOperationalFailure(error), now });
     }
   },
 };
@@ -376,7 +376,7 @@ export async function handleRequest(
     await reportOperationalFailure(env.PERSONAL_ASSISTANT_DB, env, {
       component: "webhook",
       operation: "update_processing",
-      detail: "runtime_failure",
+      detail: describeOperationalFailure(error),
     }, telegramFetch);
     return new Response("Internal error", { status: 500 });
   }

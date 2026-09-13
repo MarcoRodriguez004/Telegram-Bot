@@ -1,6 +1,6 @@
 import { sendMessage } from "../../telegram/client";
 import type { Env } from "../../types";
-import { reportOperationalFailure } from "../operations/alerts";
+import { describeOperationalFailure, reportOperationalFailure } from "../operations/alerts";
 import {
   listContingencyRecipients,
   saveContingencyState,
@@ -57,7 +57,7 @@ export async function monitorContingency(
       await reportOperationalFailure(db, env, {
         component: "telegram",
         operation: "contingency_alert_delivery",
-        detail: error instanceof Error ? error.name : "delivery_failure",
+        detail: describeOperationalFailure(error),
         now,
       }, telegramFetch);
     }
