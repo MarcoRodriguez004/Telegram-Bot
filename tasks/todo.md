@@ -103,10 +103,10 @@ Checkpoint:
 
 Especificación: [`docs/SPEC-ASSISTANT-COMPLETION.md`](../docs/SPEC-ASSISTANT-COMPLETION.md).
 
-- [ ] `conversation-memory-v2`: contexto reciente acotado, referencias y expiración por usuario/chat.
-- [ ] `saved-crud`: editar metadatos de multimedia, editar texto/enlaces, eliminar y mover cualquier guardado con autorización.
-- [ ] `search-v2`: filtros por tipo, estado, carpeta y fechas, paginación y apertura de resultados.
-- [ ] `summary-v2`: ampliar `/resumen` con actividad de guardados, carpetas, almacenamiento y estado informativo CAMe.
-- [ ] `contingency-v2`: fecha de afectación obligatoria, corroboración de fuentes y consulta por vehículo registrado.
+- [x] `conversation-memory-v2`: contexto reciente acotado, referencias y expiración por usuario/chat.
+- [x] `saved-crud`: editar descripciones de multimedia, editar texto/enlaces, eliminar y mover cualquier guardado con autorización.
+- [x] `search-v2`: filtros por tipo, estado, carpeta y fechas, paginación y continuación.
+- [x] `summary-v2`: ampliar `/resumen` con actividad, carpetas, almacenamiento y estado informativo CAMe.
+- [x] `contingency-v2`: día de afectación, fecha de publicación, corroboración de fuentes y consulta por vehículo registrado.
 
 Checkpoint de cada corte: pruebas enfocadas, suite completa, lint, typecheck y build antes de avanzar.

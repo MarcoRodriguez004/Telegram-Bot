@@ -48,6 +48,10 @@ describe("summary repository", () => {
       totalExpenseCents: 12_345,
       expenseCount: 2,
       expensesByCategory: [{ category: "hogar", totalCents: 12_345 }],
+      folderCount: 2,
+      logicalStorageBytes: 0,
+      contingencyStatus: null,
+      contingencyPublishedAt: null,
       upcomingReminders: [{ title: "pagar internet", remindAt: "2026-09-08T15:00:00.000Z" }],
       recentNotes: [{ content: "renovar seguro", url: null, createdAt: "2026-09-07T20:00:00.000Z" }],
     });

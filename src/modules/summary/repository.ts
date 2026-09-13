@@ -1,3 +1,5 @@
+import { calculateUserStorageUsage } from "../storage/accounting";
+
 export interface SummaryInput {
   userId: number;
   startAt: string;
@@ -27,6 +29,10 @@ export interface SummaryResult {
   totalExpenseCents: number;
   expenseCount: number;
   expensesByCategory: SummaryExpenseCategory[];
+  folderCount: number;
+  logicalStorageBytes: number;
+  contingencyStatus: "active" | "inactive" | null;
+  contingencyPublishedAt: string | null;
   upcomingReminders: SummaryReminder[];
   recentNotes: SummaryNote[];
 }
@@ -89,6 +95,17 @@ export async function getSummary(db: D1Database, input: SummaryInput): Promise<S
     .bind(input.userId)
     .all<SummaryNote>();
 
+  const [folders, contingency, user] = await Promise.all([
+    db.prepare("SELECT COUNT(*) AS count FROM saved_folders WHERE user_id = ?").bind(input.userId).first<{ count: number }>(),
+    db.prepare("SELECT active, published_at AS publishedAt FROM contingency_state WHERE id = 1").bind().first<{ active: number; publishedAt: string | null }>(),
+    db.prepare("SELECT telegram_user_id AS telegramUserId FROM users WHERE id = ?").bind(input.userId).first<{ telegramUserId: number }>(),
+  ]);
+  let logicalStorageBytes = 0;
+  if (user?.telegramUserId) {
+    const usage = await calculateUserStorageUsage(db);
+    logicalStorageBytes = usage.find((entry) => entry.telegramUserId === user.telegramUserId)?.logicalBytes ?? 0;
+  }
+
   return {
     pendingTaskCount: Number(pendingTasks?.count ?? 0),
     completedTaskCount: Number(completedTasks?.count ?? 0),
@@ -99,6 +116,10 @@ export async function getSummary(db: D1Database, input: SummaryInput): Promise<S
       category: String(entry.category),
       totalCents: Number(entry.totalCents ?? 0),
     })),
+    folderCount: Number(folders?.count ?? 0),
+    logicalStorageBytes,
+    contingencyStatus: contingency ? contingency.active === 1 ? "active" : "inactive" : null,
+    contingencyPublishedAt: contingency?.publishedAt ?? null,
     upcomingReminders: reminders.results,
     recentNotes: notes.results,
   };

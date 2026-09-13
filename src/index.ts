@@ -180,7 +180,7 @@ const COMMAND_GUIDE = [
   { command: "/recordatorios [estado]", description: "Lista tus recordatorios por estado.", example: "/recordatorios todos", natural: "¿Qué recordatorios tengo?" },
   { command: "/estado", description: "Muestra pendientes, avisos y almacenamiento lógico.", example: "/estado", natural: "¿Cómo va mi organización?" },
   { command: "/resumen [hoy|semana|mes]", description: "Resume tu actividad y tus guardados.", example: "/resumen semana", natural: "Dame un resumen de esta semana" },
-  { command: "/buscar <texto>", description: "Busca coincidencias entre tus datos.", example: "/buscar tornillos", natural: "Busca tornillos entre mis datos" },
+  { command: "/buscar <texto> [filtros]", description: "Busca con filtros de tipo, estado, carpeta y fechas.", example: "/buscar tornillos tipo:tarea estado:pendiente", natural: "Busca tornillos entre mis tareas pendientes" },
   { command: "/gasto <monto> <categoría>", description: "Registra un gasto.", example: "/gasto 450 gasolina", natural: "Gasté 450 en gasolina" },
   { command: "/nota <texto>", description: "Guarda una nota o un enlace.", example: "/nota renovar póliza en diciembre", natural: "Anota que debo renovar la póliza en diciembre" },
   { command: "/guardar <enlace>", description: "Guarda un enlace; las fotos y documentos se envían con la descripción «Guarda».", example: "/guardar https://ejemplo.com", natural: "Guarda este enlace https://ejemplo.com" },
@@ -310,45 +310,59 @@ export async function handleRequest(
       return new Response(null, { status: 200 });
     }
 
-    const telegramUserId = update.message.from?.id;
-    if (telegramUserId === undefined) return new Response(null, { status: 200 });
-    const userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
-      telegramUserId,
-      telegramChatId: update.message.chat.id,
-      timezone: env.APP_TIMEZONE,
-      currency: env.DEFAULT_CURRENCY,
-    });
-    const conversationHistory = await getConversationHistory(env.PERSONAL_ASSISTANT_DB, {
-      userId,
-      chatId: update.message.chat.id,
-    });
+    let userId: number | undefined;
+    let conversationHistory: ConversationTurn[] = [];
+    if (!text.startsWith("/")) {
+      const telegramUserId = update.message.from?.id;
+      if (telegramUserId === undefined) return new Response(null, { status: 200 });
+      userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
+        telegramUserId,
+        telegramChatId: update.message.chat.id,
+        timezone: env.APP_TIMEZONE,
+        currency: env.DEFAULT_CURRENCY,
+      });
+      try {
+        conversationHistory = await getConversationHistory(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          chatId: update.message.chat.id,
+        });
+      } catch (error) {
+        console.error(JSON.stringify({ event: "conversation_history_unavailable", reason: error instanceof Error ? error.name : "unknown" }));
+      }
+    }
 
     let reply: Reply | null;
     if (text.startsWith("/")) {
       reply = await getReply(text, update, env, telegramFetch, aiFetch, conversationHistory);
     } else {
+      if (userId === undefined) return new Response(null, { status: 200 });
       const editReply = await handleEditInput(text, userId, update.message.chat.id, env);
       reply = editReply ?? await getReply(text, update, env, telegramFetch, aiFetch, conversationHistory);
     }
     if (reply !== null) await sendBotReply(env, update.message.chat.id, reply, telegramFetch);
-    const userStillExists = await env.PERSONAL_ASSISTANT_DB.prepare(
-      "SELECT id FROM users WHERE id = ?",
-    ).bind(userId).first<{ id: number }>();
-    if (!text.startsWith("/") && userStillExists) {
-      await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, {
-        userId,
-        chatId: update.message.chat.id,
-        role: "user",
-        content: text,
-      });
-      const assistantText = typeof reply === "string" ? reply : reply?.text;
-      if (assistantText) {
+    const userStillExists = !text.startsWith("/") && userId !== undefined
+      ? await env.PERSONAL_ASSISTANT_DB.prepare("SELECT id FROM users WHERE id = ?").bind(userId).first<{ id: number }>()
+      : null;
+    const currentUserId = userId;
+    if (!text.startsWith("/") && userStillExists && currentUserId !== undefined) {
+      try {
         await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, {
-          userId,
+          userId: currentUserId,
           chatId: update.message.chat.id,
-          role: "assistant",
-          content: assistantText,
+          role: "user",
+          content: text,
         });
+        const assistantText = typeof reply === "string" ? reply : reply?.text;
+        if (assistantText) {
+          await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, {
+            userId: currentUserId,
+            chatId: update.message.chat.id,
+            role: "assistant",
+            content: assistantText,
+          });
+        }
+      } catch (error) {
+        console.error(JSON.stringify({ event: "conversation_history_persist_failed", reason: error instanceof Error ? error.name : "unknown" }));
       }
     }
     if (getCommandToken(text) === "/start") await configureTelegramCommands(env, telegramFetch);
@@ -1650,6 +1664,11 @@ function formatSummary(summary: SummaryResult, range: "today" | "week" | "month"
     `❌ Tareas canceladas en el periodo: ${summary.cancelledTaskCount}`,
     `💰 Gastos: ${formatExpenseAmount(summary.totalExpenseCents, currency)} (${summary.expenseCount})`,
     "",
+    `📁 Carpetas: ${summary.folderCount}`,
+    `💾 Almacenamiento lógico: ${formatStorageBytes(summary.logicalStorageBytes)}`,
+    `🚗 CAMe: ${summary.contingencyStatus === "active" ? "Fase I activa" : summary.contingencyStatus === "inactive" ? "sin Fase I activa" : "sin consulta reciente"}`,
+    ...(summary.contingencyPublishedAt ? [`   Boletín publicado: ${formatDate(summary.contingencyPublishedAt, timezone)}`] : []),
+    "",
     "📊 Gastos por categoría",
   ];
 
@@ -2171,7 +2190,7 @@ function getCommandReply(text: string): Reply | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• /comandos para ver el catálogo completo\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuraciones para avisos persistentes y alertas CAMe\n• /contingencia para configurar avisos de Fase I\n• /hoy_no_circula para corroborar alertas actuales de CAMe\n• /vehiculo familiar holograma 0 y placa terminada en 6\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• /comandos para ver el catálogo completo\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /buscar tornillos tipo:tarea estado:pendiente desde:2026-09-01 hasta:2026-09-30\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuraciones para avisos persistentes y alertas CAMe\n• /contingencia para configurar avisos de Fase I\n• /hoy_no_circula para corroborar alertas actuales de CAMe\n• /vehiculo familiar holograma 0 y placa terminada en 6\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
   }
 
   if (command === "/comandos") return formatCommandsGuide();

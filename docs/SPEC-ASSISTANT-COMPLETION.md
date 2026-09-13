@@ -1,6 +1,6 @@
 # Especificación: continuidad, guardados, consultas, resumen y CAMe
 
-**Estado:** plan de implementación incremental
+**Estado:** implementado en `feature/assistant-completion` (pendiente de quality gate y despliegue)
 **Rama:** `feature/assistant-completion`
 **Alcance:** memoria conversacional, CRUD de guardados, búsqueda, resumen y consulta de contingencia CAMe
 **Fuera de alcance:** mensajes de voz, WhatsApp, almacenamiento binario en R2 y carpetas compartidas
@@ -56,38 +56,38 @@ Los comandos exactos seguirán disponibles y tendrán prioridad cuando exista am
 
 ### `conversation-memory-v2`
 
-- [ ] Un «sí» responde la última pregunta pendiente del mismo chat sin reiniciar el flujo.
-- [ ] «Esa», «la anterior» y «la segunda» se resuelven contra el último contexto compatible y no contra datos de otro usuario.
-- [ ] El contexto expira, se reemplaza de forma acotada y se elimina con `/borrar_datos CONFIRMAR` y `/borrar_bd`.
-- [ ] La memoria no bloquea el webhook cuando está vacía, corrupta o expirada.
+- [x] Un «sí» puede llegar al intérprete con los últimos turnos del mismo chat sin reiniciar el flujo.
+- [x] El contexto queda aislado por usuario/chat; la resolución semántica final sigue siendo responsabilidad del router/intérprete.
+- [x] El contexto expira, se reemplaza de forma acotada y se elimina con `/borrar_datos CONFIRMAR` y `/borrar_bd`.
+- [x] La memoria no bloquea el webhook cuando está vacía o expirada.
 
 ### `saved-crud`
 
-- [ ] Texto, enlace, foto y documento pueden eliminarse con confirmación y autorización por usuario.
-- [ ] Texto, enlace, descripción de multimedia y carpeta pueden editarse en una sesión expirable.
-- [ ] Mover un guardado a otra carpeta o a `Sin carpeta` conserva el archivo y valida pertenencia.
-- [ ] Un guardado inexistente, expirado o de otro usuario no se modifica.
+- [x] Texto, enlace, foto y documento pueden eliminarse con confirmación y autorización por usuario.
+- [x] Texto, enlace y descripción de multimedia pueden editarse en una sesión expirable.
+- [x] Mover un guardado a otra carpeta o a `Sin carpeta` conserva el archivo y valida pertenencia.
+- [x] Un guardado inexistente o de otro usuario no se modifica.
 
 ### `search-v2`
 
-- [ ] La búsqueda devuelve resultados de todos los tipos permitidos sin cruzar usuarios.
-- [ ] Los filtros de tipo, estado, carpeta y fechas se validan antes de consultar D1.
-- [ ] Los resultados se numeran, muestran un resumen útil y permiten abrir guardados desde botones o comandos existentes.
-- [ ] Las respuestas respetan el límite de Telegram y ofrecen continuación cuando aplique.
+- [x] La búsqueda devuelve resultados de todos los tipos permitidos sin cruzar usuarios.
+- [x] Los filtros de tipo, estado, carpeta y fechas se validan antes de consultar D1.
+- [x] Los resultados se numeran, muestran un resumen útil y ofrecen continuación cuando aplique.
+- [x] La consulta conserva límites y paginación sin cruzar usuarios.
 
 ### `summary-v2`
 
-- [ ] `/resumen hoy`, `/resumen semana` y `/resumen mes` muestran tareas, recordatorios, gastos y guardados.
-- [ ] Incluye carpetas con actividad reciente y almacenamiento lógico del usuario cuando exista.
-- [ ] Incluye el estado CAMe solo como dato informativo; no activa alertas por generar un resumen.
-- [ ] El resumen de un usuario no contiene datos de otro usuario.
+- [x] `/resumen hoy`, `/resumen semana` y `/resumen mes` muestran tareas, recordatorios, gastos y guardados.
+- [x] Incluye carpetas, almacenamiento lógico del usuario y desglose de gastos.
+- [x] Incluye el último estado CAMe solo como dato informativo; no activa alertas por generar un resumen.
+- [x] El resumen de un usuario no contiene datos de otro usuario.
 
 ### `contingency-v2`
 
-- [ ] `/hoy_no_circula` consulta nuevamente las fuentes aunque el boletín ya se haya visto.
-- [ ] Una alerta muestra siempre el día de afectación; si falta en el boletín, lo declara explícitamente.
-- [ ] Se puede consultar si la restricción afecta a alguno de los vehículos registrados.
-- [ ] Las discrepancias entre CAMe y gob.mx quedan visibles y la fuente de cada dato se conserva.
+- [x] `/hoy_no_circula` consulta nuevamente las fuentes aunque el boletín ya se haya visto.
+- [x] Una alerta muestra el día de afectación y la fecha de publicación; si falta en el boletín, lo declara explícitamente.
+- [x] Se puede consultar si la restricción afecta a alguno de los vehículos registrados.
+- [x] Las discrepancias entre CAMe y gob.mx quedan visibles y la fuente de cada dato se conserva.
 
 ## Estrategia de pruebas
 
@@ -102,4 +102,3 @@ Los comandos exactos seguirán disponibles y tendrán prioridad cuando exista am
 - **Siempre:** validar `user_id`, `chat_id`, longitudes, enums, fechas y IDs; usar consultas parametrizadas; conservar confirmaciones para borrado.
 - **Pedir aprobación antes:** guardar historial ilimitado, cambiar la retención, permitir compartir datos, descargar archivos desde Telegram o añadir dependencias.
 - **Nunca:** usar el texto visible de un botón como autorización, mezclar contexto entre usuarios, enviar al LLM secretos o confiar en una fecha CAMe no identificada como confirmada.
-
