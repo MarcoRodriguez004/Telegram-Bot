@@ -108,6 +108,11 @@ import type {
   PendingConfirmationContext,
   PendingListContext,
 } from "./modules/conversation/repository";
+import {
+  getConversationHistory,
+  saveConversationTurn,
+} from "./modules/conversation/history";
+import type { ConversationTurn } from "./modules/conversation/history";
 import { buildFolderConflictReply } from "./modules/notes/folder-conflict";
 import { parseIntent } from "./router/parser";
 import type { Intent } from "./router/intent";
@@ -304,22 +309,47 @@ export async function handleRequest(
       return new Response(null, { status: 200 });
     }
 
+    const telegramUserId = update.message.from?.id;
+    if (telegramUserId === undefined) return new Response(null, { status: 200 });
+    const userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
+      telegramUserId,
+      telegramChatId: update.message.chat.id,
+      timezone: env.APP_TIMEZONE,
+      currency: env.DEFAULT_CURRENCY,
+    });
+    const conversationHistory = await getConversationHistory(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: update.message.chat.id,
+    });
+
     let reply: Reply | null;
     if (text.startsWith("/")) {
-      reply = await getReply(text, update, env, telegramFetch, aiFetch);
+      reply = await getReply(text, update, env, telegramFetch, aiFetch, conversationHistory);
     } else {
-      const telegramUserId = update.message.from?.id;
-      if (telegramUserId === undefined) return new Response(null, { status: 200 });
-      const userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
-        telegramUserId,
-        telegramChatId: update.message.chat.id,
-        timezone: env.APP_TIMEZONE,
-        currency: env.DEFAULT_CURRENCY,
-      });
       const editReply = await handleEditInput(text, userId, update.message.chat.id, env);
-      reply = editReply ?? await getReply(text, update, env, telegramFetch, aiFetch);
+      reply = editReply ?? await getReply(text, update, env, telegramFetch, aiFetch, conversationHistory);
     }
     if (reply !== null) await sendBotReply(env, update.message.chat.id, reply, telegramFetch);
+    const userStillExists = await env.PERSONAL_ASSISTANT_DB.prepare(
+      "SELECT id FROM users WHERE id = ?",
+    ).bind(userId).first<{ id: number }>();
+    if (!text.startsWith("/") && userStillExists) {
+      await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        chatId: update.message.chat.id,
+        role: "user",
+        content: text,
+      });
+      const assistantText = typeof reply === "string" ? reply : reply?.text;
+      if (assistantText) {
+        await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, {
+          userId,
+          chatId: update.message.chat.id,
+          role: "assistant",
+          content: assistantText,
+        });
+      }
+    }
     if (getCommandToken(text) === "/start") await configureTelegramCommands(env, telegramFetch);
     return new Response(null, { status: 200 });
   } catch (error) {
@@ -339,6 +369,7 @@ async function getReply(
   env: Env,
   telegramFetch: typeof fetch,
   aiFetch: typeof fetch,
+  conversationHistory: ReadonlyArray<ConversationTurn> = [],
 ): Promise<Reply | null> {
   const globalResetAction = parseGlobalResetAction(text);
   if (globalResetAction) return handleGlobalResetAction(globalResetAction, update, env);
@@ -455,6 +486,7 @@ async function getReply(
       model: env.OPENAI_MODEL,
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
+      conversationHistory,
       fetcher: aiFetch,
       onFailure: (failure) => reportOperationalFailure(env.PERSONAL_ASSISTANT_DB, env, {
         component: "openai",

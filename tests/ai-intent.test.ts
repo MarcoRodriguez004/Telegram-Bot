@@ -126,6 +126,27 @@ describe("interpretMessage", () => {
     });
   });
 
+  it("sends recent conversation turns when interpreting a follow-up", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    await interpretMessage("sí", {
+      apiKey: "test-key",
+      conversationHistory: [
+        { role: "user", content: "¿Quieres consultar mis tareas?" },
+        { role: "assistant", content: "¿Qué estado quieres consultar?" },
+      ],
+      fetcher: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return openAiResponse(candidate({ action: "list_tasks", filter: "pending", message: null }));
+      },
+    });
+
+    expect(requestBody?.input).toEqual([
+      { role: "user", content: "¿Quieres consultar mis tareas?" },
+      { role: "assistant", content: "¿Qué estado quieres consultar?" },
+      { role: "user", content: "sí" },
+    ]);
+  });
+
   it("keeps a suggested interpretation when the model asks for confirmation", async () => {
     const userMessage = "Necesito consultar una lista";
     const suggestedText = "mis tareas";

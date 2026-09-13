@@ -142,6 +142,14 @@ WITH owned_bytes AS (
       + length(CAST(COALESCE(expires_at, '') AS BLOB)) AS logical_bytes
   FROM conversation_confirmations
   UNION ALL
+  SELECT user_id,
+    64 + 24
+      + length(CAST(COALESCE(role, '') AS BLOB))
+      + length(CAST(COALESCE(content, '') AS BLOB))
+      + length(CAST(COALESCE(created_at, '') AS BLOB))
+      + length(CAST(COALESCE(expires_at, '') AS BLOB)) AS logical_bytes
+  FROM conversation_history
+  UNION ALL
   SELECT users.id,
     40 + 16 + length(CAST(COALESCE(processed_updates.processed_at, '') AS BLOB)) AS logical_bytes
   FROM processed_updates
