@@ -105,7 +105,7 @@ describe("contingency monitor", () => {
         bulletin: {
           active: true,
           phase: "I",
-          affectedDate: "2026-09-13",
+          affectedDate: "2026-09-14",
           restriction: {
             holograms: ["0", "00"],
             plateLastDigits: [7, 8],
@@ -124,7 +124,7 @@ describe("contingency monitor", () => {
         bulletin: {
           active: false,
           phase: "I",
-          affectedDate: "2026-09-13",
+          affectedDate: "2026-09-14",
           restriction: null,
           sourceUrl: "https://aire.cdmx.gob.mx/comunicado44.pdf",
           publishedAt: "2026-09-13T21:00:00.000Z",
@@ -146,6 +146,7 @@ describe("contingency monitor", () => {
     expect(messages).toHaveLength(2);
     expect(messages[1]?.chatId).toBe(1001);
     expect(messages[1]?.text).toContain("se suspendió la Fase I de contingencia ambiental");
+    expect(messages[1]?.text).toContain("Día de suspensión: domingo, 13 de septiembre de 2026.");
     expect(messages[1]?.text).toContain("Boletín publicado:");
   });
 });
