@@ -39,7 +39,7 @@ const SUMMARY_COMMAND = /^(?:\/)?resumen(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const STATUS_COMMAND = /^(?:\/)?estado(?:@[a-z0-9_]+)?$/iu;
 const SEARCH_COMMAND = /^(?:\/)?(?:buscar|busca)(?:@[a-z0-9_]+)?(?:\s+(.+))?$/iu;
 const EXPORT_COMMAND = /^(?:\/)?(?:exportar|exporta)(?:@[a-z0-9_]+)?$/iu;
-const VEHICLE_REGISTER = /^(?:\/veh[ií]culo(?:@[a-z0-9_]+)?|registra(?:r)?\s+(?:mi\s+)?veh[ií]culo|agrega(?:r)?\s+(?:mi\s+)?(?:veh[ií]culo|coche))(?:(?:\s+|[,;:])|$)(.*)$/iu;
+const VEHICLE_REGISTER = /^(?:\/veh[ií]culo(?:@[a-z0-9_]+)?|registra(?:r)?\s+(?:(?:mi|este|el|un)\s+)?veh[ií]culo|agrega(?:r)?\s+(?:(?:mi|este|el|un)\s+)?(?:veh[ií]culo|coche))(?:(?:\s+|[,;:])|$)(.*)$/iu;
 const VEHICLE_LIST = /^(?:\/veh[ií]culos?|(?:mis|cu[aá]les son mis)\s+(?:veh[ií]culos?|coches?))(?:@[a-z0-9_]+)?[?!.]*$/iu;
 const VEHICLE_REMOVE = /^(?:\/elimina(?:r)?_veh[ií]culo|elimina(?:r)?\s+(?:mi\s+)?veh[ií]culo)\s+(\d+)$/iu;
 const CONTINGENCY_SHOW = /^(?:\/contingencia(?:@[a-z0-9_]+)?|(?:configura|configurar|mu[eé]strame|dime)\s+(?:mis\s+)?avisos\s+de\s+contingencia)[?!.]*$/iu;
@@ -340,7 +340,7 @@ function parseCreateFolder(name: string): Intent {
 
 function parseVehicleRegistration(payload: string): Intent {
   const normalized = payload.trim().replace(/^[,;:\s]+/u, "").replace(/\s+/g, " ");
-  const match = /^(?:(.+?)\s+)?holograma\s*(00|0)\s*(?:,?\s*y\s*)?(?:placa|placas)(?:\s+(?:terminad[ao]s?|final(?:es)?))?(?:\s+(?:en|con))?\s*([0-9])$/iu.exec(normalized);
+  const match = /^(?:(.+?)\s+)?holograma\s*(00|0)\s*(?:(?:,?\s+y\s*)?(?:placa|placas)(?:\s+(?:terminad[ao]s?|final(?:es)?))?(?:\s+(?:en|con))?|(?:,?\s+(?:con\s+)?terminaci[oó]n(?:\s+de\s+placa)?))\s*([0-9])$/iu.exec(normalized);
   if (!match) return { action: "unknown", reason: "invalid_vehicle_details" };
   const label = match[1]?.trim().replace(/^[,;]+|[,;]+$/g, "").trim();
   return {

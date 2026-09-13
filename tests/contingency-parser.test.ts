@@ -19,6 +19,15 @@ describe("contingency intents", () => {
     });
   });
 
+  it("parses the natural wording used to register a named vehicle", () => {
+    expect(parseIntent("Registra este vehículo Focus holograma 0 con terminación 5")).toEqual({
+      action: "register_vehicle",
+      label: "Focus",
+      hologram: "0",
+      plateLastDigit: 5,
+    });
+  });
+
   it("parses both contingency notification modes", () => {
     expect(parseIntent("Avísame siempre cuando haya fase 1")).toEqual({
       action: "configure_contingency",
