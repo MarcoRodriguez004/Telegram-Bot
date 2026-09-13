@@ -87,3 +87,13 @@ Checkpoint:
 
 - [x] Cada corte tiene pruebas enfocadas y no rompe el flujo actual.
 - [x] `npm test`, lint, typecheck y build pasan antes de desplegar.
+
+## Registro de avances — 2026-09-13
+
+- [x] Añadir botones dinámicos para editar y eliminar notas y enlaces guardados; eliminar requiere confirmación y las operaciones quedan aisladas por usuario.
+- [x] Mantener los archivos multimedia como guardados eliminables, pero no editables.
+- [x] Activar por defecto los avisos de contingencia para todos los usuarios cuando CAMe publique Fase I con restricciones para hologramas 0 y 00.
+- [x] Eliminar el filtro temporal exclusivo del administrador; se conserva la opción individual de apagar avisos o recibir solo los que afecten a un vehículo registrado.
+- [x] Añadir la migración `0020_default_contingency_alerts.sql` para activar el modo `always` a usuarios existentes sin configuración y establecerlo para usuarios nuevos.
+- [x] Validar con 53 archivos y 248 pruebas, typecheck, lint y build de Wrangler.
+- [x] Desplegar el commit `aae0aaf` en `Dev` y `main`; CI pasó en ambas ramas y `/health` respondió correctamente.
