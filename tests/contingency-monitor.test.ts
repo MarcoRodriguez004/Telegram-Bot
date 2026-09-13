@@ -88,5 +88,6 @@ describe("contingency monitor", () => {
     expect(messages.map((message) => message.chatId)).toEqual([1001, 2002]);
     expect(messages[0]?.text).toContain("Se activó la Fase I");
     expect(messages[0]?.text).toContain("Día de afectación: domingo, 26 de abril de 2026.");
+    expect(messages[0]?.text).toContain("Boletín publicado:");
   });
 });

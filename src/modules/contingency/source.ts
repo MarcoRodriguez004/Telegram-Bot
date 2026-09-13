@@ -118,6 +118,15 @@ function parseAffectedDate(text: string, publishedAt: string | null): string | n
     return year === null ? null : toIsoDate(day, month, year);
   }
 
+  const weekdayDateMatch = new RegExp(
+    `\\b(?:el\\s+)?(?:${weekdayNames})\\s+(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+(?:de|del)\\s+(\\d{4}))?`,
+    "iu",
+  ).exec(text);
+  if (weekdayDateMatch) {
+    const year = weekdayDateMatch[3] ? Number(weekdayDateMatch[3]) : inferAffectedYear(undefined, Number(weekdayDateMatch[1]), monthNumber(weekdayDateMatch[2]), publishedAt);
+    return year === null ? null : toIsoDate(Number(weekdayDateMatch[1]), monthNumber(weekdayDateMatch[2]), year);
+  }
+
   const explicitMatch = new RegExp(
     `\\b(?:el\\s+)?d[ií]a\\s+(\\d{1,2})\\s+de\\s+(${monthNames})(?:\\s+(?:de|del)\\s+(\\d{4}))?`,
     "iu",

@@ -55,6 +55,16 @@ describe("official contingency bulletin parsing", () => {
     expect(bulletin).toMatchObject({ affectedDate: "2026-09-13" });
   });
 
+  it("extracts an affected day written with only a weekday and date", () => {
+    const bulletin = parseContingencyText(
+      "SE ACTIVA LA FASE I DE CONTINGENCIA AMBIENTAL. El jueves 17 de septiembre deberán suspender su circulación los vehículos con holograma 0 y 00.",
+      "https://aire.cdmx.gob.mx/comunicado.pdf",
+      "2026-09-16T20:00:00.000Z",
+    );
+
+    expect(bulletin).toMatchObject({ affectedDate: "2026-09-17" });
+  });
+
   it("uses the publication date for an explicit day of today", () => {
     const bulletin = parseContingencyText(
       "SE ACTIVA LA FASE I de contingencia ambiental. Las medidas aplican el día de hoy.",
