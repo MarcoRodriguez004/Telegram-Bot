@@ -11,6 +11,9 @@ import {
   buildContingencyModeKeyboard,
   buildContingencyVehiclesKeyboard,
   buildSavedNoteKeyboard,
+  buildSavedNoteActionKeyboard,
+  buildSavedNoteDeleteKeyboard,
+  buildSavedNoteEditCancelKeyboard,
   parseCallbackData,
 } from "../src/telegram/keyboards";
 
@@ -156,5 +159,16 @@ describe("task and reminder inline keyboards", () => {
     expect(parseCallbackData(keyboard.inline_keyboard[0][2].callback_data)).toEqual({
       kind: "saved_note", id: 13,
     });
+  });
+
+  it("builds edit and delete controls for saved notes", () => {
+    const keyboard = buildSavedNoteActionKeyboard(7, true);
+    expect(keyboard.inline_keyboard.flat().map((button) => button.text)).toEqual(["✏️ Editar", "🗑️ Eliminar"]);
+    expect(parseCallbackData(keyboard.inline_keyboard[0][0].callback_data)).toEqual({ kind: "saved_note_edit", id: 7 });
+    expect(parseCallbackData(keyboard.inline_keyboard[0][1].callback_data)).toEqual({ kind: "saved_note_delete", id: 7 });
+    expect(buildSavedNoteDeleteKeyboard(7).inline_keyboard[0].map((button) => button.text)).toEqual(["Sí, eliminar", "No, conservar"]);
+    expect(parseCallbackData("pa:s:y:7")).toEqual({ kind: "saved_note_delete_decision", id: 7, confirmed: true });
+    expect(parseCallbackData("pa:s:n:7")).toEqual({ kind: "saved_note_delete_decision", id: 7, confirmed: false });
+    expect(parseCallbackData(buildSavedNoteEditCancelKeyboard().inline_keyboard[0][0].callback_data)).toEqual({ kind: "saved_note_edit_cancel" });
   });
 });

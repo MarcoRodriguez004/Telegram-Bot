@@ -26,6 +26,10 @@ export type CallbackAction =
   | { kind: "notification_global_set"; scope: NotificationScope; intervalMinutes: NotificationIntervalMinutes | null }
   | { kind: "contingency_mode"; mode: "always" | "vehicle" | null }
   | { kind: "contingency_remove_vehicle"; vehicleId: number }
+  | { kind: "saved_note_edit"; id: number }
+  | { kind: "saved_note_delete"; id: number }
+  | { kind: "saved_note_delete_decision"; id: number; confirmed: boolean }
+  | { kind: "saved_note_edit_cancel" }
   | { kind: "edit_cancel"; resource: QueryResource }
   | { kind: "saved_note"; id: number }
   | FolderCallbackAction;
@@ -141,6 +145,26 @@ export function buildSavedNoteKeyboard(notes: SavedNote[]): InlineKeyboardMarkup
     else row.push({ text: `${index + 1}.-`, callback_data: `pa:s:i:${note.id}` });
   });
   return { inline_keyboard: rows };
+}
+
+export function buildSavedNoteActionKeyboard(noteId: number, editable: boolean): InlineKeyboardMarkup {
+  const row: InlineKeyboardButton[] = [];
+  if (editable) row.push({ text: "✏️ Editar", callback_data: `pa:s:e:${noteId}` });
+  row.push({ text: "🗑️ Eliminar", callback_data: `pa:s:d:${noteId}` });
+  return { inline_keyboard: [row] };
+}
+
+export function buildSavedNoteDeleteKeyboard(noteId: number): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [[
+      { text: "Sí, eliminar", callback_data: `pa:s:y:${noteId}` },
+      { text: "No, conservar", callback_data: `pa:s:n:${noteId}` },
+    ]],
+  };
+}
+
+export function buildSavedNoteEditCancelKeyboard(): InlineKeyboardMarkup {
+  return { inline_keyboard: [[{ text: "Cancelar edición", callback_data: "pa:s:x" }]] };
 }
 
 export function buildNotificationChoiceKeyboard(resource: QueryResource, id: number): InlineKeyboardMarkup {
@@ -272,6 +296,16 @@ export function parseCallbackData(data: string | undefined): CallbackAction | nu
   if (parts[1] === "s" && parts[2] === "i" && parts.length === 4) {
     const id = Number(parts[3]);
     return Number.isSafeInteger(id) && id > 0 ? { kind: "saved_note", id } : null;
+  }
+  if (parts[1] === "s" && parts[2] === "x" && parts.length === 3) {
+    return { kind: "saved_note_edit_cancel" };
+  }
+  if (parts[1] === "s" && ["e", "d", "y", "n"].includes(parts[2]) && parts.length === 4) {
+    const id = Number(parts[3]);
+    if (!Number.isSafeInteger(id) || id < 1) return null;
+    if (parts[2] === "e") return { kind: "saved_note_edit", id };
+    if (parts[2] === "d") return { kind: "saved_note_delete", id };
+    return { kind: "saved_note_delete_decision", id, confirmed: parts[2] === "y" };
   }
   if (parts[1] === "f" && parts[2] === "i" && parts.length === 5) {
     const noteKind = savedFolderKindFromCode(parts[3]);

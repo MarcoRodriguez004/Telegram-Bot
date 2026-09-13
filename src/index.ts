@@ -47,6 +47,7 @@ import type { ExpenseHistoryResult } from "./modules/expenses/repository";
 import {
   createFolder,
   createNote,
+  deleteNote,
   deleteFolder,
   findSimilarFolder,
   getFolderById,
@@ -57,6 +58,7 @@ import {
   listNotes,
   moveNoteToFolder,
   renameFolder,
+  updateNote,
 } from "./modules/notes/repository";
 import type { SavedNote, SavedNoteKind } from "./modules/notes/repository";
 import { saveMedia } from "./modules/notes/media";
@@ -116,6 +118,9 @@ import {
   buildNotificationChoiceKeyboard,
   buildContingencyModeKeyboard,
   buildContingencyVehiclesKeyboard,
+  buildSavedNoteActionKeyboard,
+  buildSavedNoteDeleteKeyboard,
+  buildSavedNoteEditCancelKeyboard,
   buildSavedNoteKeyboard,
   buildStopConfirmationKeyboard,
   parseCallbackData,
@@ -726,13 +731,20 @@ async function getReply(
       if (note.file_kind && note.file_id) {
         try {
           await sendAttachment(env, message.chat.id, { kind: note.file_kind, fileId: note.file_id }, note.content, telegramFetch);
+          await sendBotReply(env, message.chat.id, {
+            text: "Puedes gestionar este guardado:",
+            replyMarkup: buildSavedNoteActionKeyboard(note.id, false),
+          }, telegramFetch);
           return null;
         } catch {
           console.error("Saved attachment delivery failed");
           return `No pude enviar el archivo. Sigue guardado; intenta de nuevo con /guardado_${note.id}.`;
         }
       }
-      return note.url && note.content !== note.url ? `${note.content}\n${note.url}` : note.content;
+      return {
+        text: formatSavedNoteContent(note),
+        replyMarkup: buildSavedNoteActionKeyboard(note.id, !note.file_kind),
+      };
     }
     if (intent.action === "summary") {
       const dateRange = getSummaryDateRange(intent.range, new Date(), env.APP_TIMEZONE);
@@ -970,6 +982,64 @@ async function handleCallbackQuery(
     return;
   }
 
+  if (action.kind === "saved_note_edit_cancel") {
+    await clearEditSession(env.PERSONAL_ASSISTANT_DB, userId);
+    await sendMessage(env, source.chat.id, "Edición de la nota cancelada.", telegramFetch);
+    return;
+  }
+
+  if (action.kind === "saved_note_edit") {
+    const note = await getNote(env.PERSONAL_ASSISTANT_DB, userId, action.id);
+    if (!note) {
+      await sendMessage(env, source.chat.id, "No encontré ese guardado o ya no está disponible.", telegramFetch);
+      return;
+    }
+    if (note.file_kind) {
+      await sendMessage(env, source.chat.id, "Los archivos no se pueden editar; solo puedes eliminarlos.", telegramFetch);
+      return;
+    }
+    await startEditSession(env.PERSONAL_ASSISTANT_DB, {
+      userId,
+      chatId: source.chat.id,
+      resourceType: "note",
+      resourceId: action.id,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    });
+    await sendBotReply(env, source.chat.id, {
+      text: `✏️ Escribe el nuevo contenido de la nota.\n\nContenido actual:\n${formatSavedNoteContent(note)}`,
+      replyMarkup: buildSavedNoteEditCancelKeyboard(),
+    }, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "saved_note_delete") {
+    const note = await getNote(env.PERSONAL_ASSISTANT_DB, userId, action.id);
+    if (!note) {
+      await sendMessage(env, source.chat.id, "No encontré ese guardado o ya no está disponible.", telegramFetch);
+      return;
+    }
+    await sendBotReply(env, source.chat.id, {
+      text: `⚠️ ¿Confirmas eliminar este guardado?\n\n${formatSavedNoteContent(note)}`,
+      replyMarkup: buildSavedNoteDeleteKeyboard(action.id),
+    }, telegramFetch);
+    return;
+  }
+
+  if (action.kind === "saved_note_delete_decision") {
+    if (!action.confirmed) {
+      await sendMessage(env, source.chat.id, "El guardado se conservará.", telegramFetch);
+      return;
+    }
+    const deleted = await deleteNote(env.PERSONAL_ASSISTANT_DB, { userId, noteId: action.id });
+    await sendMessage(
+      env,
+      source.chat.id,
+      deleted ? "🗑️ Guardado eliminado." : "Ese guardado ya no está disponible.",
+      telegramFetch,
+    );
+    return;
+  }
+
   if (action.kind === "notification_scope") {
     await sendBotReply(env, source.chat.id, {
       text: `Selecciona el intervalo para ${notificationScopeLabel(action.scope)}. Esto afecta los elementos existentes pendientes y los nuevos.`,
@@ -1080,12 +1150,19 @@ async function handleCallbackQuery(
     if (note.file_kind && note.file_id) {
       try {
         await sendAttachment(env, source.chat.id, { kind: note.file_kind, fileId: note.file_id }, note.content, telegramFetch);
+        await sendBotReply(env, source.chat.id, {
+          text: "Puedes gestionar este guardado:",
+          replyMarkup: buildSavedNoteActionKeyboard(note.id, false),
+        }, telegramFetch);
       } catch {
         await sendMessage(env, source.chat.id, `No pude enviar el archivo. Sigue guardado; intenta de nuevo con /guardado_${note.id}.`, telegramFetch);
       }
       return;
     }
-    await sendMessage(env, source.chat.id, note.url && note.content !== note.url ? `${note.content}\n${note.url}` : note.content, telegramFetch);
+    await sendBotReply(env, source.chat.id, {
+      text: formatSavedNoteContent(note),
+      replyMarkup: buildSavedNoteActionKeyboard(note.id, !note.file_kind),
+    }, telegramFetch);
     return;
   }
 
@@ -1287,6 +1364,30 @@ async function handleEditInput(text: string, userId: number, chatId: number, env
   if (/^(?:cancelar|cancelar\s+edici[oó]n|salir)$/iu.test(text.trim())) {
     await clearEditSession(env.PERSONAL_ASSISTANT_DB, userId);
     return "Edición cancelada.";
+  }
+
+  if (session.resourceType === "note") {
+    const intent = parseIntent(`nota ${text}`, {
+      timezone: env.APP_TIMEZONE,
+      currency: env.DEFAULT_CURRENCY,
+    });
+    if (intent.action !== "save_note") {
+      return "Escribe el nuevo contenido de la nota. Puede ser texto o un enlace http(s).";
+    }
+    try {
+      const changed = await updateNote(env.PERSONAL_ASSISTANT_DB, {
+        userId,
+        noteId: session.resourceId,
+        content: intent.content,
+        url: intent.url ?? null,
+      });
+      await clearEditSession(env.PERSONAL_ASSISTANT_DB, userId);
+      if (!changed) return "La nota ya no está disponible.";
+      const updated = await getNote(env.PERSONAL_ASSISTANT_DB, userId, session.resourceId);
+      return updated ? `✅ Nota actualizada\n\n${formatSavedNoteContent(updated)}` : "✅ Nota actualizada.";
+    } catch {
+      return "No pude actualizar la nota. Usa un contenido de hasta 1,000 caracteres y enlaces http(s).";
+    }
   }
 
   if (session.resourceType === "task") {
@@ -1692,6 +1793,10 @@ function formatSavedNotesReply(
   }
   if (nextBeforeId) text.push(`Más: /guardados_${nextBeforeId}`);
   return text.join("\n");
+}
+
+function formatSavedNoteContent(note: Pick<SavedNote, "content" | "url">): string {
+  return note.url && note.content !== note.url ? `${note.content}\n${note.url}` : note.content;
 }
 
 function savedFolderBlockLabel(kind: SavedFolderKind): string {

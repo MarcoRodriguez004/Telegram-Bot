@@ -84,7 +84,7 @@ describe("saved folders webhook flow", () => {
     expect(photoSelector?.callback_data).toBe("pa:s:i:1");
 
     await callback(photoSelector!.callback_data);
-    expect(sent.at(-2)).toMatchObject({ method: "sendPhoto", body: { photo: "photo_large", caption: "logo" } });
+    expect(sent.filter((item) => item.method === "sendPhoto").at(-1)).toMatchObject({ method: "sendPhoto", body: { photo: "photo_large", caption: "logo" } });
   });
 
   it("shows photo folders before photos for the accented natural-language query", async () => {

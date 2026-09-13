@@ -255,6 +255,41 @@ export async function getNote(db: D1Database, userId: number, noteId: number): P
   ).bind(userId, noteId).first<SavedNote>();
 }
 
+export async function updateNote(
+  db: D1Database,
+  input: { userId: number; noteId: number; content: string; url?: string | null },
+): Promise<boolean> {
+  assertUserId(input.userId);
+  assertNoteId(input.noteId);
+  const content = normalizeNoteContent(input.content);
+  const normalizedUrl = input.url === undefined
+    ? undefined
+    : input.url === null
+      ? null
+      : normalizeHttpUrl(input.url);
+  if (input.url !== undefined && input.url !== null && normalizedUrl === null) {
+    throw new Error("Note URL is invalid");
+  }
+
+  const result = input.url === undefined
+    ? await db.prepare("UPDATE notes SET content = ? WHERE user_id = ? AND id = ?")
+      .bind(content, input.userId, input.noteId).run()
+    : await db.prepare("UPDATE notes SET content = ?, url = ? WHERE user_id = ? AND id = ?")
+      .bind(content, normalizedUrl, input.userId, input.noteId).run();
+  return result.meta.changes === 1;
+}
+
+export async function deleteNote(
+  db: D1Database,
+  input: { userId: number; noteId: number },
+): Promise<boolean> {
+  assertUserId(input.userId);
+  assertNoteId(input.noteId);
+  const result = await db.prepare("DELETE FROM notes WHERE user_id = ? AND id = ?")
+    .bind(input.userId, input.noteId).run();
+  return result.meta.changes === 1;
+}
+
 export interface CreateNoteInput {
   userId: number;
   content: string;
@@ -266,14 +301,7 @@ export interface CreateNoteInput {
 
 export async function createNote(db: D1Database, input: CreateNoteInput): Promise<number> {
   assertUserId(input.userId);
-
-  const content = input.content.trim().replace(/\s+/g, " ");
-  if (!content) {
-    throw new Error("Note content is required");
-  }
-  if (content.length > 1_000) {
-    throw new Error("Note content is too long");
-  }
+  const content = normalizeNoteContent(input.content);
 
   const url = input.url === undefined ? null : normalizeHttpUrl(input.url);
   if (input.url !== undefined && url === null) {
@@ -313,6 +341,17 @@ function assertSavedNoteKind(kind: string): asserts kind is SavedNoteKind {
   if (kind !== "all" && kind !== "photos" && kind !== "documents" && kind !== "links") {
     throw new Error("Saved note kind is invalid");
   }
+}
+
+function assertNoteId(noteId: number): void {
+  if (!Number.isSafeInteger(noteId) || noteId < 1) throw new Error("Note id is invalid");
+}
+
+function normalizeNoteContent(value: string): string {
+  const content = value.trim().replace(/\s+/g, " ");
+  if (!content) throw new Error("Note content is required");
+  if (content.length > 1_000) throw new Error("Note content is too long");
+  return content;
 }
 
 function savedNoteKindCondition(kind: SavedNoteKind, alias?: string): string {

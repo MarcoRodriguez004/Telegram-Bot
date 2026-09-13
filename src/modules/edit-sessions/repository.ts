@@ -1,4 +1,4 @@
-export type EditResourceType = "task" | "reminder";
+export type EditResourceType = "task" | "reminder" | "note";
 
 export interface EditSession {
   userId: number;
@@ -16,7 +16,7 @@ export async function startEditSession(db: D1Database, input: StartEditSessionIn
   validateUserId(input.userId);
   validateRecordId(input.resourceId);
   if (!Number.isInteger(input.chatId)) throw new Error("Chat id is invalid");
-  if (input.resourceType !== "task" && input.resourceType !== "reminder") throw new Error("Edit resource is invalid");
+  if (input.resourceType !== "task" && input.resourceType !== "reminder" && input.resourceType !== "note") throw new Error("Edit resource is invalid");
   if (Number.isNaN(new Date(input.expiresAt).getTime())) throw new Error("Edit expiry is invalid");
 
   await db.prepare(

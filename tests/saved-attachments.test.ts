@@ -41,7 +41,19 @@ function setup() {
       } }),
     }), env, telegramFetch);
   }
-  return { ...database, env, send, sent, delivery };
+  async function click(data: string, updateId = nextUpdate++) {
+    return handleRequest(new Request("https://bot.test/telegram/webhook", {
+      method: "POST",
+      headers: { "X-Telegram-Bot-Api-Secret-Token": env.TELEGRAM_WEBHOOK_SECRET },
+      body: JSON.stringify({ update_id: updateId, callback_query: {
+        id: `callback-${updateId}`,
+        from: { id: 42, is_bot: false },
+        message: { message_id: updateId, date: 1_757_000_000, chat: { id: 42, type: "private" } },
+        data,
+      } }),
+    }), env, telegramFetch);
+  }
+  return { ...database, env, send, click, sent, delivery };
 }
 
 describe("saved attachments", () => {
@@ -63,7 +75,7 @@ describe("saved attachments", () => {
     expect(sent.at(-1)?.body.text).toContain("recibo de luz");
     expect(sent.at(-1)?.body.text).toContain("/guardado_1");
     await send({ text: "/guardado_1" });
-    expect(sent.at(-1)).toMatchObject({ method: "sendDocument", body: {
+    expect(sent.filter((item) => item.method === "sendDocument").at(-1)).toMatchObject({ method: "sendDocument", body: {
       chat_id: 42, document: "document_pdf", caption: "recibo de luz",
     } });
   });
@@ -72,7 +84,7 @@ describe("saved attachments", () => {
     const { send, sent } = setup();
     await send({ photo, caption: "guardar recibo CFE" });
     await send({ text: "ver guardado 1" });
-    expect(sent.at(-1)).toMatchObject({ method: "sendPhoto", body: { photo: "photo_large", caption: "recibo CFE" } });
+    expect(sent.filter((item) => item.method === "sendPhoto").at(-1)).toMatchObject({ method: "sendPhoto", body: { photo: "photo_large", caption: "recibo CFE" } });
   });
 
   it("lists saved images from a natural-language request without mixing documents", async () => {
@@ -103,6 +115,21 @@ describe("saved attachments", () => {
     expect(sent.at(-1)?.body.text).toContain("https://example.com");
     await send({ text: "/guardado 1" });
     expect(sent.at(-1)?.body.text).toContain("póliza pendiente");
+  });
+
+  it("edits and deletes a saved text note from its action buttons", async () => {
+    const { send, click, sent, sqlite } = setup();
+    await send({ text: "nota póliza pendiente" });
+    await send({ text: "/guardado_1" });
+    expect((sent.at(-1)?.body.reply_markup as { inline_keyboard: Array<Array<{ text: string }>> }).inline_keyboard.flat().map((button) => button.text))
+      .toEqual(["✏️ Editar", "🗑️ Eliminar"]);
+    await click("pa:s:e:1");
+    await send({ text: "póliza renovada" });
+    expect(sqlite.prepare("SELECT content FROM notes WHERE id = 1").get()).toMatchObject({ content: "póliza renovada" });
+
+    await click("pa:s:d:1");
+    await click("pa:s:y:1");
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM notes WHERE id = 1").get()).toMatchObject({ count: 0 });
   });
 
   it("does not expose another user's saved file", async () => {
@@ -210,7 +237,7 @@ describe("saved attachments", () => {
       expect(JSON.stringify(errors.mock.calls)).not.toContain("test-token");
       delivery.fail = false;
       await send({ text: "/guardado_1" });
-      expect(sent.at(-1)?.method).toBe("sendDocument");
+      expect(sent.filter((item) => item.method === "sendDocument").at(-1)?.method).toBe("sendDocument");
     } finally {
       errors.mockRestore();
     }

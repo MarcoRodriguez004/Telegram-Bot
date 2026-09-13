@@ -36,4 +36,22 @@ describe("temporary edit sessions", () => {
 
     await expect(getActiveEditSession(db, 1, "2026-09-09T10:10:00.000Z")).resolves.toBeNull();
   });
+
+  it("supports editing a saved note", async () => {
+    const { db, sqlite } = createSqliteDb();
+    sqlite.exec("INSERT INTO users (id, telegram_user_id, telegram_chat_id, created_at) VALUES (1, 42, 42, '2026-09-09T10:00:00.000Z')");
+
+    await startEditSession(db, {
+      userId: 1,
+      chatId: 42,
+      resourceType: "note",
+      resourceId: 7,
+      expiresAt: "2026-09-09T10:15:00.000Z",
+    });
+
+    await expect(getActiveEditSession(db, 1, "2026-09-09T10:10:00.000Z")).resolves.toMatchObject({
+      resourceType: "note",
+      resourceId: 7,
+    });
+  });
 });

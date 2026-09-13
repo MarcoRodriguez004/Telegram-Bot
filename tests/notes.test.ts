@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createNote } from "../src/modules/notes/repository";
+import { ensureUser } from "../src/db/users";
+import { createNote, deleteNote, getNote, updateNote } from "../src/modules/notes/repository";
+import { createSqliteDb } from "./helpers/sqlite-db";
 
 function createDb() {
   const calls: Array<{ query: string; values: unknown[] }> = [];
@@ -46,5 +48,30 @@ describe("note repository", () => {
       "Note URL is invalid",
     );
     expect(calls).toHaveLength(0);
+  });
+
+  it("updates and deletes notes only for their owner", async () => {
+    const { db } = createSqliteDb();
+    const firstUser = await ensureUser(db, {
+      telegramUserId: 101,
+      telegramChatId: 1001,
+      timezone: "America/Mexico_City",
+      currency: "MXN",
+    });
+    const secondUser = await ensureUser(db, {
+      telegramUserId: 202,
+      telegramChatId: 2002,
+      timezone: "America/Mexico_City",
+      currency: "MXN",
+    });
+    const firstNoteId = await createNote(db, { userId: firstUser, content: "original" });
+    const secondNoteId = await createNote(db, { userId: secondUser, content: "privada" });
+
+    expect(await updateNote(db, { userId: secondUser, noteId: firstNoteId, content: "intrusa" })).toBe(false);
+    expect(await updateNote(db, { userId: firstUser, noteId: firstNoteId, content: "actualizada" })).toBe(true);
+    expect((await getNote(db, firstUser, firstNoteId))?.content).toBe("actualizada");
+    expect(await deleteNote(db, { userId: firstUser, noteId: secondNoteId })).toBe(false);
+    expect(await deleteNote(db, { userId: firstUser, noteId: firstNoteId })).toBe(true);
+    expect(await getNote(db, firstUser, firstNoteId)).toBeNull();
   });
 });
