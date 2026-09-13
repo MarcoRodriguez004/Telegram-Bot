@@ -13,6 +13,7 @@ interface TelegramApiResponse {
 const MAX_TELEGRAM_ATTEMPTS = 3;
 const MAX_RETRY_DELAY_MS = 2_000;
 const MAX_TELEGRAM_TEXT_LENGTH = 4_096;
+const MAX_IMPORT_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
 export interface InlineKeyboardButton {
   text: string;
@@ -83,6 +84,33 @@ export async function setMyCommands(
   }, telegramFetch);
 }
 
+export async function downloadTelegramDocument(
+  env: Env,
+  fileId: string,
+  telegramFetch: typeof fetch = fetch,
+): Promise<string> {
+  if (!isTelegramFileId(fileId)) throw new Error("Invalid Telegram file id");
+  const metadataResponse = await telegramFetch(
+    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`,
+  );
+  const metadata = await readTelegramFileMetadata(metadataResponse);
+  if (!metadata.filePath) throw new Error("Telegram file path is unavailable");
+
+  const fileResponse = await telegramFetch(
+    `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${metadata.filePath}`,
+  );
+  if (!fileResponse.ok) throw new Error(`Telegram file download failed with status ${fileResponse.status}`);
+  const contentLength = Number(fileResponse.headers.get("content-length"));
+  if (Number.isSafeInteger(contentLength) && contentLength > MAX_IMPORT_DOCUMENT_BYTES) {
+    throw new Error("Import document is too large");
+  }
+  const content = await fileResponse.text();
+  if (new TextEncoder().encode(content).byteLength > MAX_IMPORT_DOCUMENT_BYTES) {
+    throw new Error("Import document is too large");
+  }
+  return content;
+}
+
 export async function sendDocumentContent(
   env: Env,
   chatId: number,
@@ -150,6 +178,28 @@ async function readTelegramPayload(response: Response): Promise<TelegramApiRespo
   } catch {
     return {};
   }
+}
+
+async function readTelegramFileMetadata(response: Response): Promise<{ filePath: string | null }> {
+  if (!response.ok) throw new Error(`Telegram getFile failed with status ${response.status}`);
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("Telegram getFile response is invalid");
+  }
+  if (!isRecord(payload) || payload.ok !== true || !isRecord(payload.result) || typeof payload.result.file_path !== "string") {
+    throw new Error("Telegram file path is unavailable");
+  }
+  const filePath = payload.result.file_path;
+  if (!/^[a-zA-Z0-9_./-]{1,512}$/u.test(filePath) || filePath.includes("..")) {
+    throw new Error("Telegram file path is invalid");
+  }
+  return { filePath };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isRetryableTelegramFailure(status: number): boolean {

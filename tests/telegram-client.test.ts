@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sendDocumentContent, sendMessage } from "../src/telegram/client";
+import { downloadTelegramDocument, sendDocumentContent, sendMessage } from "../src/telegram/client";
 import type { Env } from "../src/types";
 
 const env = {
@@ -7,6 +7,22 @@ const env = {
 } as Env;
 
 describe("Telegram client", () => {
+  it("downloads a Telegram document after resolving its file path", async () => {
+    const urls: string[] = [];
+    const telegramFetch: typeof fetch = async (input) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("/getFile?")) return Response.json({ ok: true, result: { file_path: "documents/file_123.json" } });
+      return new Response("{\"exportedAt\":\"2026-09-10T16:00:00.000Z\"}", { status: 200 });
+    };
+
+    await expect(downloadTelegramDocument(env, "Ag123_file", telegramFetch)).resolves.toContain("exportedAt");
+    expect(urls).toEqual([
+      "https://api.telegram.org/bottest-token/getFile?file_id=Ag123_file",
+      "https://api.telegram.org/file/bottest-token/documents/file_123.json",
+    ]);
+  });
+
   it("sends an exported JSON file as a document", async () => {
     let capturedBody: BodyInit | null | undefined;
     const telegramFetch: typeof fetch = async (_input, init) => {

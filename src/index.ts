@@ -54,6 +54,7 @@ import { saveMedia } from "./modules/notes/media";
 import { getSummary } from "./modules/summary/repository";
 import type { SummaryResult } from "./modules/summary/repository";
 import { exportUserData } from "./modules/export/repository";
+import { importUserData } from "./modules/export/import";
 import { getBotStatus, searchUserData } from "./modules/status/repository";
 import {
   cancelTask,
@@ -92,7 +93,7 @@ import { parseIntent } from "./router/parser";
 import type { Intent } from "./router/intent";
 import { getSummaryDateRange, getZonedDateTime } from "./shared/dates";
 import { hasValidWebhookSecret, isAuthorizedUpdate } from "./telegram/auth";
-import { answerCallbackQuery, sendAttachment, sendDocumentContent, sendMessage, setMyCommands } from "./telegram/client";
+import { answerCallbackQuery, downloadTelegramDocument, sendAttachment, sendDocumentContent, sendMessage, setMyCommands } from "./telegram/client";
 import type { InlineKeyboardMarkup } from "./telegram/client";
 import {
   buildEditCancelKeyboard,
@@ -222,7 +223,9 @@ export async function handleRequest(
     }
 
     if (update.message?.photo || update.message?.document) {
-      const reply = await saveMedia(update.message, env);
+      const reply = update.message.document && isImportCaption(update.message.caption)
+        ? await restoreTelegramDocument(update.message, env, telegramFetch)
+        : await saveMedia(update.message, env);
       await sendBotReply(env, update.message.chat.id, reply, telegramFetch);
       return new Response(null, { status: 200 });
     }
@@ -1641,7 +1644,11 @@ function getCommandReply(text: string): Reply | null {
   }
 
   if (command === "/help") {
-    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+    return "Puedo ayudarte con tareas, recordatorios, gastos, notas, enlaces, archivos y carpetas.\n\nEjemplos:\n• tarea comprar medicina\n• tarea pagar la luz mañana a las 18:00\n• recuérdame pagar internet mañana\n• quiero que me recuerdes a las 2pm tomarme mi medicamento\n• repite tarea 1 cada semana\n• repite recordatorio 2 cada mes\n• gasté 450 en carro por compra de radiador\n• historial de gastos de carro\n• /estado para ver pendientes, avisos y almacenamiento lógico\n• /buscar tornillos para buscar entre tus datos\n• /exportar para recibir una copia JSON de tus datos\n• /importar y envía el JSON exportado como documento\n• /configuracion para avisos persistentes\n• Crea la carpeta Documentos personales\n• Renombra la carpeta Documentos personales a Documentos\n• Elimina la carpeta Temporal (te pediré confirmación)\n• Mueve el guardado 123 a la carpeta Archivo\n• Guarda este link https://ejemplo.com en Documentos personales\n• Nota póliza pendiente\n• Envía una foto o documento con «Guarda recibo de luz en Documentos personales» (uno por mensaje).\n• mis carpetas, mis imágenes, mis archivos o mis enlaces\n• mis guardados o /guardados\n• /guardado_123 para recibir un guardado de la lista";
+  }
+
+  if (command === "/importar" || command === "/restaurar") {
+    return "📥 Para restaurar tus datos, envía el archivo JSON de /exportar como documento y escribe /importar en la descripción.";
   }
 
   if (command === "/configuracion" || command === "/config" || command === "configuracion" || command === "configuración") {
@@ -1652,6 +1659,39 @@ function getCommandReply(text: string): Reply | null {
   }
 
   return null;
+}
+
+async function restoreTelegramDocument(
+  message: NonNullable<TelegramUpdate["message"]>,
+  env: Env,
+  telegramFetch: typeof fetch,
+): Promise<string> {
+  if (!message.document || !message.from) return "No pude identificar el documento o el usuario.";
+  try {
+    const content = await downloadTelegramDocument(env, message.document.file_id, telegramFetch);
+    let data: unknown;
+    try {
+      data = JSON.parse(content) as unknown;
+    } catch {
+      return "El archivo no contiene un JSON válido de /exportar.";
+    }
+    const userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
+      telegramUserId: message.from.id,
+      telegramChatId: message.chat.id,
+      timezone: env.APP_TIMEZONE,
+      currency: env.DEFAULT_CURRENCY,
+    });
+    const result = await importUserData(env.PERSONAL_ASSISTANT_DB, { userId, data });
+    if (result.alreadyImported) return "ℹ️ Este archivo ya había sido restaurado; no dupliqué sus datos.";
+    return `✅ Restauración completada.\nCarpetas: ${result.folders}\nTareas: ${result.tasks}\nRecordatorios: ${result.reminders}\nGastos: ${result.expenses}\nGuardados: ${result.notes}\nAvisos persistentes: ${result.persistentNotifications}`;
+  } catch (error) {
+    console.error(JSON.stringify({ event: "data_import_failed", reason: error instanceof Error ? error.name : "unknown_error" }));
+    return "No pude restaurar el archivo. Verifica que sea el JSON generado por /exportar y vuelve a intentarlo.";
+  }
+}
+
+function isImportCaption(caption: string | undefined): boolean {
+  return /^(?:\/)?(?:importar|restaurar)(?:@[a-z0-9_]+)?$/iu.test(caption?.trim() ?? "");
 }
 
 async function configureTelegramCommands(env: Env, telegramFetch: typeof fetch): Promise<void> {

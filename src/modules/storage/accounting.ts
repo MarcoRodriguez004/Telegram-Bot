@@ -116,6 +116,12 @@ WITH owned_bytes AS (
   FROM conversation_drafts
   UNION ALL
   SELECT user_id,
+    64 + 24
+      + length(CAST(COALESCE(exported_at, '') AS BLOB))
+      + length(CAST(COALESCE(imported_at, '') AS BLOB)) AS logical_bytes
+  FROM data_imports
+  UNION ALL
+  SELECT user_id,
     64 + 16
       + length(CAST(COALESCE(question, '') AS BLOB))
       + length(CAST(COALESCE(suggested_text, '') AS BLOB))
