@@ -55,9 +55,11 @@ npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 npx wrangler secret put TELEGRAM_ADMIN_USER_ID
 npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put WHATSAPP_WEBHOOK_VERIFY_TOKEN
+npx wrangler secret put WHATSAPP_APP_SECRET
 ```
 
-No pongas los secretos en `wrangler.jsonc`, `vars`, un commit, la URL de Telegram ni el historial del shell. `OPENAI_MODEL` es una variable pública de configuración (`gpt-5.6-luna` por defecto); `OPENAI_API_KEY` debe permanecer como secret. El secret del webhook debe usar únicamente letras, números, `_` o `-`, tal como exige Telegram.
+No pongas los secretos en `wrangler.jsonc`, `vars`, un commit, una URL ni el historial del shell. `OPENAI_MODEL` es una variable pública de configuración (`gpt-5.6-luna` por defecto); `OPENAI_API_KEY`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN` y `WHATSAPP_APP_SECRET` deben permanecer como secrets. La configuración específica de Meta está en [WHATSAPP-WEBHOOK.md](WHATSAPP-WEBHOOK.md).
 
 ## 4. Registrar el webhook
 
