@@ -10,4 +10,6 @@ export interface Env {
   DEFAULT_CURRENCY: string;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN?: string;
+  WHATSAPP_APP_SECRET?: string;
 }
