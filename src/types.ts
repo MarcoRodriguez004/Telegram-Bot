@@ -11,4 +11,9 @@ export interface Env {
   OPENAI_MODEL?: string;
   WHATSAPP_WEBHOOK_VERIFY_TOKEN?: string;
   WHATSAPP_APP_SECRET?: string;
+  WHATSAPP_ACCESS_TOKEN?: string;
+  WHATSAPP_PHONE_NUMBER_ID?: string;
+  WHATSAPP_API_VERSION?: string;
+  WHATSAPP_ALLOWED_USER_ID?: string;
+  WHATSAPP_OWNER_TELEGRAM_USER_ID?: string;
 }

@@ -252,3 +252,42 @@ La especificación detallada está en [`docs/SPEC-ASSISTANT-COMPLETION.md`](../d
 - Después de los cortes 1 y 2: regresión de conversaciones, guardados, carpetas y privacidad.
 - Después de los cortes 3 y 4: búsqueda y resumen aislados por usuario, con mensajes dentro del límite de Telegram.
 - Después del corte 5: parser CAMe/gob.mx, fecha de afectación y consulta manual de `/hoy_no_circula`.
+
+## Incremento actual: integración conversacional con WhatsApp Cloud API
+
+### Objetivo
+
+Usar el webhook ya verificado para recibir mensajes de texto de WhatsApp, ejecutar la misma lógica de asistente que ya funciona en Telegram y responder mediante WhatsApp Cloud API. La verificación de empresa queda explícitamente fuera de este corte porque Meta la marca como opcional para comenzar.
+
+### Alcance del primer corte
+
+1. Validar únicamente notificaciones de mensajes de texto de WhatsApp y descartar de forma segura eventos no compatibles.
+2. Mantener la firma `X-Hub-Signature-256`, limitar el tamaño del payload y deduplicar `wamid` para que Meta pueda reintentar sin duplicar acciones.
+3. Autorizar un único número configurado y asociarlo al usuario personal existente, sin sobrescribir el chat de Telegram ni mezclar identidades.
+4. Reutilizar parser, repositorios, memoria conversacional, recordatorios y respuestas existentes; los botones de Telegram se convertirán en texto para WhatsApp en este primer corte.
+5. Enviar respuestas de texto por `/{PHONE_NUMBER_ID}/messages` usando un token almacenado exclusivamente como secret de Wrangler.
+6. Documentar la configuración local/producción, rotación del token que fue expuesto en capturas y una prueba manual de extremo a extremo.
+
+### Fuera de alcance
+
+- Verificación de empresa de Meta.
+- Migración o cambio del número de teléfono de WhatsApp.
+- Multimedia, botones interactivos y documentos enviados por WhatsApp; se conserva el flujo completo de Telegram.
+- Exponer mensajes de usuarios no autorizados o aceptar el primer número automáticamente.
+
+### Criterios de aceptación
+
+- [ ] Un `GET` de verificación sigue devolviendo el challenge de Meta.
+- [ ] Un `POST` firmado con un mensaje de texto autorizado crea/reutiliza la identidad correcta, procesa el texto y envía una respuesta de texto.
+- [ ] Un `POST` repetido con el mismo `wamid` no ejecuta dos veces la acción ni envía dos respuestas.
+- [ ] Un remitente no autorizado obtiene HTTP 200 sin revelar si existe una cuenta y no produce efectos en D1.
+- [ ] Errores de Meta no exponen el token ni el cuerpo sensible en logs y se registran con un nombre de error seguro.
+- [ ] `npm test`, `npm run lint`, `npm run typecheck` y `npm run build` pasan antes del despliegue.
+- [ ] La configuración incluye `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` y el identificador permitido del remitente sin valores en el repositorio.
+
+### Orden de implementación
+
+1. Contratos, normalización y pruebas del envío de mensajes y del payload entrante.
+2. Migración idempotente para deduplicación y vínculo de identidad WhatsApp–usuario existente.
+3. Adaptador de WhatsApp y conexión al flujo conversacional existente sin alterar Telegram.
+4. Documentación de secrets, prueba manual y quality gates completos.

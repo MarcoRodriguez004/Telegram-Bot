@@ -147,6 +147,9 @@ import type { TelegramCallbackQuery, TelegramUpdate } from "./telegram/types";
 import type { Env } from "./types";
 import type { RecurrenceRule } from "./modules/recurrence";
 import { handleWhatsAppWebhook } from "./whatsapp/webhook";
+import { claimWhatsAppMessage, ensureWhatsAppUser } from "./whatsapp/identity";
+import { sendWhatsAppTextChunks } from "./whatsapp/client";
+import type { WhatsAppTextMessage } from "./whatsapp/types";
 
 const MAX_UPDATE_BYTES = 64 * 1024;
 
@@ -210,6 +213,11 @@ type BotReply = {
 
 type Reply = string | BotReply;
 
+type MessageExecutionContext = {
+  channel?: "telegram" | "whatsapp";
+  userId?: number;
+};
+
 const worker: ExportedHandler<Env> = {
   fetch(request, env, ctx) {
     return handleRequest(request, env);
@@ -247,6 +255,7 @@ export async function handleRequest(
   env: Env,
   telegramFetch: typeof fetch = fetch,
   aiFetch: typeof fetch = fetch,
+  whatsappFetch: typeof fetch = fetch,
 ): Promise<Response> {
   const url = new URL(request.url);
 
@@ -255,7 +264,7 @@ export async function handleRequest(
   }
 
   if (url.pathname === "/whatsapp/webhook") {
-    return handleWhatsAppWebhook(request, env);
+    return handleWhatsAppWebhook(request, env, console, (message) => processWhatsAppMessage(message, env, telegramFetch, aiFetch, whatsappFetch));
   }
 
   if (url.pathname !== "/telegram/webhook") {
@@ -387,6 +396,93 @@ export async function handleRequest(
   }
 }
 
+async function processWhatsAppMessage(
+  message: WhatsAppTextMessage,
+  env: Env,
+  telegramFetch: typeof fetch,
+  aiFetch: typeof fetch,
+  whatsappFetch: typeof fetch,
+): Promise<void> {
+  if (!env.WHATSAPP_ACCESS_TOKEN || !env.WHATSAPP_PHONE_NUMBER_ID) {
+    console.error(JSON.stringify({ event: "whatsapp_processing_not_configured" }));
+    return;
+  }
+
+  const ownerTelegramUserId = parseConfiguredTelegramUserId(
+    env.WHATSAPP_OWNER_TELEGRAM_USER_ID ?? env.TELEGRAM_ADMIN_USER_ID ?? env.TELEGRAM_ALLOWED_USER_ID,
+  );
+  if (ownerTelegramUserId === null) {
+    console.error(JSON.stringify({ event: "whatsapp_owner_not_configured" }));
+    return;
+  }
+
+  const userId = await ensureWhatsAppUser(env.PERSONAL_ASSISTANT_DB, env, message.from);
+  if (userId === null || !(await claimWhatsAppMessage(env.PERSONAL_ASSISTANT_DB, message.id))) return;
+
+  if (/^(?:\/(?:difundir|difundir_estado|borrar_bd)(?:\s|$)|CONFIRMAR DIFUSIÓN [123]\/3|CONFIRMO BORRADO GLOBAL [123]\/3)/iu.test(message.text)) {
+    await sendWhatsAppTextChunks(env, message.from, "Ese comando administrativo solo está disponible desde Telegram.", whatsappFetch);
+    return;
+  }
+
+  const chatId = stableWhatsAppChatId(message.from);
+  const update: TelegramUpdate = {
+    update_id: stableWhatsAppChatId(message.id),
+    message: {
+      message_id: stableWhatsAppChatId(message.id),
+      date: Math.floor(Date.now() / 1_000),
+      chat: { id: chatId, type: "private" },
+      from: { id: ownerTelegramUserId, is_bot: false, first_name: "WhatsApp" },
+      text: message.text,
+    },
+  };
+
+  let conversationHistory: ConversationTurn[] = [];
+  if (!message.text.startsWith("/") && !isClearConversationCommand(message.text)) {
+    try {
+      conversationHistory = await getConversationHistory(env.PERSONAL_ASSISTANT_DB, { userId, chatId });
+    } catch (error) {
+      console.error(JSON.stringify({ event: "conversation_history_unavailable", reason: error instanceof Error ? error.name : "unknown" }));
+    }
+  }
+
+  let reply: Reply | null;
+  if (message.text.startsWith("/")) {
+    reply = await getReply(message.text, update, env, telegramFetch, aiFetch, conversationHistory, { channel: "whatsapp", userId });
+  } else {
+    const editReply = await handleEditInput(message.text, userId, chatId, env);
+    reply = editReply ?? await getReply(message.text, update, env, telegramFetch, aiFetch, conversationHistory, { channel: "whatsapp", userId });
+  }
+
+  if (reply !== null) {
+    const text = typeof reply === "string" ? reply : reply.text;
+    if (text) await sendWhatsAppTextChunks(env, message.from, text, whatsappFetch);
+  }
+
+  if (!message.text.startsWith("/") && !isClearConversationCommand(message.text)) {
+    const userStillExists = await env.PERSONAL_ASSISTANT_DB.prepare("SELECT id FROM users WHERE id = ?")
+      .bind(userId)
+      .first<{ id: number }>();
+    if (userStillExists) {
+      try {
+        await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, { userId, chatId, role: "user", content: message.text });
+        const assistantText = typeof reply === "string" ? reply : reply?.text;
+        if (assistantText) await saveConversationTurn(env.PERSONAL_ASSISTANT_DB, { userId, chatId, role: "assistant", content: assistantText });
+      } catch (error) {
+        console.error(JSON.stringify({ event: "conversation_history_persist_failed", reason: error instanceof Error ? error.name : "unknown" }));
+      }
+    }
+  }
+}
+
+function stableWhatsAppChatId(value: string): number {
+  let hash = 2_166_136_261;
+  for (const character of value) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return Math.abs(hash) || 1;
+}
+
 async function getReply(
   text: string,
   update: TelegramUpdate,
@@ -394,6 +490,7 @@ async function getReply(
   telegramFetch: typeof fetch,
   aiFetch: typeof fetch,
   conversationHistory: ReadonlyArray<ConversationTurn> = [],
+  executionContext: MessageExecutionContext = {},
 ): Promise<Reply | null> {
   const globalResetAction = parseGlobalResetAction(text);
   if (globalResetAction) return handleGlobalResetAction(globalResetAction, update, env);
@@ -415,9 +512,9 @@ async function getReply(
   let pendingListContext: PendingListContext | null = null;
   let pendingConfirmation: PendingConfirmationContext | null = null;
   let conversationDraft: ConversationDraft | null = null;
-  if (message && telegramUserId !== undefined) {
-    userId = await ensureUser(env.PERSONAL_ASSISTANT_DB, {
-      telegramUserId,
+  if (message && (telegramUserId !== undefined || executionContext.userId !== undefined)) {
+    userId = executionContext.userId ?? await ensureUser(env.PERSONAL_ASSISTANT_DB, {
+      telegramUserId: telegramUserId!,
       telegramChatId: message.chat.id,
       timezone: env.APP_TIMEZONE,
       currency: env.DEFAULT_CURRENCY,
@@ -427,7 +524,7 @@ async function getReply(
         userId,
         chatId: message.chat.id,
       });
-      if (message.chat.type === "private" && message.message_id > 0) {
+      if (executionContext.channel !== "whatsapp" && message.chat.type === "private" && message.message_id > 0) {
         const messageIds = Array.from(
           { length: Math.min(100, message.message_id) },
           (_, index) => message.message_id - index,
@@ -643,6 +740,9 @@ async function getReply(
     }
 
     if (intent.action === "export_data") {
+      if (executionContext.channel === "whatsapp") {
+        return "La exportación de datos se entrega como archivo desde Telegram por ahora.";
+      }
       try {
         const exported = await exportUserData(env.PERSONAL_ASSISTANT_DB, { userId });
         const content = JSON.stringify(exported, null, 2);
@@ -838,7 +938,7 @@ async function getReply(
     if (intent.action === "get_note") {
       const note = await getNote(env.PERSONAL_ASSISTANT_DB, userId, intent.noteId);
       if (!note) return "No encontré ese guardado. Consulta /guardados.";
-      if (note.file_kind && note.file_id) {
+      if (note.file_kind && note.file_id && executionContext.channel !== "whatsapp") {
         try {
           await sendAttachment(env, message.chat.id, { kind: note.file_kind, fileId: note.file_id }, note.content, telegramFetch);
           await sendBotReply(env, message.chat.id, {
