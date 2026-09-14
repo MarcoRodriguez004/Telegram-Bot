@@ -84,6 +84,18 @@ describe("Personal Assistant Worker", () => {
     expect(await response.json()).toEqual({ ok: true, service: "personal-assistant-bot" });
   });
 
+  it("routes Meta's WhatsApp verification challenge to the WhatsApp webhook", async () => {
+    const { env } = createEnv();
+    env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = "verify-token";
+
+    const response = await handleRequest(new Request(
+      "https://bot.test/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=verify-token&hub.challenge=challenge-123",
+    ), env);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("challenge-123");
+  });
+
   it("rejects a webhook with an invalid secret without calling Telegram", async () => {
     const { env, sentMessages, telegramFetch } = createEnv();
     const request = new Request("https://bot.test/telegram/webhook", {

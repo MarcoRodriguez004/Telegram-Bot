@@ -146,6 +146,7 @@ import { parseTelegramUpdate } from "./telegram/types";
 import type { TelegramCallbackQuery, TelegramUpdate } from "./telegram/types";
 import type { Env } from "./types";
 import type { RecurrenceRule } from "./modules/recurrence";
+import { handleWhatsAppWebhook } from "./whatsapp/webhook";
 
 const MAX_UPDATE_BYTES = 64 * 1024;
 
@@ -251,6 +252,10 @@ export async function handleRequest(
 
   if (request.method === "GET" && url.pathname === "/health") {
     return json({ ok: true, service: "personal-assistant-bot" });
+  }
+
+  if (url.pathname === "/whatsapp/webhook") {
+    return handleWhatsAppWebhook(request, env);
   }
 
   if (url.pathname !== "/telegram/webhook") {
