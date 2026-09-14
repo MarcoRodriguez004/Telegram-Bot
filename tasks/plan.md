@@ -277,13 +277,14 @@ Usar el webhook ya verificado para recibir mensajes de texto de WhatsApp, ejecut
 
 ### Criterios de aceptación
 
-- [ ] Un `GET` de verificación sigue devolviendo el challenge de Meta.
-- [ ] Un `POST` firmado con un mensaje de texto autorizado crea/reutiliza la identidad correcta, procesa el texto y envía una respuesta de texto.
-- [ ] Un `POST` repetido con el mismo `wamid` no ejecuta dos veces la acción ni envía dos respuestas.
-- [ ] Un remitente no autorizado obtiene HTTP 200 sin revelar si existe una cuenta y no produce efectos en D1.
-- [ ] Errores de Meta no exponen el token ni el cuerpo sensible en logs y se registran con un nombre de error seguro.
-- [ ] `npm test`, `npm run lint`, `npm run typecheck` y `npm run build` pasan antes del despliegue.
-- [ ] La configuración incluye `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` y el identificador permitido del remitente sin valores en el repositorio.
+- [x] Un `GET` de verificación sigue devolviendo el challenge de Meta.
+- [x] Un `POST` firmado con un mensaje de texto autorizado crea/reutiliza la identidad correcta, procesa el texto y envía una respuesta de texto.
+- [x] Un `POST` repetido con el mismo `wamid` no ejecuta dos veces la acción ni envía dos respuestas.
+- [x] Un remitente no autorizado obtiene HTTP 200 sin revelar si existe una cuenta y no produce efectos en D1.
+- [x] Errores de Meta no exponen el token ni el cuerpo sensible en logs y se registran con un nombre de error seguro.
+- [x] `npm test`, `npm run lint`, `npm run typecheck` y `npm run build` pasan antes del despliegue.
+- [x] La configuración incluye `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` y el identificador permitido del remitente sin valores en el repositorio.
+- [ ] Aplicar la migración remota, cargar secrets y desplegar con una sesión de Cloudflare autorizada.
 
 ### Orden de implementación
 
