@@ -147,6 +147,7 @@ import type { TelegramCallbackQuery, TelegramUpdate } from "./telegram/types";
 import type { Env } from "./types";
 import type { RecurrenceRule } from "./modules/recurrence";
 import { handleWhatsAppWebhook } from "./whatsapp/webhook";
+import { getDataDeletionResponse, getPrivacyPolicyResponse } from "./legal";
 
 const MAX_UPDATE_BYTES = 64 * 1024;
 
@@ -252,6 +253,14 @@ export async function handleRequest(
 
   if (request.method === "GET" && url.pathname === "/health") {
     return json({ ok: true, service: "personal-assistant-bot" });
+  }
+
+  if (request.method === "GET" && url.pathname === "/privacy") {
+    return getPrivacyPolicyResponse();
+  }
+
+  if (request.method === "GET" && url.pathname === "/data-deletion") {
+    return getDataDeletionResponse();
   }
 
   if (url.pathname === "/whatsapp/webhook") {
