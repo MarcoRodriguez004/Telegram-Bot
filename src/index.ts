@@ -40,7 +40,11 @@ import {
   setContingencyMode,
 } from "./modules/contingency/repository";
 import type { ContingencyMode } from "./modules/contingency/repository";
-import { describeOperationalFailure, reportOperationalFailure } from "./modules/operations/alerts";
+import {
+  describeOperationalFailure,
+  reportOperationalFailure,
+  reportOperationalSuccess,
+} from "./modules/operations/alerts";
 import {
   disablePersistentNotification,
   initializePersistentNotification,
@@ -227,16 +231,19 @@ const worker: ExportedHandler<Env> = {
     const db = env.PERSONAL_ASSISTANT_DB;
     try {
       await processDueReminders(db, env, now);
+      await reportOperationalSuccess(db, { component: "scheduler", operation: "scheduled_reminders", now });
     } catch (error) {
       await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_reminders", detail: describeOperationalFailure(error), now });
     }
     try {
       await processDueNotifications(db, env, now);
+      await reportOperationalSuccess(db, { component: "scheduler", operation: "scheduled_notifications", now });
     } catch (error) {
       await reportOperationalFailure(db, env, { component: "scheduler", operation: "scheduled_notifications", detail: describeOperationalFailure(error), now });
     }
     try {
       await monitorDatabaseStorage(db, env, now);
+      await reportOperationalSuccess(db, { component: "storage", operation: "database_monitor", now });
     } catch (error) {
       await reportOperationalFailure(db, env, { component: "storage", operation: "database_monitor", detail: describeOperationalFailure(error), now });
     }

@@ -1,13 +1,19 @@
 import { sendMessage } from "../../telegram/client";
 import type { Env } from "../../types";
 
-const ALERT_COOLDOWN_MS = 15 * 60 * 1_000;
+const ALERT_FAILURE_THRESHOLD = 3;
 const MAX_DETAIL_LENGTH = 160;
 
 export interface OperationalFailure {
   component: "telegram" | "scheduler" | "openai" | "storage" | "webhook";
   operation: string;
   detail?: string;
+  now?: Date;
+}
+
+export interface OperationalSuccess {
+  component: OperationalFailure["component"];
+  operation: string;
   now?: Date;
 }
 
@@ -18,6 +24,25 @@ interface OperationalAlertRow {
 
 interface AdminDestination {
   chatId: number;
+}
+
+export async function reportOperationalSuccess(
+  db: D1Database,
+  success: OperationalSuccess,
+): Promise<void> {
+  const now = success.now ?? new Date();
+  try {
+    await db.prepare(
+      "UPDATE operational_alerts SET failure_count = 0, last_alerted_at = NULL, updated_at = ? WHERE alert_key = ?",
+    ).bind(now.toISOString(), `${success.component}:${success.operation}`).run();
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "operational_state_reset_failed",
+      component: success.component,
+      operation: success.operation,
+      reason: error instanceof Error ? error.name : "unknown_error",
+    }));
+  }
 }
 
 export function describeOperationalFailure(error: unknown): string {
@@ -55,12 +80,12 @@ export async function reportOperationalFailure(
     const row = await db.prepare(
       "SELECT failure_count AS failureCount, last_alerted_at AS lastAlertedAt FROM operational_alerts WHERE alert_key = ?",
     ).bind(alertKey).first<OperationalAlertRow>();
-    if (!row || !shouldAlert(row.lastAlertedAt, now)) return;
+    const failureCount = Number(row?.failureCount);
+    if (!row || !Number.isFinite(failureCount) || failureCount < ALERT_FAILURE_THRESHOLD || row.lastAlertedAt !== null) return;
 
     const claim = await db.prepare(
-      "UPDATE operational_alerts SET last_alerted_at = ?, updated_at = ? WHERE alert_key = ? AND " +
-        "(last_alerted_at IS NULL OR last_alerted_at <= ?)",
-    ).bind(nowIso, nowIso, alertKey, new Date(now.getTime() - ALERT_COOLDOWN_MS).toISOString()).run();
+      "UPDATE operational_alerts SET last_alerted_at = ?, updated_at = ? WHERE alert_key = ? AND failure_count >= ? AND last_alerted_at IS NULL",
+    ).bind(nowIso, nowIso, alertKey, ALERT_FAILURE_THRESHOLD).run();
     if (claim.meta.changes !== 1) return;
 
     const detail = sanitizeDetail(failure.detail);
@@ -68,7 +93,7 @@ export async function reportOperationalFailure(
     await sendMessage(
       env,
       chatId,
-      `⚠️ Alerta operativa\nComponente: ${failure.component}\nOperación: ${failure.operation}\nFallos acumulados: ${Math.max(1, Number(row.failureCount))}${detailLine}\nHora local ${formatOperationalTime(now, env.APP_TIMEZONE)}`,
+      `⚠️ Alerta operativa\nComponente: ${failure.component}\nOperación: ${failure.operation}\nFallos acumulados: ${failureCount}${detailLine}\nHora local ${formatOperationalTime(now, env.APP_TIMEZONE)}`,
       telegramFetch,
     );
   } catch (error) {
@@ -79,12 +104,6 @@ export async function reportOperationalFailure(
       reason: error instanceof Error ? error.name : "unknown_error",
     }));
   }
-}
-
-function shouldAlert(lastAlertedAt: string | null, now: Date): boolean {
-  if (!lastAlertedAt) return true;
-  const last = new Date(lastAlertedAt).getTime();
-  return Number.isNaN(last) || now.getTime() - last >= ALERT_COOLDOWN_MS;
 }
 
 function sanitizeDetail(value: string | undefined): string {
