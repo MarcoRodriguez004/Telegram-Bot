@@ -110,3 +110,16 @@ Especificación: [`docs/SPEC-ASSISTANT-COMPLETION.md`](../docs/SPEC-ASSISTANT-CO
 - [x] `contingency-v2`: día de afectación, fecha de publicación, corroboración de fuentes y consulta por vehículo registrado.
 
 Checkpoint de cada corte: pruebas enfocadas, suite completa, lint, typecheck y build antes de avanzar.
+
+## Incremento actual: WhatsApp Cloud API conversacional
+
+- [x] Añadir contratos seguros para mensajes de texto entrantes y respuestas de texto salientes.
+- [x] Añadir deduplicación de `wamid` y vínculo explícito del remitente WhatsApp con el usuario existente.
+- [x] Implementar el cliente de Meta con timeout, errores no sensibles y token únicamente desde Wrangler secret.
+- [x] Conectar WhatsApp al flujo conversacional actual y adaptar respuestas con teclado a texto.
+- [x] Rechazar remitentes no autorizados sin efectos laterales y conservar la idempotencia del webhook.
+- [x] Añadir documentación de configuración, rotación del token expuesto y prueba manual.
+- [x] Ejecutar pruebas, lint, typecheck y build; revisar el diff en busca de secretos antes de desplegar.
+- [ ] Aplicar la migración remota, cargar secrets y desplegar con una sesión de Cloudflare autorizada.
+
+Decisión: la verificación de empresa de Meta y la migración del número no bloquean este incremento; quedan para una etapa posterior si se necesitan sus beneficios.

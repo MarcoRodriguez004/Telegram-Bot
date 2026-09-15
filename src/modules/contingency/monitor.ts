@@ -1,6 +1,10 @@
 import { sendMessage } from "../../telegram/client";
 import type { Env } from "../../types";
-import { describeOperationalFailure, reportOperationalFailure } from "../operations/alerts";
+import {
+  describeOperationalFailure,
+  reportOperationalFailure,
+  reportOperationalSuccess,
+} from "../operations/alerts";
 import {
   listContingencyRecipients,
   saveContingencyState,
@@ -36,6 +40,11 @@ export async function monitorContingency(
     sourceUrl: bulletin.sourceUrl,
     publishedAt: bulletin.publishedAt,
     now: now.toISOString(),
+  });
+  await reportOperationalSuccess(db, {
+    component: "scheduler",
+    operation: "contingency_monitor",
+    now,
   });
   if (!saved.changed) return false;
 

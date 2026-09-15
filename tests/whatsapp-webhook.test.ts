@@ -93,4 +93,33 @@ describe("WhatsApp webhook", () => {
 
     expect(response.status).toBe(503);
   });
+
+  it("passes only text messages from the configured phone number to the processor", async () => {
+    const body = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [{ changes: [{
+        field: "messages",
+        value: {
+          metadata: { phone_number_id: "phone-1" },
+          messages: [{ from: "525500000000", id: "wamid.in", type: "text", text: { body: "Hola" } }],
+        },
+      }] }],
+    });
+    const received: unknown[] = [];
+    const response = await handleWhatsAppWebhook(new Request("https://bot.test/whatsapp/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-hub-signature-256": await sign(body) },
+      body,
+    }), { ...env, WHATSAPP_PHONE_NUMBER_ID: "phone-1" }, console, async (message) => {
+      received.push(message);
+    });
+
+    expect(response.status).toBe(200);
+    expect(received).toEqual([{
+      id: "wamid.in",
+      from: "525500000000",
+      text: "Hola",
+      phoneNumberId: "phone-1",
+    }]);
+  });
 });
