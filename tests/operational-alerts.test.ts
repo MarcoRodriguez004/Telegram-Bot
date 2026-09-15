@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { describeOperationalFailure, reportOperationalFailure } from "../src/modules/operations/alerts";
+import {
+  describeOperationalFailure,
+  reportOperationalFailure,
+  reportOperationalSuccess,
+} from "../src/modules/operations/alerts";
 import type { Env } from "../src/types";
 import { createSqliteDb } from "./helpers/sqlite-db";
 
@@ -15,7 +19,7 @@ function createEnv(db: D1Database): Env {
 }
 
 describe("operational alerts", () => {
-  it("notifies the admin once per cooldown window and tracks repeated failures", async () => {
+  it("alerts on the third consecutive failure and only once per failure episode", async () => {
     const { db, sqlite } = createSqliteDb();
     sqlite.prepare(
       "INSERT INTO users (telegram_user_id, telegram_chat_id, timezone, currency, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -40,19 +44,81 @@ describe("operational alerts", () => {
       detail: "telegram_delivery",
       now: new Date("2026-09-10T15:05:00.000Z"),
     }, telegramFetch);
+    expect(messages).toHaveLength(0);
+
     await reportOperationalFailure(db, env, {
       component: "scheduler",
       operation: "reminders",
       detail: "telegram_delivery",
       now: new Date("2026-09-10T15:16:00.000Z"),
     }, telegramFetch);
+    await reportOperationalFailure(db, env, {
+      component: "scheduler",
+      operation: "reminders",
+      detail: "telegram_delivery",
+      now: new Date("2026-09-10T15:20:00.000Z"),
+    }, telegramFetch);
 
-    expect(messages).toHaveLength(2);
+    expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({ chatId: 142 });
     expect(messages[0].text).toContain("Componente: scheduler");
-    expect(messages[0].text).toContain("Hora local (America/Mexico_City): 10/09/2026, 09:00:00");
+    expect(messages[0].text).toContain("Hora local (America/Mexico_City): 10/09/2026, 09:16:00");
+    expect(messages[0].text).toContain("Fallos acumulados: 3");
     expect(sqlite.prepare("SELECT failure_count, last_alerted_at FROM operational_alerts WHERE alert_key = 'scheduler:reminders'").get())
-      .toEqual({ failure_count: 3, last_alerted_at: "2026-09-10T15:16:00.000Z" });
+      .toEqual({ failure_count: 4, last_alerted_at: "2026-09-10T15:16:00.000Z" });
+  });
+
+  it("resets the failure episode after a successful operation", async () => {
+    const { db, sqlite } = createSqliteDb();
+    sqlite.prepare(
+      "INSERT INTO users (telegram_user_id, telegram_chat_id, timezone, currency, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(42, 142, "America/Mexico_City", "MXN", "2026-09-10T15:00:00.000Z");
+    const messages: Array<{ chatId: number; text: string }> = [];
+    const telegramFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { chat_id: number; text: string };
+      messages.push({ chatId: body.chat_id, text: body.text });
+      return Response.json({ ok: true });
+    };
+    const env = createEnv(db);
+
+    await reportOperationalFailure(db, env, {
+      component: "scheduler",
+      operation: "contingency_monitor",
+      now: new Date("2026-09-10T15:00:00.000Z"),
+    }, telegramFetch);
+    await reportOperationalFailure(db, env, {
+      component: "scheduler",
+      operation: "contingency_monitor",
+      now: new Date("2026-09-10T15:05:00.000Z"),
+    }, telegramFetch);
+    await reportOperationalSuccess(db, {
+      component: "scheduler",
+      operation: "contingency_monitor",
+      now: new Date("2026-09-10T15:10:00.000Z"),
+    });
+
+    expect(sqlite.prepare("SELECT failure_count, last_alerted_at FROM operational_alerts WHERE alert_key = 'scheduler:contingency_monitor'").get())
+      .toEqual({ failure_count: 0, last_alerted_at: null });
+
+    await reportOperationalFailure(db, env, {
+      component: "scheduler",
+      operation: "contingency_monitor",
+      now: new Date("2026-09-10T15:15:00.000Z"),
+    }, telegramFetch);
+    await reportOperationalFailure(db, env, {
+      component: "scheduler",
+      operation: "contingency_monitor",
+      now: new Date("2026-09-10T15:20:00.000Z"),
+    }, telegramFetch);
+    expect(messages).toHaveLength(0);
+
+    await reportOperationalFailure(db, env, {
+      component: "scheduler",
+      operation: "contingency_monitor",
+      now: new Date("2026-09-10T15:25:00.000Z"),
+    }, telegramFetch);
+
+    expect(messages).toHaveLength(1);
   });
 
   it("sends operational alerts only to the configured admin when other users exist", async () => {
@@ -69,12 +135,14 @@ describe("operational alerts", () => {
       return Response.json({ ok: true });
     };
 
-    await reportOperationalFailure(db, createEnv(db), {
-      component: "scheduler",
-      operation: "contingency_monitor",
-      detail: "Official contingency bulletin could not be parsed",
-      now: new Date("2026-09-10T15:00:00.000Z"),
-    }, telegramFetch);
+    for (const minute of [0, 5, 10]) {
+      await reportOperationalFailure(db, createEnv(db), {
+        component: "scheduler",
+        operation: "contingency_monitor",
+        detail: "Official contingency bulletin could not be parsed",
+        now: new Date(`2026-09-10T15:${String(minute).padStart(2, "0")}:00.000Z`),
+      }, telegramFetch);
+    }
 
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({ chatId: 142 });

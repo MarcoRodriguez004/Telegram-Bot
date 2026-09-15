@@ -1,11 +1,17 @@
+import { parseWhatsAppTextMessages, type WhatsAppTextMessage } from "./types";
+
 export interface WhatsAppWebhookEnv {
   WHATSAPP_WEBHOOK_VERIFY_TOKEN?: string;
   WHATSAPP_APP_SECRET?: string;
+  WHATSAPP_PHONE_NUMBER_ID?: string;
 }
 
 export interface WhatsAppWebhookLogger {
   info(...args: unknown[]): void;
+  error?(...args: unknown[]): void;
 }
+
+export type WhatsAppTextMessageHandler = (message: WhatsAppTextMessage) => Promise<void>;
 
 const MAX_WEBHOOK_BYTES = 256 * 1024;
 
@@ -13,6 +19,7 @@ export async function handleWhatsAppWebhook(
   request: Request,
   env: WhatsAppWebhookEnv,
   logger: WhatsAppWebhookLogger = console,
+  onTextMessage?: WhatsAppTextMessageHandler,
 ): Promise<Response> {
   if (request.method === "GET") return verifyWebhook(request, env);
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -52,6 +59,21 @@ export async function handleWhatsAppWebhook(
     entryCount: entries.length,
     changeCount: changes,
   }));
+
+  if (onTextMessage) {
+    const configuredPhoneNumberId = env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+    for (const message of parseWhatsAppTextMessages(payload)) {
+      if (configuredPhoneNumberId && message.phoneNumberId !== configuredPhoneNumberId) continue;
+      try {
+        await onTextMessage(message);
+      } catch (error) {
+        logger.error?.(JSON.stringify({
+          event: "whatsapp_message_processing_failed",
+          reason: error instanceof Error ? error.name : "unknown_error",
+        }));
+      }
+    }
+  }
 
   return Response.json({ ok: true });
 }
